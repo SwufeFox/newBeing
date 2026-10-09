@@ -1,0 +1,29 @@
+{
+  "name": "newbeing",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@12.10.1",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build:packages": "pnpm --workspace-concurrency=1 --filter @newbeing/core build && pnpm --filter @newbeing/market-data build && pnpm --filter @newbeing/storage build && pnpm --filter @newbeing/application build",
+    "dev": "pnpm build:packages && pnpm --filter @newbeing/web dev",
+    "build": "pnpm build:packages && pnpm --filter @newbeing/web build",
+    "start": "pnpm --filter @newbeing/web start",
+    "lint": "pnpm exec eslint .",
+    "typecheck": "pnpm --workspace-concurrency=1 --filter @newbeing/core --filter @newbeing/market-data --filter @newbeing/storage --filter @newbeing/application --filter @newbeing/mcp --filter @newbeing/web typecheck",
+    "test": "pnpm build:packages && pnpm --workspace-concurrency=1 --filter @newbeing/core --filter @newbeing/market-data --filter @newbeing/storage --filter @newbeing/application --filter @newbeing/mcp --filter @newbeing/web test",
+    "mcp": "pnpm build:packages && pnpm --filter @newbeing/mcp start",
+    "mcp:smoke": "pnpm build:packages && pnpm --filter @newbeing/mcp smoke"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "^16.4.0",
+    "@typescript-eslint/parser": "^8.53.0",
+    "@typescript-eslint/eslint-plugin": "^8.53.0",
+    "@types/node": "^24.10.0",
+    "typescript": "5.9.3"
+  }
+}

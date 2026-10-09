@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+minimumReleaseAgeExclude:
+  - drizzle-orm@0.45.4
+
+allowBuilds:
+  esbuild: true
+  bufferutil: false
+  ccxt: false
+  unrs-resolver: false
