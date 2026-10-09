@@ -356,7 +356,7 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
   const StreamIcon = replayMode ? Clock3 : stream === "live" ? Wifi : stream === "connecting" ? Radio : WifiOff;
 
   return (
-    <section className="chart-shell" aria-label="Interactive market chart">
+    <section className="chart-shell" data-testid="market-chart" aria-label="Interactive market chart">
       <div className="chart-meta">
         <div className="chart-meta-left">
           {lastBar ? <><span>O {lastBar.open.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span><span>H {lastBar.high.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span><span>L {lastBar.low.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span><span>C {lastBar.close.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span></> : <span className="muted">Awaiting market data</span>}

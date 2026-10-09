@@ -1,4 +1,4 @@
-import { getBinanceAdapter } from "@newbeing/market-data";
+import { getBinanceAdapter, type ExchangeAdapter } from "@newbeing/market-data";
 import {
   beginPaperIntent,
   finalizePaperFill,
@@ -64,12 +64,15 @@ export async function executePaperOrderWithDependencies(
   }
 }
 
-export async function executePaperOrder(request: ExecutePaperOrderRequest): Promise<ExecutePaperOrderResult> {
+export async function executePaperOrder(
+  request: ExecutePaperOrderRequest,
+  marketAdapter: ExchangeAdapter = getBinanceAdapter(),
+): Promise<ExecutePaperOrderResult> {
   return executePaperOrderWithDependencies(request, {
     beginIntent: (order) => beginPaperIntent(order, paperAccountId(order.symbol)),
     markSubmitted: markPaperIntentSubmitted,
     fetchReferencePrice: async (symbol, side) => {
-      const ticker = await getBinanceAdapter().fetchSummary(symbol);
+      const ticker = await marketAdapter.fetchSummary(symbol);
       const reference = side === "buy" ? (ticker.ask ?? ticker.last) : (ticker.bid ?? ticker.last);
       if (reference === null || reference <= 0) throw new Error("Ticker did not contain a valid bid, ask or last price.");
       return reference;

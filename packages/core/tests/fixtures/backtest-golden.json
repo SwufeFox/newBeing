@@ -1,0 +1,59 @@
+{
+  "fixture": "synthetic-wave-v1",
+  "candleCount": 180,
+  "config": {
+    "initialCapital": 10000,
+    "positionFraction": 0.25,
+    "feeRate": 0.0015,
+    "slippageRate": 0.0007,
+    "allowShorts": true
+  },
+  "results": {
+    "sma-crossover": {
+      "strategyVersion": "1.0.0",
+      "parameters": {
+        "fastPeriod": 4,
+        "slowPeriod": 9,
+        "allowShorts": true
+      },
+      "signalSha256": "900ce62e1dfcb352d27c4ee2c5a00dcd44a9a9ac660798e50fad294550b0c95a",
+      "tradeSha256": "b357ac3e5a3d665b15d2a65055365e10ab5a20440bf1541c19b11cf06b203441",
+      "equitySha256": "0b46ddde69b7cd0579c37c912a2adff62241334017ee58fb5f794ab951e922df",
+      "signalCount": 180,
+      "tradeCount": 12,
+      "equityCount": 180
+    },
+    "rsi-mean-reversion": {
+      "strategyVersion": "1.0.0",
+      "parameters": {
+        "period": 5,
+        "oversold": 36,
+        "exitLong": 53,
+        "overbought": 64,
+        "exitShort": 47,
+        "allowShorts": true
+      },
+      "signalSha256": "926e2b7923cda25a665208ec817c9de2dc1556299bfbf31780c6523d94f07fa3",
+      "tradeSha256": "1c0b47625cfe0e3b883ea75dc6414754f849ebfaccd5f711151e2e895cbb27a9",
+      "equitySha256": "9e304f1a6503ca6f55799bde41b5c9fb3cb61e29421c49b0302eae0997597080",
+      "signalCount": 180,
+      "tradeCount": 12,
+      "equityCount": 180
+    },
+    "momentum-reversal": {
+      "strategyVersion": "1.0.0",
+      "parameters": {
+        "lookback": 6,
+        "thresholdPct": 2.1,
+        "reversal": true,
+        "allowShorts": true
+      },
+      "signalSha256": "c7380db324929864aaa6b11a55defca1810254dc39bc7720cbd3a4a53524d715",
+      "tradeSha256": "3ad3864648c3a91aa182206528c10f4d11d083de348efe723e7ae80a3742f2dd",
+      "equitySha256": "5a7a79170a6c58b79a5c2046b400d8b2ecfec103980258eee5bc0ddf2eabcbf0",
+      "signalCount": 180,
+      "tradeCount": 12,
+      "equityCount": 180
+    }
+  }
+}

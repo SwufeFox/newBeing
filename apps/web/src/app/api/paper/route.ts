@@ -7,6 +7,7 @@ import {
   paperAccountId,
   getWorkspaceState,
 } from "@newbeing/storage";
+import { getWebMarketAdapter } from "@/lib/market-adapter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const body: unknown = await request.json();
     const parsed = orderSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid paper order." }, { status: 400 });
-    const result = await executePaperOrder(parsed.data);
+    const result = await executePaperOrder(parsed.data, getWebMarketAdapter());
     const status = result.deduplicated ? 200 : result.order.status === "filled" ? 201 : result.order.status === "unknown" ? 202 : 422;
     return NextResponse.json({ ...result, reference: "public bid/ask, falling back to last; simulation only" }, { status });
   } catch (error) {

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { getStrategy, runBacktest, type BacktestConfig, type BacktestResult, type StrategyParameters } from "@newbeing/core";
-import { findCandleGaps, getBinanceAdapter, removeFormingCandles } from "@newbeing/market-data";
+import { findCandleGaps, getBinanceAdapter, removeFormingCandles, type ExchangeAdapter } from "@newbeing/market-data";
 import type { Timeframe } from "@newbeing/core";
 import { getWorkspaceState, saveExperiment, saveWorkspaceState } from "@newbeing/storage";
 export * from "./paper.js";
@@ -23,13 +23,16 @@ function datasetId(symbol: string, timeframe: Timeframe, candles: readonly { tim
   return `${symbol.replaceAll("/", "-")}_${timeframe}_${first}_${last}_${digest}`;
 }
 
-export async function runResearchBacktest(request: ResearchBacktestRequest): Promise<BacktestResult> {
+export async function runResearchBacktest(
+  request: ResearchBacktestRequest,
+  dependencies: { marketAdapter?: ExchangeAdapter } = {},
+): Promise<BacktestResult> {
   if (getWorkspaceState().state.activeWorkspace === "replay") {
     throw new Error("Backtests are disabled while Replay is active, to avoid exposing future-derived results.");
   }
   const strategy = getStrategy(request.strategyId);
   if (!strategy) throw new Error(`Unknown built-in strategy: ${request.strategyId}`);
-  const rawCandles = await getBinanceAdapter().fetchOHLCV(request.symbol, request.timeframe, request.limit ?? 600);
+  const rawCandles = await (dependencies.marketAdapter ?? getBinanceAdapter()).fetchOHLCV(request.symbol, request.timeframe, request.limit ?? 600);
   const candles = removeFormingCandles(rawCandles, request.timeframe);
   if (candles.length < 2) throw new Error("Binance returned fewer than two completed bars; no backtest was saved.");
   const gaps = findCandleGaps(candles, request.timeframe);

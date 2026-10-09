@@ -1,8 +1,11 @@
 node_modules/
 .next/
+.next-*/
 dist/
 coverage/
 .newbeing/
+playwright-report/
+test-results/
 .env
 .env.local
 *.log

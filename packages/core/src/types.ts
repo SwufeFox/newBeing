@@ -16,12 +16,21 @@ export interface Candle {
 export type StrategyParameters = Record<string, number | boolean>;
 
 /** signalAt receives only the prefix ending at `index`, never later candles. */
+export interface StrategySignalStream {
+  /** Consume one closed candle and return the signal visible at that close. */
+  next(candle: Candle): MarketSide;
+}
+
 export interface StrategyDefinition {
   id: string;
   name: string;
   version: string;
   description: string;
   defaults: StrategyParameters;
+  /** Human-readable description of the executable logic, derived from its parameters. */
+  executionSummary?(parameters: StrategyParameters): string;
+  /** Optional stateful implementation; strategies without one use signalAt on a safe prefix. */
+  createSignalStream?(parameters: StrategyParameters): StrategySignalStream;
   signalAt(candles: readonly Candle[], index: number, parameters: StrategyParameters): MarketSide;
 }
 

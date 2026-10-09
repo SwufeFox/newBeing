@@ -3,6 +3,7 @@ import { z } from "zod";
 import { runResearchBacktest } from "@newbeing/application";
 import { getWorkspaceState, listExperiments } from "@newbeing/storage";
 import { logEvent } from "@newbeing/core";
+import { getWebMarketAdapter } from "@/lib/market-adapter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       parameters: parsed.data.parameters,
       config,
       ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
-    });
+    }, { marketAdapter: getWebMarketAdapter() });
     return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Backtest failed.";

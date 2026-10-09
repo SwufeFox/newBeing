@@ -114,7 +114,10 @@ export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Ele
           {STRATEGIES.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       </div>
-      <p className="strategy-description">{strategy.description}</p>
+      <div className="strategy-description" data-testid="executable-strategy">
+        <strong>EXECUTABLE · {strategy.id}@{strategy.version}</strong>
+        <p>{strategy.executionSummary?.(params) ?? strategy.description}</p>
+      </div>
 
       <div className="strategy-params">
         {parameterEntries.map(([key, defaultValue]) => {
@@ -161,7 +164,7 @@ export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Ele
       <div className="sandbox-note"><ShieldAlert size={13} /><span>Only the reviewed built-in strategy runs. This TypeScript draft is never eval’d and cannot access files, network, or exchange credentials.</span></div>
       {saveError && <div className="error-inline">{saveError}</div>}
       <div className="strategy-actions">
-        <Button variant="outline" size="sm" onClick={() => void saveSource()}>{saved ? <Check size={13} /> : <Save size={13} />}{saved ? "Saved" : "Save draft"}</Button>
+        <Button data-testid="save-strategy-draft" variant="outline" size="sm" onClick={() => void saveSource()}>{saved ? <Check size={13} /> : <Save size={13} />}{saved ? "Saved" : "Save draft"}</Button>
         <Button variant="primary" size="sm" onClick={onRun} disabled={running || invalidSma}>{running ? <span className="spin"><Play size={13} /></span> : <Play size={13} />}{running ? "Running" : "Run backtest"}</Button>
       </div>
     </div>

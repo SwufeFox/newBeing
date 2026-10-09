@@ -189,7 +189,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .tab-trigger:hover { color: var(--text); }
 .tab-trigger[data-state="active"] { color: var(--text); }
 .tab-trigger[data-state="active"]::after { content: ""; position: absolute; bottom: -1px; left: 5px; right: 5px; height: 2px; background: var(--accent); }
-.inspector-tabs > [role="tabpanel"] { display: flex; flex-direction: column; overflow: auto; }
+.inspector-tabs > [role="tabpanel"] { display: flex; min-height: 0; flex: 1 1 0; flex-direction: column; overflow: auto; overscroll-behavior: contain; }
 .book-columns, .trades-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 9px 9px 5px; color: var(--text-dim); letter-spacing: .07em; font-size: 8px; }
 .book-columns span:last-child { text-align: right; }
 .book-row { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; height: 21px; align-items: center; padding: 0 9px; font-family: var(--font-mono); font-size: 9px; font-variant-numeric: tabular-nums; }
@@ -211,7 +211,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .trade-row span:nth-child(2) { color: var(--text-muted); }
 .positive { color: var(--positive) !important; }
 .negative { color: var(--negative) !important; }
-.strategy-lab { display: flex; flex-direction: column; gap: 9px; padding: 10px; overflow: auto; }
+.strategy-lab { display: flex; min-height: 0; flex: 1 1 0; flex-direction: column; gap: 9px; padding: 10px 10px 24px; overflow: auto; }
 .strategy-toolbar { display: flex; flex-direction: column; gap: 5px; }
 .field-label { color: var(--text-dim); letter-spacing: .06em; font-size: 8px; text-transform: uppercase; }
 .select-input, .compact-input { min-width: 0; height: 28px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); padding: 0 7px; font-size: 10px; }
@@ -236,7 +236,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .editor-loading { display: grid; place-items: center; height: 100%; color: var(--text-dim); font-size: 9px; }
 .sandbox-note { display: flex; align-items: flex-start; gap: 6px; color: var(--text-dim); font-size: 8px; line-height: 1.4; }
 .sandbox-note svg { flex: 0 0 auto; color: var(--warning); }
-.strategy-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.strategy-actions { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 6px; flex: 0 0 auto; margin-top: auto; padding: 8px 0 4px; border-top: 1px solid var(--line-soft); background: var(--surface); }
 .error-inline, .success-inline { color: var(--negative); font-size: 9px; line-height: 1.4; }
 .success-inline { color: var(--positive); }
 .context-panel { display: flex; flex-direction: column; gap: 10px; padding: 10px; }

@@ -421,7 +421,7 @@ export function Terminal(): React.JSX.Element {
       <div className="brand-lockup"><div className="brand-mark"><Activity size={16} strokeWidth={2.4} /></div><span>newBeing</span><span className="workspace-label">WORKSPACE</span></div>
       <div className="topbar-divider" />
       <nav className="workspace-nav" aria-label="Workspaces">
-        {(["terminal", "research", "backtest", "replay"] as const).map((item) => <button key={item} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{item}</button>)}
+        {(["terminal", "research", "backtest", "replay"] as const).map((item) => <button key={item} data-testid={`workspace-${item}`} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{item}</button>)}
       </nav>
       <div className="topbar-spacer" />
       <SymbolPicker disabled={replayLocked} />
@@ -451,7 +451,7 @@ export function Terminal(): React.JSX.Element {
           <div className="chart-toolbar-left"><span className="section-kicker">{workspaceName.toUpperCase()}</span><span className="toolbar-separator">/</span><span>{symbol} · {timeframe}</span>{result && <span className="signal-chip">{result.trades.length} signals</span>}</div>
           <div className="chart-toolbar-right">
             {running ? <span className="run-status"><LoaderCircle size={13} className="spin" />{lastAction ?? "Running…"}</span> : lastAction && <span className="run-status">{lastAction}</span>}
-            {workspace !== "replay" && <Button variant="primary" size="sm" onClick={() => void runBacktest()} disabled={running}><Command size={13} />Run backtest</Button>}
+            {workspace !== "replay" && <Button data-testid="run-backtest" variant="primary" size="sm" onClick={() => void runBacktest()} disabled={running}><Command size={13} />Run backtest</Button>}
           </div>
         </div>
         {backtestError && <div className="global-alert"><span>{backtestError}</span><button onClick={() => setBacktestError(null)} aria-label="Dismiss"><X size={14} /></button></div>}

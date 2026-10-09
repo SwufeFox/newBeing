@@ -278,10 +278,10 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
     <div className="ticket-heading"><div><Wallet size={13} /><span>SIMULATED ORDER</span></div><span className="paper-chip">PAPER</span></div>
     <div className="account-summary"><span>USDT AVAILABLE</span><strong>{portfolio ? `$${portfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}</strong></div>
     <div className="account-summary position"><span>{symbol.split("/")[0]} POSITION</span><strong>{portfolio ? `${portfolio.baseBalance.toFixed(6)} ${symbol.split("/")[0]}` : "—"}</strong><small className={pnl >= 0 ? "positive" : "negative"}>uPnL {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT</small></div>
-    <label className="ticket-field"><span>QUANTITY · {symbol.split("/")[0]}</span><input type="number" min="0" step="0.0001" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
+    <label className="ticket-field"><span>QUANTITY · {symbol.split("/")[0]}</span><input data-testid="paper-quantity" type="number" min="0" step="0.0001" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
     <div className="ticket-estimate"><span>Est. notional</span><strong>{estimated === null ? "—" : `$${estimated.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</strong></div>
     <div className="ticket-actions">
-      <Button variant="primary" size="sm" disabled={busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"} onClick={() => void submit("buy")}><TrendingUp size={13} />Buy</Button>
+      <Button data-testid="paper-buy" variant="primary" size="sm" disabled={busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"} onClick={() => void submit("buy")}><TrendingUp size={13} />Buy</Button>
       <Button variant="danger" size="sm" disabled={busy || !Number.isFinite(number) || number <= 0 || !portfolio || number > portfolio.baseBalance || mode !== "paper"} onClick={() => void submit("sell")}><TrendingDown size={13} />Sell</Button>
     </div>
     {previews.map((preview) => <div className="order-preview-card" key={preview.id}>

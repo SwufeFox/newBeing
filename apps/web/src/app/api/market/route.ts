@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { timeframeMilliseconds, getBinanceAdapter, findCandleGaps } from "@newbeing/market-data";
+import { timeframeMilliseconds, findCandleGaps } from "@newbeing/market-data";
 import { logEvent, type Timeframe } from "@newbeing/core";
 import { getReplaySession, getWorkspaceState } from "@newbeing/storage";
+import { getWebMarketAdapter, marketDataSourceLabel } from "@/lib/market-adapter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     if (workspace.activeWorkspace === "replay" && kind !== "candles") {
       return NextResponse.json({ error: "Current market quotes and depth are suppressed during Replay." }, { status: 409 });
     }
-    const adapter = getBinanceAdapter();
+    const adapter = getWebMarketAdapter();
     if (kind === "summary") return NextResponse.json(await adapter.fetchSummary(symbol), { headers: { "Cache-Control": "no-store" } });
     if (kind === "tickers") {
       const symbols = (url.searchParams.get("symbols") ?? "").split(",").filter(Boolean).slice(0, 40);
@@ -49,7 +50,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     const interval = timeframeMilliseconds(timeframe);
     const completed = candles.filter((candle) => candle.timestamp + interval <= Date.now());
     const gaps = findCandleGaps(completed, timeframe);
-    return NextResponse.json({ candles, completed, gaps, source: "Binance Spot via CCXT" }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ candles, completed, gaps, source: marketDataSourceLabel() }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Market data request failed.";
     logEvent("warn", "market_data.request_failed", { kind, message });

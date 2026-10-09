@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { executeReplayOrder } from "@newbeing/application";
 import { logEvent, type Timeframe } from "@newbeing/core";
-import { getBinanceAdapter, nextCompletedBarAfter, timeframeMilliseconds } from "@newbeing/market-data";
+import { nextCompletedBarAfter, timeframeMilliseconds } from "@newbeing/market-data";
 import {
   advanceReplaySession,
   finishReplaySession,
@@ -11,6 +11,7 @@ import {
   listPaperOrders,
   replayAccountId,
 } from "@newbeing/storage";
+import { getWebMarketAdapter } from "@/lib/market-adapter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,7 +62,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (action.data.action === "step") {
       const interval = timeframeMilliseconds(session.timeframe as Timeframe);
       const from = session.cursor + interval;
-      const fetched = await getBinanceAdapter().fetchOHLCVSince(session.symbol, session.timeframe as Timeframe, from, 4);
+      const fetched = await getWebMarketAdapter().fetchOHLCVSince(session.symbol, session.timeframe as Timeframe, from, 4);
       const next = nextCompletedBarAfter(fetched, session.timeframe as Timeframe, session.cursor);
       if (!next) return NextResponse.json({ session, bar: null, hasNext: false, futureBarsLoaded: 0 });
       if (next.timestamp > session.cursor + interval) {

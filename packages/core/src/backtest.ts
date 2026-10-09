@@ -11,6 +11,7 @@ import type {
   StrategyParameters,
   TradeExitReason,
 } from "./types.js";
+import { strategySignalSides } from "./strategies.js";
 
 interface OpenPosition {
   side: Exclude<MarketSide, "flat">;
@@ -62,6 +63,9 @@ function validateInput(input: RunBacktestInput): void {
   if (input.config.takeProfitPct !== undefined && !(input.config.takeProfitPct > 0 && input.config.takeProfitPct < 10)) {
     throw new Error("Take profit percentage must be between 0 and 10.");
   }
+  if (input.config.allowShorts && input.config.takeProfitPct !== undefined && input.config.takeProfitPct >= 1) {
+    throw new Error("Short take-profit percentage must be less than 1 so its target remains positive.");
+  }
 }
 
 function withSlippage(price: number, orderSide: "buy" | "sell", rate: number): number {
@@ -101,10 +105,10 @@ function buildMetrics(
     maxDrawdown = Math.max(maxDrawdown, drawdown);
   }
   const returns: number[] = [];
-  let previousEquity = initialCapital;
-  for (const point of equityCurve) {
-    if (previousEquity !== 0) returns.push(point.equity / previousEquity - 1);
-    previousEquity = point.equity;
+  for (let index = 1; index < equityCurve.length; index += 1) {
+    const previous = equityCurve[index - 1];
+    const current = equityCurve[index];
+    if (previous && current && previous.equity !== 0) returns.push(current.equity / previous.equity - 1);
   }
   const mean = returns.length > 0 ? returns.reduce((sum, value) => sum + value, 0) / returns.length : 0;
   const variance = returns.length > 1
@@ -132,10 +136,7 @@ function buildMetrics(
 export function runBacktest(input: RunBacktestInput): BacktestResult {
   validateInput(input);
   const { candles, config, strategy } = input;
-  const signals = candles.map((_, index) => {
-    const prefix = candles.slice(0, index + 1);
-    return strategy.signalAt(prefix, prefix.length - 1, input.parameters);
-  });
+  const signals = strategySignalSides(strategy, candles, input.parameters);
   const trades: BacktestTrade[] = [];
   const equityCurve: EquityPoint[] = [];
   let cash = config.initialCapital;
