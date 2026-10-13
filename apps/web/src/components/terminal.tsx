@@ -488,7 +488,7 @@ export function Terminal(): React.JSX.Element {
           onFinish={() => void finishReplay()}
           onNewSession={resetReplay}
         />}
-        <MarketChart backtest={workspace === "replay" ? null : result} replayBars={replayBars} onRangeChange={handleVisibleRange} />
+        <MarketChart key={`${exchange}|${symbol}|${timeframe}|${workspace}`} backtest={workspace === "replay" ? null : result} replayBars={replayBars} onRangeChange={handleVisibleRange} />
       </section>
       <DragHandle direction="horizontal" onDelta={resizeInspector} style={{ gridColumn: 4, gridRow: "1 / 4" }} />
       <div style={{ gridColumn: 5, gridRow: "1 / 4", minHeight: 0 }}><Inspector
@@ -504,7 +504,7 @@ export function Terminal(): React.JSX.Element {
         onReplayOrder={placeReplayOrder}
       /></div>
       <DragHandle direction="vertical" onDelta={resizeDock} style={{ gridColumn: 3, gridRow: 2 }} />
-      <div className="dock-slot" style={{ gridColumn: 3, gridRow: 3 }}><BottomDock replayMode={workspace === "replay"} replaySession={replaySession} replayPortfolio={replayPortfolio} replayOrders={replayOrders} /></div>
+      <div className="dock-slot" style={{ gridColumn: 3, gridRow: 3 }}><BottomDock key={`${exchange}|${symbol}|${workspace}`} replayMode={workspace === "replay"} replaySession={replaySession} replayPortfolio={replayPortfolio} replayOrders={replayOrders} /></div>
     </main>
     <footer className="statusbar"><div><i className="status-dot" /><span>LOCAL WORKSPACE</span><span className="footer-separator">·</span><span>{symbol} · {timeframe}</span></div><div><span>{workspace === "replay" ? "REPLAY CURSOR DATA" : "PUBLIC MARKET DATA"}</span><span className="footer-separator">·</span><span>LIVE EXECUTION DISABLED</span><span className="footer-separator">·</span><span>LOCAL SQLITE</span></div></footer>
   </div>;

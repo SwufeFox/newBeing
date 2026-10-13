@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AreaSeries, ColorType, createChart, type IChartApi, type Time, type UTCTimestamp } from "lightweight-charts";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileText, ListChecks, RefreshCw, Wallet } from "lucide-react";
-import type { BacktestResult, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
+import type { BacktestResult, ExchangeId, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShallow } from "zustand/react/shallow";
@@ -63,32 +63,36 @@ interface PaperPayload {
   orders: PaperOrder[];
 }
 
-function PaperPositions({ symbol }: { symbol: string }): React.JSX.Element {
+function PaperPositions({ symbol, exchange }: { symbol: string; exchange: ExchangeId }): React.JSX.Element {
   const [payload, setPayload] = useState<PaperPayload | null>(null);
   const [price, setPrice] = useState<number | null>(null);
+  const [stale, setStale] = useState(false);
   useEffect(() => {
+    if (exchange !== "binance") return;
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
         const [accountResponse, tickerResponse] = await Promise.all([
           fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" }),
-          fetch(`/api/market?kind=summary&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" }),
+          fetch(`/api/market?kind=summary&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" }),
         ]);
         const account: unknown = await accountResponse.json();
         const ticker: unknown = await tickerResponse.json();
         if (disposed) return;
-        if (accountResponse.ok && typeof account === "object" && account !== null && "portfolio" in account && "orders" in account) {
-          setPayload(account as PaperPayload);
-        }
+        if (!accountResponse.ok || typeof account !== "object" || account === null || !("portfolio" in account) || !("orders" in account)) throw new Error("Paper account unavailable.");
+        setPayload(account as PaperPayload);
+        const tickerValid = tickerResponse.ok && typeof ticker === "object" && ticker !== null && "last" in ticker && typeof ticker.last === "number";
         if (tickerResponse.ok && typeof ticker === "object" && ticker !== null && "last" in ticker && typeof ticker.last === "number") setPrice(ticker.last);
+        setStale(!tickerValid);
       } catch {
-        if (!disposed) setPayload(null);
+        if (!disposed) setStale(true);
       }
     };
     void refresh();
     const timer = window.setInterval(() => void refresh(), 8_000);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, [symbol]);
+  }, [symbol, exchange]);
+  if (exchange !== "binance") return <div className="empty-state"><Wallet size={18} /><strong>Paper positions unavailable</strong><span>Paper accounts and mark prices are available on Binance Spot.</span></div>;
   if (!payload) return <div className="empty-state"><Wallet size={18} /><strong>Paper account unavailable</strong><span>Waiting for local account state.</span></div>;
   const { portfolio } = payload;
   const unrealized = portfolio.averageEntryPrice !== null && price !== null
@@ -96,6 +100,7 @@ function PaperPositions({ symbol }: { symbol: string }): React.JSX.Element {
     : 0;
   return <div className="position-table-wrap">
     <div className="paper-isolation-note"><span className="paper-chip">PAPER ONLY</span><span>Isolated per-symbol demo wallet · never routes an order to Binance</span></div>
+    {stale && <div className="table-footnote">STALE · Showing the last Binance account snapshot; mark price may also be out of date.</div>}
     <table className="data-table"><thead><tr><th>ASSET</th><th>SIZE</th><th>AVG ENTRY</th><th>MARK</th><th>UNREALIZED PNL</th><th>REALIZED PNL</th><th>AVAILABLE</th></tr></thead>
       <tbody><tr>
         <td><strong>{symbol.split("/")[0]}</strong><small>{symbol}</small></td>
@@ -191,8 +196,8 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
   replayPortfolio?: PaperPortfolio | null;
   replayOrders?: PaperOrder[];
 }): React.JSX.Element {
-  const [tab, setTab, symbol, result, activeBacktestId, setBacktest] = useWorkspaceStore(useShallow((state) => [
-    state.dockTab, state.setDockTab, state.symbol, state.backtest, state.activeBacktestId, state.setBacktest,
+  const [tab, setTab, symbol, exchange, result, activeBacktestId, setBacktest] = useWorkspaceStore(useShallow((state) => [
+    state.dockTab, state.setDockTab, state.symbol, state.exchange, state.backtest, state.activeBacktestId, state.setBacktest,
   ]));
   const [paper, setPaper] = useState<PaperPayload | null>(null);
   const [paperError, setPaperError] = useState<string | null>(null);
@@ -212,7 +217,7 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
     }).catch(() => undefined);
   }, [activeBacktestId, result?.resultId, setBacktest, replayMode]);
   useEffect(() => {
-    if (replayMode) return;
+    if (replayMode || exchange !== "binance") return;
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
@@ -246,8 +251,8 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
       <div className="dock-toolbar-right"><span className="dock-mode-dot" />{replayMode ? "REPLAY · ISOLATED ACCOUNT" : "PAPER ACCOUNT"}</div>
     </div>
     <div className="dock-content">
-      {tab === "positions" && (replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions symbol={symbol} />)}
-      {tab === "orders" && (replayMode ? <OrdersTable orders={replayOrders} /> : paperError && !paper ? <div className="empty-state"><AlertCircle size={18} /><strong>Orders unavailable</strong><span>{paperError}</span></div> : <OrdersTable orders={paper?.orders ?? []} />)}
+      {tab === "positions" && (replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} />)}
+      {tab === "orders" && (replayMode ? <OrdersTable orders={replayOrders} /> : exchange !== "binance" ? <div className="empty-state"><AlertCircle size={18} /><strong>Paper order history unavailable</strong><span>Paper data is available on Binance Spot.</span></div> : paperError && !paper ? <div className="empty-state"><AlertCircle size={18} /><strong>Orders unavailable</strong><span>{paperError}</span></div> : <><div className="table-footnote">Paper order history · symbols shown for each order</div><OrdersTable orders={paper?.orders ?? []} /></>)}
       {tab === "history" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Experiment history hidden during replay</strong><span>Backtest results can reveal outcomes beyond the current cursor.</span></div> : <ExperimentHistory onSelect={selectResult} />)}
       {tab === "backtest" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are visible; future-derived results are hidden.</span></div> : <BacktestView result={result} />)}
       {tab === "logs" && (replayMode ? <div className="execution-log">

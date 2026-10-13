@@ -98,7 +98,7 @@ function OrderBook({ symbol, exchange }: { symbol: string; exchange: ExchangeId 
         <span>{price(level.price)}</span><span>{level.amount.toFixed(4)}</span>
       </div>)}
       {!book && !error && <div className="book-loading">Loading public depth…</div>}
-      <div className="data-stamp">{exchangeLabel(exchange)} public depth snapshot</div>
+      <div className="data-stamp">{error ? `STALE · ${exchangeLabel(exchange)} public depth snapshot` : `${exchangeLabel(exchange)} public depth snapshot`}</div>
     </div>
   );
 }
@@ -133,7 +133,7 @@ function RecentTrades({ symbol, exchange }: { symbol: string; exchange: Exchange
       <span>{new Date(trade.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
     </div>)}
     {trades.length === 0 && !error && <div className="book-loading">Loading latest trades…</div>}
-      <div className="data-stamp">{exchangeLabel(exchange)} public trades</div>
+      <div className="data-stamp">{error ? `STALE · ${exchangeLabel(exchange)} public trades` : `${exchangeLabel(exchange)} public trades`}</div>
   </div>;
 }
 
@@ -357,13 +357,13 @@ export function Inspector({ summary, result, running, replayMode, replaySession,
         <TabsTrigger value="context" aria-label="AI context"><Braces size={13} /><span>AI</span></TabsTrigger>
       </TabsList>
 
-      <TabsContent value="book"><OrderBook symbol={symbol} exchange={exchange} /></TabsContent>
-      <TabsContent value="trades"><RecentTrades symbol={symbol} exchange={exchange} /></TabsContent>
+      <TabsContent value="book"><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} /></TabsContent>
+      <TabsContent value="trades"><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} /></TabsContent>
       <TabsContent value="strategy"><StrategyLab onRun={onRun} running={running} /></TabsContent>
       <TabsContent value="context"><WorkspaceContext /></TabsContent>
     </Tabs>
     {replayMode
       ? <ReplayTicket symbol={symbol} session={replaySession} portfolio={replayPortfolio} orders={replayOrders} busy={replayBusy} onOrder={onReplayOrder} />
-      : selectedTab !== "strategy" && <PaperTicket symbol={symbol} summary={summary} />}
+      : selectedTab !== "strategy" && <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} />}
   </aside>;
 }
