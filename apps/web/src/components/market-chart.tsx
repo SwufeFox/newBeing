@@ -19,12 +19,15 @@ import { useShallow } from "zustand/react/shallow";
 import type { BacktestResult, Candle } from "@newbeing/core";
 import { findCandleGaps, mergeCandles, reconnectDelayMs, timeframeMilliseconds } from "@newbeing/market-data/utils";
 
-type StreamState = "connecting" | "live" | "reconnecting" | "unavailable" | "replay";
+
+
+type StreamState = "connecting" | "live" | "reconnecting" | "unavailable" | "polling";
 
 interface CandleResponse {
   candles: Candle[];
   gaps: Array<{ from: number; to: number }>;
 }
+
 
 function asUTCTime(timestampMs: number): UTCTimestamp {
   return Math.floor(timestampMs / 1000) as UTCTimestamp;
@@ -32,7 +35,7 @@ function asUTCTime(timestampMs: number): UTCTimestamp {
 
 function parseCandleResponse(value: unknown): CandleResponse {
   if (typeof value !== "object" || value === null || !("candles" in value) || !Array.isArray(value.candles)) {
-    throw new Error("Binance returned an invalid candle response.");
+    throw new Error("Exchange returned an invalid candle response.");
   }
   const candles: Candle[] = [];
   for (const item of value.candles) {
@@ -82,9 +85,10 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const barsRef = useRef<Candle[]>([]);
-  const [symbol, timeframe, theme, visibleRange] = useWorkspaceStore(useShallow((state) => [state.symbol, state.timeframe, state.theme, state.visibleRange]));
+  const [symbol, timeframe, exchange, theme, visibleRange] = useWorkspaceStore(useShallow((state) => [state.symbol, state.timeframe, state.exchange, state.theme, state.visibleRange]));
   const visibleRangeRef = useRef(visibleRange);
-  const dataKey = `${symbol}|${timeframe}`;
+  const dataKey = `${exchange}|${symbol}|${timeframe}`;
+
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [errorState, setErrorState] = useState<{ key: string; message: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,13 +106,13 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
   }, [visibleRange]);
 
   const loadHistory = useCallback(async (signal?: AbortSignal): Promise<void> => {
-    const url = `/api/market?kind=candles&symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=600`;
+    const url = `/api/market?kind=candles&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=600`;
     const response = await fetch(url, { cache: "no-store", ...(signal ? { signal } : {}) });
     const payload: unknown = await response.json();
     if (!response.ok) {
       const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
         ? payload.error
-        : "Could not fetch Binance candles.";
+        : "Could not fetch market candles.";
       throw new Error(message);
     }
     const parsed = parseCandleResponse(payload);
@@ -135,8 +139,8 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
       }
     }
     setErrorState(null);
-    setLoadedKey(`${symbol}|${timeframe}`);
-  }, [symbol, timeframe]);
+    setLoadedKey(`${exchange}|${symbol}|${timeframe}`);
+  }, [symbol, timeframe, exchange]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -236,14 +240,21 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
     }
     void Promise.resolve().then(() => loadHistory(controller.signal)).catch((reason: unknown) => {
       if (reason instanceof DOMException && reason.name === "AbortError") return;
-      setErrorState({ key: `${symbol}|${timeframe}`, message: reason instanceof Error ? reason.message : "Market data request failed." });
+      setErrorState({ key: dataKey, message: reason instanceof Error ? reason.message : "Market data request failed." });
     });
     return () => controller.abort();
-  }, [loadHistory, symbol, timeframe, theme, replayMode, replayBars]);
+  }, [loadHistory, symbol, timeframe, theme, replayMode, replayBars, dataKey]);
 
   useEffect(() => {
     const intervalMs = timeframeMilliseconds(timeframe);
     if (replayMode) return;
+    if (exchange !== "binance") {
+      const pollingMs = Math.max(15_000, Math.min(60_000, intervalMs / 4));
+      const timer = window.setInterval(() => {
+        void loadHistory().then(() => setStream("polling")).catch(() => setStream("unavailable"));
+      }, pollingMs);
+      return () => window.clearInterval(timer);
+    }
     const streamUrl = `wss://stream.binance.com:9443/ws/${symbol.replace("/", "").toLowerCase()}@kline_${timeframe}`;
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -325,7 +336,7 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, [symbol, timeframe, loadHistory, replayMode]);
+  }, [symbol, timeframe, exchange, loadHistory, replayMode]);
 
   useEffect(() => {
     if (replayMode) {
@@ -352,8 +363,9 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
     markersRef.current.setMarkers(markers);
   }, [backtest, theme, replayMode]);
 
-  const streamLabel = replayMode ? "HISTORICAL REPLAY · FUTURE HIDDEN" : stream === "live" ? "STREAM LIVE" : stream === "connecting" ? "CONNECTING" : stream === "unavailable" ? "OFFLINE" : "RECONNECTING";
-  const StreamIcon = replayMode ? Clock3 : stream === "live" ? Wifi : stream === "connecting" ? Radio : WifiOff;
+  const effectiveStream: StreamState = !replayMode && exchange !== "binance" ? "polling" : stream;
+  const streamLabel = replayMode ? "HISTORICAL REPLAY · FUTURE HIDDEN" : effectiveStream === "live" ? "STREAM LIVE" : effectiveStream === "connecting" ? "CONNECTING" : effectiveStream === "polling" ? `REST · ${Math.round(Math.max(15_000, Math.min(60_000, timeframeMilliseconds(timeframe) / 4)) / 1000)}S POLL` : effectiveStream === "unavailable" ? "OFFLINE" : "RECONNECTING";
+  const StreamIcon = replayMode ? Clock3 : effectiveStream === "live" ? Wifi : effectiveStream === "connecting" ? Radio : effectiveStream === "polling" ? Clock3 : WifiOff;
 
   return (
     <section className="chart-shell" data-testid="market-chart" aria-label="Interactive market chart">
@@ -361,11 +373,11 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
         <div className="chart-meta-left">
           {lastBar ? <><span>O {lastBar.open.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span><span>H {lastBar.high.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span><span>L {lastBar.low.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span><span>C {lastBar.close.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span></> : <span className="muted">Awaiting market data</span>}
         </div>
-        <div className={`stream-indicator stream-${stream}`}><StreamIcon size={12} /><span>{streamLabel}</span></div>
+        <div className={`stream-indicator stream-${effectiveStream}`}><StreamIcon size={12} /><span>{streamLabel}</span></div>
       </div>
       <div className="chart-stage">
         <div ref={containerRef} className="chart-canvas" />
-        {loading && <div className="chart-overlay"><LoaderCircle className="spin" size={18} /><span>Loading Binance history</span></div>}
+        {loading && <div className="chart-overlay"><LoaderCircle className="spin" size={18} /><span>Loading {exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase()} history</span></div>}
         {error && <div className="chart-overlay chart-error"><AlertTriangle size={18} /><span>{error}</span><button className="link-button" onClick={() => {
           setErrorState(null);
           setRefreshing(true);
@@ -376,7 +388,7 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
         {replayMode && replayBars.length === 0 && <div className="chart-overlay"><Clock3 size={16} /><span>Seed a historical session to load past bars only.</span></div>}
       </div>
       <div className="chart-footer">
-        <span>{gapCount > 0 ? <><AlertTriangle size={11} /> {gapCount} gap{gapCount === 1 ? "" : "s"} detected</> : replayMode ? "Future candles are not loaded · UTC" : "UTC · Binance Spot public market data"}</span>
+        <span>{gapCount > 0 ? <><AlertTriangle size={11} /> {gapCount} gap{gapCount === 1 ? "" : "s"} detected</> : replayMode ? "Future candles are not loaded · UTC" : `UTC · ${exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase()} public spot data`}</span>
         <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noreferrer">Charts by TradingView · Lightweight Charts™</a>
       </div>
     </section>

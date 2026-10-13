@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { executePaperOrderWithDependencies, type ExecutePaperOrderRequest } from "../src/paper.js";
 import { fillPaperOrder, type PaperOrder, type PaperPortfolio } from "@newbeing/core";
 
-function fixture(fetchReferencePrice: () => Promise<number>) {
+type Quote = { price: number; timestamp: number | null };
+
+function fixture(fetchReferencePrice: () => Promise<Quote>) {
   const orders = new Map<string, PaperOrder>();
   const portfolios = new Map<string, PaperPortfolio>();
   const events: string[] = [];
@@ -25,6 +27,8 @@ function fixture(fetchReferencePrice: () => Promise<number>) {
       return submitted;
     },
     fetchReferencePrice,
+    now: () => Date.parse("2026-01-01T00:00:00.000Z"),
+    maxQuoteAgeMs: 30_000,
     finalize: (id: string, price: number, symbol: string) => {
       const order = orders.get(id);
       if (!order) throw new Error("Missing intent");
@@ -55,7 +59,7 @@ describe("paper execution reliability", () => {
     const { dependencies, events } = fixture(async () => {
       requests += 1;
       expect(events.slice(0, 2)).toEqual(["created:stable-paper-id", "submitted:stable-paper-id"]);
-      return 50_000;
+      return { price: 50_000, timestamp: Date.parse("2026-01-01T00:00:00.000Z") };
     });
     const first = await executePaperOrderWithDependencies(request, dependencies);
     expect(first.order.status).toBe("filled");
@@ -66,6 +70,24 @@ describe("paper execution reliability", () => {
     expect(requests).toBe(1);
   });
 
+  it("rejects stale, missing, non-finite, and future quote timestamps before recording a fill", async () => {
+    for (const timestamp of [1_767_225_569_999, null, Number.NaN, Number.POSITIVE_INFINITY, 1_767_225_600_001]) {
+      const { dependencies, events } = fixture(async () => ({ price: 50_000, timestamp }));
+      const result = await executePaperOrderWithDependencies(request, dependencies);
+      expect(result.order.status).toBe("unknown");
+      expect(result.retrySafe).toBe(false);
+      expect(events).toEqual(["created:stable-paper-id", "submitted:stable-paper-id", "unknown:stable-paper-id"]);
+      expect(events).not.toContain("filled:stable-paper-id");
+    }
+  });
+
+  it("accepts a quote at the age threshold and preserves the fresh last-price fallback", async () => {
+    const { dependencies, events } = fixture(async () => ({ price: 49_900, timestamp: 1_767_225_570_000 }));
+    const result = await executePaperOrderWithDependencies(request, dependencies);
+    expect(result.order.status).toBe("filled");
+    expect(result.order.fillPrice).toBe(49_900);
+    expect(events).toContain("filled:stable-paper-id");
+  });
   it("does not auto-retry an ambiguous intent after quote failure", async () => {
     let requests = 0;
     const { dependencies } = fixture(async () => {

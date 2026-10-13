@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_WORKSPACE_STATE, logEvent, STRATEGIES, type Timeframe, type WorkspaceState } from "@newbeing/core";
-import { findCandleGaps, getBinanceAdapter, removeFormingCandles } from "@newbeing/market-data";
+import { findCandleGaps, getExchangeAdapter, removeFormingCandles } from "@newbeing/market-data";
 import {
   getExperiment,
   getReplaySession,
@@ -84,8 +84,8 @@ export function createNewBeingMcpServer(): McpServer {
   });
 
   server.registerTool("get_market_data", {
-    title: "Get Binance public OHLCV",
-    description: "Fetch completed Binance Spot bars. Returns normalized UTC timestamps, detected gaps and public-source metadata.",
+    title: "Get selected venue public OHLCV",
+    description: "Fetch completed public Spot bars from the selected venue. Returns normalized UTC timestamps, detected gaps and source metadata. Backtest, Replay and Paper remain Binance-only.",
     inputSchema: z.object({
       symbol: symbolSchema,
       timeframe,
@@ -102,9 +102,11 @@ export function createNewBeingMcpServer(): McpServer {
         }
         return textResult({ symbol, timeframe: tf, source: "Local Replay session; future bars withheld", candles: session.bars, gaps: findCandleGaps(session.bars, tf as Timeframe), futureBarsLoaded: 0 });
       }
-      const raw = await getBinanceAdapter().fetchOHLCV(symbol, tf as Timeframe, limit);
+      const adapter = getExchangeAdapter(workspace.exchange);
+      const raw = await adapter.fetchOHLCV(symbol, tf as Timeframe, limit);
       const candles = removeFormingCandles(raw, tf as Timeframe);
-      return textResult({ symbol, timeframe: tf, source: "Binance Spot public market data via CCXT", candles, gaps: findCandleGaps(candles, tf as Timeframe) });
+      const exchangeName = { binance: "Binance Spot", coinbaseexchange: "Coinbase Exchange", kraken: "Kraken Spot", okx: "OKX Spot" }[workspace.exchange];
+      return textResult({ exchange: workspace.exchange, symbol, timeframe: tf, source: `${exchangeName} public market data via CCXT`, candles, gaps: findCandleGaps(candles, tf as Timeframe) });
     } catch (error) { return errorResult(error); }
   });
 
@@ -202,6 +204,7 @@ export function createNewBeingMcpServer(): McpServer {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async (input) => {
     try {
+      if (getWorkspaceState().state.exchange !== "binance") return errorResult(new Error("Backtests currently use Binance Spot data only. Switch the selected venue to Binance Spot first."));
       const config = {
         initialCapital: input.initial_capital,
         positionFraction: input.position_fraction,
@@ -276,6 +279,7 @@ export function createNewBeingMcpServer(): McpServer {
     try {
       const current = getWorkspaceState().state;
       const replayId = replay_id ?? current.activeReplayId;
+      if ((workspace === "backtest" || workspace === "replay") && current.exchange !== "binance") return errorResult(new Error("Backtest and Replay are currently limited to Binance Spot. Switch venues before opening them."));
       if (workspace === "replay" && (!replayId || !getReplaySession(replayId))) return errorResult(new Error("Provide a valid replay_id before opening Replay."));
       if (result_id && !getExperiment(result_id)) return errorResult(new Error("Requested backtest result does not exist."));
       const state: WorkspaceState = {
@@ -302,8 +306,10 @@ export function createNewBeingMcpServer(): McpServer {
   }, async ({ symbol: orderSymbol, side, quantity, mode }) => {
     if (mode === "live") return errorResult(new Error("Live trading is disabled; a real order preview cannot be prepared."));
     try {
-      if (getWorkspaceState().state.activeWorkspace === "replay") return errorResult(new Error("Normal Paper order previews are disabled during Replay. Use the replay UI ticket, which fills only at the revealed cursor close."));
-      const summary = await getBinanceAdapter().fetchSummary(orderSymbol);
+      const workspace = getWorkspaceState().state;
+      if (workspace.exchange !== "binance") return errorResult(new Error("Paper order previews currently support Binance Spot only."));
+      if (workspace.activeWorkspace === "replay") return errorResult(new Error("Normal Paper order previews are disabled during Replay. Use the replay UI ticket, which fills only at the revealed cursor close."));
+      const summary = await getExchangeAdapter(workspace.exchange).fetchSummary(orderSymbol);
       const price = side === "buy" ? (summary.ask ?? summary.last) : (summary.bid ?? summary.last);
       if (price === null || price <= 0) return errorResult(new Error("No usable public quote is available for a preview."));
       const portfolio = getPaperPortfolio(paperAccountId(orderSymbol));

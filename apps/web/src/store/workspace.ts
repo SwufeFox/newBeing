@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { DEFAULT_WORKSPACE_STATE, STRATEGIES, type BacktestConfig, type BacktestResult, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
+import { DEFAULT_WORKSPACE_STATE, EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestConfig, type BacktestResult, type ExchangeId, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
 
 export type ThemeMode = "dark" | "light";
 export type InspectorTab = "watchlist" | "book" | "trades" | "strategy" | "context";
@@ -18,6 +18,7 @@ export interface WorkspaceStore extends WorkspaceState {
   sourceDrafts: Record<string, string>;
   backtest: BacktestResult | null;
   syncUpdatedAt: number;
+  setExchange: (exchange: ExchangeId) => void;
   setSymbol: (symbol: string) => void;
   setTimeframe: (timeframe: Timeframe) => void;
   setWorkspace: (activeWorkspace: WorkspaceState["activeWorkspace"]) => void;
@@ -52,8 +53,20 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   backtest: null,
   syncUpdatedAt: 0,
   setSymbol: (symbol) => set({ symbol, visibleRange: { from: null, to: null } }),
+  setExchange: (exchange) => set((state) => ({
+    exchange,
+    timeframe: EXCHANGE_TIMEFRAMES[exchange].includes(state.timeframe) ? state.timeframe : "15m",
+    activeWorkspace: exchange === "binance" ? state.activeWorkspace : "terminal",
+    activeBacktestId: exchange === "binance" ? state.activeBacktestId : null,
+    activeReplayId: exchange === "binance" ? state.activeReplayId : null,
+    backtest: exchange === "binance" ? state.backtest : null,
+    visibleRange: { from: null, to: null },
+  })),
+
   setTimeframe: (timeframe) => set({ timeframe, visibleRange: { from: null, to: null } }),
-  setWorkspace: (activeWorkspace) => set({ activeWorkspace }),
+  setWorkspace: (activeWorkspace) => set((state) => ({
+    activeWorkspace: state.exchange === "binance" || (activeWorkspace !== "backtest" && activeWorkspace !== "replay") ? activeWorkspace : "terminal",
+  })),
   setInspectorTab: (inspectorTab) => set({ inspectorTab }),
   setDockTab: (dockTab) => set({ dockTab }),
   setTheme: (theme) => set({ theme }),

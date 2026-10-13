@@ -37,6 +37,9 @@ export async function GET(request: Request): Promise<NextResponse> {
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
+    if (getWorkspaceState().state.exchange !== "binance") {
+      return NextResponse.json({ error: "Backtests currently use Binance Spot historical data only. Select Binance to run a backtest." }, { status: 409 });
+    }
     const body: unknown = await request.json();
     const parsed = requestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid backtest request." }, { status: 400 });
@@ -56,7 +59,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       parameters: parsed.data.parameters,
       config,
       ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
-    }, { marketAdapter: getWebMarketAdapter() });
+    }, { marketAdapter: getWebMarketAdapter("binance") });
     return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Backtest failed.";

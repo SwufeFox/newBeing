@@ -2,13 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { BookOpen, Braces, Check, Clock3, Copy, History, Layers3, Radio, TrendingDown, TrendingUp, Wallet } from "lucide-react";
-import type { BacktestResult, OrderPreview, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
+import type { BacktestResult, ExchangeId, OrderPreview, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
 import type { MarketSummary, OrderBookSnapshot, RecentTrade } from "@newbeing/market-data/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StrategyLab } from "@/components/strategy-lab";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
+
+function exchangeLabel(exchange: ExchangeId): string {
+  return ({ binance: "Binance Spot", coinbaseexchange: "Coinbase Exchange", kraken: "Kraken Spot", okx: "OKX Spot" })[exchange];
+}
 
 function price(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
@@ -57,14 +61,14 @@ function parsePreviews(payload: unknown): OrderPreview[] {
   return payload.items as OrderPreview[];
 }
 
-function OrderBook({ symbol }: { symbol: string }): React.JSX.Element {
+function OrderBook({ symbol, exchange }: { symbol: string; exchange: ExchangeId }): React.JSX.Element {
   const [book, setBook] = useState<OrderBookSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
-        const response = await fetch(`/api/market?kind=book&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+        const response = await fetch(`/api/market?kind=book&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
         const payload: unknown = await response.json();
         if (!response.ok) throw new Error("Order book is unavailable.");
         const parsed = parseBook(payload);
@@ -75,9 +79,9 @@ function OrderBook({ symbol }: { symbol: string }): React.JSX.Element {
       }
     };
     void refresh();
-    const interval = window.setInterval(() => void refresh(), 3_000);
+    const interval = window.setInterval(() => void refresh(), exchange === "binance" ? 3_000 : 15_000);
     return () => { disposed = true; window.clearInterval(interval); };
-  }, [symbol]);
+  }, [symbol, exchange]);
 
   const maxSize = Math.max(0.000001, ...(book?.bids.map((level) => level.amount) ?? []), ...(book?.asks.map((level) => level.amount) ?? []));
   return (
@@ -94,19 +98,19 @@ function OrderBook({ symbol }: { symbol: string }): React.JSX.Element {
         <span>{price(level.price)}</span><span>{level.amount.toFixed(4)}</span>
       </div>)}
       {!book && !error && <div className="book-loading">Loading public depth…</div>}
-      <div className="data-stamp">Binance public depth snapshot</div>
+      <div className="data-stamp">{exchangeLabel(exchange)} public depth snapshot</div>
     </div>
   );
 }
 
-function RecentTrades({ symbol }: { symbol: string }): React.JSX.Element {
+function RecentTrades({ symbol, exchange }: { symbol: string; exchange: ExchangeId }): React.JSX.Element {
   const [trades, setTrades] = useState<RecentTrade[]>([]);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
-        const response = await fetch(`/api/market?kind=trades&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+        const response = await fetch(`/api/market?kind=trades&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
         const payload: unknown = await response.json();
         if (!response.ok) throw new Error("Recent trades are unavailable.");
         const next = parseTrades(payload);
@@ -116,9 +120,9 @@ function RecentTrades({ symbol }: { symbol: string }): React.JSX.Element {
       }
     };
     void refresh();
-    const interval = window.setInterval(() => void refresh(), 3_000);
+    const interval = window.setInterval(() => void refresh(), exchange === "binance" ? 3_000 : 15_000);
     return () => { disposed = true; window.clearInterval(interval); };
-  }, [symbol]);
+  }, [symbol, exchange]);
 
   return <div className="recent-trades-panel">
     <div className="trades-columns"><span>PRICE</span><span>AMOUNT</span><span>TIME</span></div>
@@ -129,13 +133,14 @@ function RecentTrades({ symbol }: { symbol: string }): React.JSX.Element {
       <span>{new Date(trade.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
     </div>)}
     {trades.length === 0 && !error && <div className="book-loading">Loading latest trades…</div>}
-    <div className="data-stamp">Exchange tape · public trades</div>
+      <div className="data-stamp">{exchangeLabel(exchange)} public trades</div>
   </div>;
 }
 
 function WorkspaceContext(): React.JSX.Element {
   const state = useWorkspaceStore(useShallow((workspace) => ({
     symbol: workspace.symbol,
+    exchange: workspace.exchange,
     timeframe: workspace.timeframe,
     activeWorkspace: workspace.activeWorkspace,
     selectedStrategyId: workspace.selectedStrategyId,
@@ -146,7 +151,6 @@ function WorkspaceContext(): React.JSX.Element {
   })));
   const [copied, setCopied] = useState(false);
   const context = useMemo(() => ({
-    exchange: "binance",
     ...state,
     quoteScope: "public market data only; paper portfolio is local; live trading disabled",
   }), [state]);
@@ -163,7 +167,7 @@ function WorkspaceContext(): React.JSX.Element {
     <div className="context-callout"><Braces size={14} /><span>Shared with local MCP</span><span className="live-dot" /></div>
     <div className="context-list">
       <ContextField label="SYMBOL" value={state.symbol} />
-      <ContextField label="EXCHANGE" value="Binance Spot" />
+      <ContextField label="EXCHANGE" value={exchangeLabel(state.exchange)} />
       <ContextField label="TIMEFRAME" value={state.timeframe} />
       <ContextField label="WORKSPACE" value={state.activeWorkspace} />
       <ContextField label="STRATEGY" value={state.selectedStrategyId} />
@@ -183,6 +187,7 @@ function ContextField({ label, value }: { label: string; value: string }): React
 }
 
 function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSummary | null }): React.JSX.Element {
+  const exchange = useWorkspaceStore((state) => state.exchange);
   const [portfolio, setPortfolio] = useState<PaperPortfolio | null>(null);
   const [previews, setPreviews] = useState<OrderPreview[]>([]);
   const [quantity, setQuantity] = useState("0.001");
@@ -195,6 +200,7 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
   const referencePrice = summary?.last ?? null;
 
   useEffect(() => {
+    if (exchange !== "binance") return;
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
@@ -212,7 +218,7 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
     void refresh();
     const interval = window.setInterval(() => void refresh(), 8_000);
     return () => { disposed = true; window.clearInterval(interval); };
-  }, [symbol, notice]);
+  }, [symbol, notice, exchange]);
 
   const resolvePreview = async (previewId: string, action: "confirm" | "dismiss"): Promise<void> => {
     setResolvingPreview(previewId);
@@ -269,22 +275,25 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
     }
   };
 
+  const activePortfolio = exchange === "binance" ? portfolio : null;
+  const activePreviews = exchange === "binance" ? previews : [];
   const estimated = referencePrice !== null && Number.isFinite(number) ? number * referencePrice : null;
-  const pnl = portfolio && referencePrice !== null && portfolio.averageEntryPrice !== null
-    ? portfolio.baseBalance * (referencePrice - portfolio.averageEntryPrice)
+  const pnl = activePortfolio && referencePrice !== null && activePortfolio.averageEntryPrice !== null
+    ? activePortfolio.baseBalance * (referencePrice - activePortfolio.averageEntryPrice)
     : 0;
 
   return <div className="paper-ticket">
     <div className="ticket-heading"><div><Wallet size={13} /><span>SIMULATED ORDER</span></div><span className="paper-chip">PAPER</span></div>
-    <div className="account-summary"><span>USDT AVAILABLE</span><strong>{portfolio ? `$${portfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}</strong></div>
-    <div className="account-summary position"><span>{symbol.split("/")[0]} POSITION</span><strong>{portfolio ? `${portfolio.baseBalance.toFixed(6)} ${symbol.split("/")[0]}` : "—"}</strong><small className={pnl >= 0 ? "positive" : "negative"}>uPnL {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT</small></div>
+    <div className="account-summary"><span>USDT AVAILABLE</span><strong>{activePortfolio ? `$${activePortfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}</strong></div>
+    <div className="account-summary position"><span>{symbol.split("/")[0]} POSITION</span><strong>{activePortfolio ? `${activePortfolio.baseBalance.toFixed(6)} ${symbol.split("/")[0]}` : "—"}</strong><small className={pnl >= 0 ? "positive" : "negative"}>uPnL {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT</small></div>
+    {exchange !== "binance" && <div className="ticket-disclaimer">Paper execution and order previews are currently locked to Binance Spot.</div>}
     <label className="ticket-field"><span>QUANTITY · {symbol.split("/")[0]}</span><input data-testid="paper-quantity" type="number" min="0" step="0.0001" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
     <div className="ticket-estimate"><span>Est. notional</span><strong>{estimated === null ? "—" : `$${estimated.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</strong></div>
     <div className="ticket-actions">
-      <Button data-testid="paper-buy" variant="primary" size="sm" disabled={busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"} onClick={() => void submit("buy")}><TrendingUp size={13} />Buy</Button>
-      <Button variant="danger" size="sm" disabled={busy || !Number.isFinite(number) || number <= 0 || !portfolio || number > portfolio.baseBalance || mode !== "paper"} onClick={() => void submit("sell")}><TrendingDown size={13} />Sell</Button>
+      <Button data-testid="paper-buy" variant="primary" size="sm" disabled={exchange !== "binance" || busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"} onClick={() => void submit("buy")}><TrendingUp size={13} />Buy</Button>
+      <Button variant="danger" size="sm" disabled={exchange !== "binance" || busy || !Number.isFinite(number) || number <= 0 || !activePortfolio || number > activePortfolio.baseBalance || mode !== "paper"} onClick={() => void submit("sell")}><TrendingDown size={13} />Sell</Button>
     </div>
-    {previews.map((preview) => <div className="order-preview-card" key={preview.id}>
+    {activePreviews.map((preview) => <div className="order-preview-card" key={preview.id}>
       <div className="preview-topline"><span>AI ORDER PREVIEW</span><span className="paper-chip">{preview.status.toUpperCase()}</span></div>
       <strong className={preview.side === "buy" ? "positive" : "negative"}>{preview.side.toUpperCase()} {preview.quantity} {symbol.split("/")[0]}</strong>
       <small>Ref {price(preview.referencePrice)} · est. {price(preview.estimatedNotional)} USDT · fee {price(preview.estimatedFee)}</small>
@@ -337,7 +346,7 @@ function ReplayTicket({
 }
 
 export function Inspector({ summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
-  const [symbol, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.inspectorTab, state.setInspectorTab]));
+  const [symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
   const selectedTab = replayMode ? "context" : tab === "watchlist" ? "book" : tab;
   return <aside className="inspector-panel">
     <Tabs value={selectedTab} onValueChange={(value) => setTab(value as "book" | "trades" | "strategy" | "context")} className="inspector-tabs">
@@ -347,8 +356,9 @@ export function Inspector({ summary, result, running, replayMode, replaySession,
         {!replayMode && <TabsTrigger value="strategy" aria-label="Strategy lab"><Layers3 size={13} /><span>Strategy</span></TabsTrigger>}
         <TabsTrigger value="context" aria-label="AI context"><Braces size={13} /><span>AI</span></TabsTrigger>
       </TabsList>
-      <TabsContent value="book"><OrderBook symbol={symbol} /></TabsContent>
-      <TabsContent value="trades"><RecentTrades symbol={symbol} /></TabsContent>
+
+      <TabsContent value="book"><OrderBook symbol={symbol} exchange={exchange} /></TabsContent>
+      <TabsContent value="trades"><RecentTrades symbol={symbol} exchange={exchange} /></TabsContent>
       <TabsContent value="strategy"><StrategyLab onRun={onRun} running={running} /></TabsContent>
       <TabsContent value="context"><WorkspaceContext /></TabsContent>
     </Tabs>

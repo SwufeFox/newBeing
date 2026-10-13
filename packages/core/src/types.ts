@@ -1,6 +1,14 @@
 export const ENGINE_VERSION = "newbeing-backtest/0.1.0";
 
 export type Timeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+export type ExchangeId = "binance" | "coinbaseexchange" | "okx" | "kraken";
+export const SUPPORTED_EXCHANGES: readonly ExchangeId[] = ["binance", "coinbaseexchange", "okx", "kraken"];
+export const EXCHANGE_TIMEFRAMES: Readonly<Record<ExchangeId, readonly Timeframe[]>> = {
+  binance: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
+  coinbaseexchange: ["1m", "5m", "15m", "1h", "1d"],
+  okx: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
+  kraken: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
+};
 export type MarketSide = "long" | "short" | "flat";
 
 export interface Candle {
@@ -114,7 +122,7 @@ export interface WorkspaceLayout {
 export interface WorkspaceState {
   symbol: string;
   timeframe: Timeframe;
-  exchange: "binance";
+  exchange: ExchangeId;
   mode: "paper";
   activeWorkspace: "terminal" | "research" | "backtest" | "replay";
   selectedStrategyId: string;

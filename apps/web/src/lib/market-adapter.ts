@@ -1,5 +1,5 @@
 import {
-  getBinanceAdapter,
+  getExchangeAdapter,
   timeframeMilliseconds,
   type ExchangeAdapter,
   type MarketSummary,
@@ -7,7 +7,7 @@ import {
   type OrderBookSnapshot,
   type RecentTrade,
 } from "@newbeing/market-data";
-import type { Candle, Timeframe } from "@newbeing/core";
+import type { Candle, ExchangeId, Timeframe } from "@newbeing/core";
 
 const SYMBOLS: MarketSymbol[] = [
   { symbol: "BTC/USDT", base: "BTC", quote: "USDT", active: true },
@@ -105,14 +105,18 @@ const fixtureAdapter: ExchangeAdapter = {
 };
 
 const isFixtureMode = process.env.NEWBEING_E2E_FIXTURES === "1" && process.env.NODE_ENV !== "production";
-let realAdapter: ExchangeAdapter | undefined;
-
-export function getWebMarketAdapter(): ExchangeAdapter {
-  if (isFixtureMode) return fixtureAdapter;
-  realAdapter ??= getBinanceAdapter();
-  return realAdapter;
+export function getWebMarketAdapter(exchange: ExchangeId = "binance"): ExchangeAdapter {
+  if (isFixtureMode && exchange === "binance") return fixtureAdapter;
+  return getExchangeAdapter(exchange);
 }
 
-export function marketDataSourceLabel(): string {
-  return isFixtureMode ? "Deterministic test fixture" : "Binance Spot via CCXT";
+const EXCHANGE_LABELS: Record<ExchangeId, string> = {
+  binance: "Binance Spot",
+  coinbaseexchange: "Coinbase Exchange",
+  kraken: "Kraken Spot",
+  okx: "OKX Spot",
+};
+
+export function marketDataSourceLabel(exchange: ExchangeId = "binance"): string {
+  return isFixtureMode && exchange === "binance" ? "Deterministic test fixture" : `${EXCHANGE_LABELS[exchange]} via CCXT`;
 }

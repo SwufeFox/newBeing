@@ -1,15 +1,11 @@
 import ccxt, { type MarketInterface, type OHLCV, type OrderBook as CcxtOrderBook, type Trade as CcxtTrade } from "ccxt";
-import type { Candle, Timeframe } from "@newbeing/core";
+import type { Candle, ExchangeId, Timeframe } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES } from "@newbeing/core";
+import { coalesceRequest } from "./coalesce.js";
 import { findCandleGaps, mergeCandles, reconnectDelayMs, removeFormingCandles, timeframeMilliseconds } from "./utils.js";
-import type {
-  ExchangeAdapter,
-  MarketSummary,
-  MarketSymbol,
-  OrderBookSnapshot,
-  RecentTrade,
-} from "./types.js";
+import type { ExchangeAdapter, MarketSummary, MarketSymbol, OrderBookSnapshot, RecentTrade } from "./types.js";
 
-const SUPPORTED_TIMEFRAMES = new Set<Timeframe>(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]);
+const EXCHANGE_IDS: readonly ExchangeId[] = ["binance", "coinbaseexchange", "okx", "kraken"];
 
 function validSymbol(symbol: string): string {
   const value = symbol.trim().toUpperCase();
@@ -21,25 +17,24 @@ function finiteOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-export class BinanceSpotAdapter implements ExchangeAdapter {
-  readonly id = "binance" as const;
+export class CcxtSpotAdapter implements ExchangeAdapter {
+  readonly id: ExchangeId;
   private readonly exchange: InstanceType<typeof ccxt.binance>;
 
-  constructor() {
-    this.exchange = new ccxt.binance({
-      enableRateLimit: true,
-      options: { defaultType: "spot", adjustForTimeDifference: true },
-      timeout: 12_000,
-    });
+  constructor(id: ExchangeId) {
+    if (!EXCHANGE_IDS.includes(id)) throw new Error(`Unsupported exchange: ${id}`);
+    this.id = id;
+    const Exchange = ccxt[id] as typeof ccxt.binance;
+    this.exchange = new Exchange({ enableRateLimit: true, options: { defaultType: "spot", adjustForTimeDifference: true }, timeout: 12_000 });
   }
 
   async searchSymbols(query: string, limit = 60): Promise<MarketSymbol[]> {
     const markets: Record<string, MarketInterface | undefined> = await this.exchange.loadMarkets();
     const normalized = query.trim().toUpperCase().replace(/[^A-Z0-9/]/g, "");
-    const marketList = Object.values(markets).filter((market): market is MarketInterface => market !== undefined);
-    return marketList
-      .filter((market) => market.spot && market.quote === "USDT" && market.active !== false)
-      .filter((market) => normalized.length === 0 || market.symbol.includes(normalized) || market.base.includes(normalized))
+    return Object.values(markets)
+      .filter((market): market is MarketInterface => market !== undefined)
+      .filter((market) => market.spot && market.active !== false)
+      .filter((market) => normalized.length === 0 || market.symbol.includes(normalized) || market.base.includes(normalized) || market.quote.includes(normalized))
       .sort((a, b) => a.symbol.localeCompare(b.symbol))
       .slice(0, Math.max(1, Math.min(100, limit)))
       .map((market) => ({ symbol: market.symbol, base: market.base, quote: market.quote, active: market.active !== false }));
@@ -55,94 +50,77 @@ export class BinanceSpotAdapter implements ExchangeAdapter {
   }
 
   private async fetchOHLCVFrom(symbol: string, timeframe: Timeframe, since: number | undefined, limit: number): Promise<Candle[]> {
-    if (!SUPPORTED_TIMEFRAMES.has(timeframe)) throw new Error("Unsupported timeframe.");
-    await this.exchange.loadMarkets();
+    if (!EXCHANGE_TIMEFRAMES[this.id].includes(timeframe)) throw new Error(`${this.id} does not support ${timeframe} candles.`);
     const normalized = validSymbol(symbol);
-    const rows: OHLCV[] = await this.exchange.fetchOHLCV(normalized, timeframe, since, Math.max(2, Math.min(1000, limit)));
-    return rows.map((row: OHLCV) => {
-      const [timestamp, open, high, low, close, volume] = row;
-      if (typeof timestamp !== "number" || typeof open !== "number" || typeof high !== "number" || typeof low !== "number" || typeof close !== "number" || typeof volume !== "number"
-        || ![timestamp, open, high, low, close, volume].every(Number.isFinite)) {
-        throw new Error("Binance returned an invalid OHLCV row.");
-      }
-      return { timestamp, open, high, low, close, volume };
+    const venueLimit = this.id === "coinbaseexchange" ? 300 : 1000;
+    const safeLimit = Math.max(2, Math.min(venueLimit, Number.isFinite(limit) ? Math.floor(limit) : 500));
+    const key = `${this.id}|ohlcv|${normalized}|${timeframe}|${since ?? "latest"}|${safeLimit}`;
+    return coalesceRequest(key, async () => {
+      await this.exchange.loadMarkets();
+      const rows: OHLCV[] = await this.exchange.fetchOHLCV(normalized, timeframe, since, safeLimit);
+      return rows.map((row) => {
+        const [timestamp, open, high, low, close, volume] = row;
+        if (typeof timestamp !== "number" || typeof open !== "number" || typeof high !== "number" || typeof low !== "number" || typeof close !== "number" || typeof volume !== "number"
+          || ![timestamp, open, high, low, close, volume].every(Number.isFinite)) throw new Error(`${this.id} returned an invalid OHLCV row.`);
+        return { timestamp, open, high, low, close, volume };
+      });
     });
   }
 
   async fetchSummary(symbol: string): Promise<MarketSummary> {
     const normalized = validSymbol(symbol);
-    const ticker = await this.exchange.fetchTicker(normalized);
-    return {
-      symbol: normalized,
-      last: finiteOrNull(ticker.last),
-      changePct24h: finiteOrNull(ticker.percentage),
-      high24h: finiteOrNull(ticker.high),
-      low24h: finiteOrNull(ticker.low),
-      quoteVolume24h: finiteOrNull(ticker.quoteVolume),
-      bid: finiteOrNull(ticker.bid),
-      ask: finiteOrNull(ticker.ask),
-      timestamp: finiteOrNull(ticker.timestamp),
-    };
+    const ticker = await coalesceRequest(`${this.id}|ticker|${normalized}`, async () => {
+      await this.exchange.loadMarkets();
+      return this.exchange.fetchTicker(normalized);
+    });
+    return { symbol: normalized, last: finiteOrNull(ticker.last), changePct24h: finiteOrNull(ticker.percentage), high24h: finiteOrNull(ticker.high), low24h: finiteOrNull(ticker.low), quoteVolume24h: finiteOrNull(ticker.quoteVolume), bid: finiteOrNull(ticker.bid), ask: finiteOrNull(ticker.ask), timestamp: finiteOrNull(ticker.timestamp) };
   }
 
   async fetchSummaries(symbols: readonly string[]): Promise<MarketSummary[]> {
     const normalized = [...new Set(symbols.map(validSymbol))].slice(0, 40);
     if (normalized.length === 0) return [];
+    await this.exchange.loadMarkets();
+    if (!this.exchange.has.fetchTickers) return Promise.all(normalized.map((symbol) => this.fetchSummary(symbol)));
     const tickers = await this.exchange.fetchTickers(normalized);
     return normalized.flatMap((symbol) => {
       const ticker = tickers[symbol];
-      if (!ticker) return [];
-      return [{
-        symbol,
-        last: finiteOrNull(ticker.last),
-        changePct24h: finiteOrNull(ticker.percentage),
-        high24h: finiteOrNull(ticker.high),
-        low24h: finiteOrNull(ticker.low),
-        quoteVolume24h: finiteOrNull(ticker.quoteVolume),
-        bid: finiteOrNull(ticker.bid),
-        ask: finiteOrNull(ticker.ask),
-        timestamp: finiteOrNull(ticker.timestamp),
-      }];
+      return ticker ? [{ symbol, last: finiteOrNull(ticker.last), changePct24h: finiteOrNull(ticker.percentage), high24h: finiteOrNull(ticker.high), low24h: finiteOrNull(ticker.low), quoteVolume24h: finiteOrNull(ticker.quoteVolume), bid: finiteOrNull(ticker.bid), ask: finiteOrNull(ticker.ask), timestamp: finiteOrNull(ticker.timestamp) }] : [];
     });
   }
 
   async fetchOrderBook(symbol: string, limit = 20): Promise<OrderBookSnapshot> {
     const normalized = validSymbol(symbol);
+    await this.exchange.loadMarkets();
     const book: CcxtOrderBook = await this.exchange.fetchOrderBook(normalized, Math.max(5, Math.min(100, limit)));
-    return {
-      symbol: normalized,
-      timestamp: finiteOrNull(book.timestamp),
-      bids: book.bids.map(([price, amount]) => ({ price: price ?? 0, amount: amount ?? 0 })),
-      asks: book.asks.map(([price, amount]) => ({ price: price ?? 0, amount: amount ?? 0 })),
-    };
+    return { symbol: normalized, timestamp: finiteOrNull(book.timestamp), bids: book.bids.map(([price, amount]) => ({ price: price ?? 0, amount: amount ?? 0 })), asks: book.asks.map(([price, amount]) => ({ price: price ?? 0, amount: amount ?? 0 })) };
   }
 
   async fetchRecentTrades(symbol: string, limit = 20): Promise<RecentTrade[]> {
     const normalized = validSymbol(symbol);
+    await this.exchange.loadMarkets();
     const trades = await this.exchange.fetchTrades(normalized, undefined, Math.max(5, Math.min(100, limit)));
     return trades.flatMap((trade: CcxtTrade) => {
-      if (typeof trade.timestamp !== "number" || typeof trade.price !== "number" || typeof trade.amount !== "number"
-        || ![trade.timestamp, trade.price, trade.amount].every(Number.isFinite)) return [];
-      return [{
-        id: typeof trade.id === "string" ? trade.id : `${trade.timestamp}-${trade.price}-${trade.amount}`,
-        timestamp: trade.timestamp,
-        side: trade.side === "buy" || trade.side === "sell" ? trade.side : "unknown",
-        price: trade.price,
-        amount: trade.amount,
-      }];
+      if (typeof trade.timestamp !== "number" || typeof trade.price !== "number" || typeof trade.amount !== "number" || ![trade.timestamp, trade.price, trade.amount].every(Number.isFinite)) return [];
+      return [{ id: typeof trade.id === "string" ? trade.id : `${trade.timestamp}-${trade.price}-${trade.amount}`, timestamp: trade.timestamp, side: trade.side === "buy" || trade.side === "sell" ? trade.side : "unknown", price: trade.price, amount: trade.amount }];
     });
   }
 
-  async close(): Promise<void> {
-    await this.exchange.close();
+  async close(): Promise<void> { await this.exchange.close(); }
+}
+
+export class BinanceSpotAdapter extends CcxtSpotAdapter {
+  constructor() { super("binance"); }
+}
+
+const adapters = new Map<ExchangeId, CcxtSpotAdapter>();
+export function getExchangeAdapter(id: ExchangeId = "binance"): CcxtSpotAdapter {
+  let adapter = adapters.get(id);
+  if (!adapter) {
+    adapter = id === "binance" ? new BinanceSpotAdapter() : new CcxtSpotAdapter(id);
+    adapters.set(id, adapter);
   }
+  return adapter;
 }
-
-let singleton: BinanceSpotAdapter | undefined;
-
-export function getBinanceAdapter(): BinanceSpotAdapter {
-  singleton ??= new BinanceSpotAdapter();
-  return singleton;
-}
+export function getBinanceAdapter(): BinanceSpotAdapter { return getExchangeAdapter("binance") as BinanceSpotAdapter; }
 
 export { findCandleGaps, mergeCandles, reconnectDelayMs, removeFormingCandles, timeframeMilliseconds } from "./utils.js";

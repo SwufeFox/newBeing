@@ -6,6 +6,7 @@ minimumReleaseAgeExclude:
   - drizzle-orm@0.45.4
 
 allowBuilds:
+  better-sqlite3: true
   esbuild: true
   bufferutil: false
   ccxt: false

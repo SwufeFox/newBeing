@@ -6,7 +6,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<NextResponse> {
-  if (getWorkspaceState().state.activeWorkspace === "replay") {
+  const workspace = getWorkspaceState().state;
+  if (workspace.exchange !== "binance") {
+    return NextResponse.json({ error: "Paper order previews currently support Binance Spot only." }, { status: 409 });
+  }
+  if (workspace.activeWorkspace === "replay") {
     return NextResponse.json({ error: "Normal order previews are hidden during Replay." }, { status: 409 });
   }
   const url = new URL(request.url);

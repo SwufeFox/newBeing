@@ -21,10 +21,16 @@ import { WorkspaceSync } from "@/components/workspace-sync";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
-import type { BacktestResult, Candle, PaperOrder, PaperPortfolio, ReplaySession, Timeframe, WorkspaceState } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES, type BacktestResult, type Candle, type PaperOrder, type PaperPortfolio, type ReplaySession, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import type { MarketSummary, MarketSymbol } from "@newbeing/market-data/types";
 
 const TIMEFRAMES: readonly Timeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
+const EXCHANGE_LABELS: Record<WorkspaceState["exchange"], string> = {
+  binance: "Binance Spot",
+  coinbaseexchange: "Coinbase Exchange",
+  kraken: "Kraken Spot",
+  okx: "OKX Spot",
+};
 const EMPTY_REPLAY_BARS: readonly Candle[] = [];
 
 function readItems<T>(payload: unknown): T[] {
@@ -62,55 +68,59 @@ function parseReplayEnvelope(payload: unknown): ReplayEnvelope | null {
   return payload as ReplayEnvelope;
 }
 
-function useSummary(symbol: string, enabled: boolean): { summary: MarketSummary | null; error: string | null } {
-  const [snapshot, setSnapshot] = useState<{ symbol: string; summary: MarketSummary | null; error: string | null } | null>(null);
+
+function useSummary(symbol: string, exchange: WorkspaceState["exchange"], enabled: boolean): { summary: MarketSummary | null; error: string | null; retry: () => void } {
+  const key = `${exchange}|${symbol}`;
+  const [snapshot, setSnapshot] = useState<{ key: string; summary: MarketSummary | null; error: string | null } | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
   useEffect(() => {
     if (!enabled) return;
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
-        const response = await fetch(`/api/market?kind=summary&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+        const response = await fetch(`/api/market?kind=summary&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
         const payload: unknown = await response.json();
-        if (!response.ok) throw new Error("Binance ticker unavailable.");
+        if (!response.ok) throw new Error(`${exchange} ticker unavailable.`);
         const parsed = parseSummary(payload);
         if (!parsed) throw new Error("Invalid market summary.");
-        if (!disposed) setSnapshot({ symbol, summary: parsed, error: null });
+        if (!disposed) setSnapshot({ key, summary: parsed, error: null });
       } catch (reason) {
-        if (!disposed) setSnapshot({ symbol, summary: null, error: reason instanceof Error ? reason.message : "Market summary unavailable." });
+        if (!disposed) setSnapshot((current) => ({ key, summary: current?.key === key ? current.summary : null, error: reason instanceof Error ? reason.message : "Market summary unavailable." }));
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 5_000);
+    const timer = window.setInterval(() => void refresh(), exchange === "binance" ? 5_000 : 15_000);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, [symbol, enabled]);
-  return enabled && snapshot?.symbol === symbol
-    ? { summary: snapshot.summary, error: snapshot.error }
-    : { summary: null, error: null };
+  }, [symbol, exchange, enabled, key, retryToken]);
+  return {
+    ...(enabled && snapshot?.key === key ? { summary: snapshot.summary, error: snapshot.error } : { summary: null, error: null }),
+    retry: () => setRetryToken((current) => current + 1),
+  };
 }
 
 function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.Element {
-  const [symbol, setSymbol, addWatchlist] = useWorkspaceStore(useShallow((state) => [state.symbol, state.setSymbol, state.addWatchlistSymbol]));
+  const [symbol, exchange, setSymbol, addWatchlist] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.setSymbol, state.addWatchlistSymbol]));
   const [query, setQuery] = useState(symbol);
   const [open, setOpen] = useState(false);
-  const [searchResult, setSearchResult] = useState<{ query: string; items: MarketSymbol[]; error: string | null } | null>(null);
+  const [searchResult, setSearchResult] = useState<{ query: string; exchange: WorkspaceState["exchange"]; items: MarketSymbol[]; error: string | null } | null>(null);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     if (!open || query.trim().length < 1) return;
     let disposed = false;
     const timer = window.setTimeout(() => {
       setLoading(true);
-      void fetch(`/api/markets?q=${encodeURIComponent(query)}`, { cache: "no-store" }).then(async (response) => {
+      void fetch(`/api/markets?exchange=${exchange}&q=${encodeURIComponent(query)}`, { cache: "no-store" }).then(async (response) => {
         const payload: unknown = await response.json();
-        if (!response.ok) throw new Error("Binance symbol search is unavailable.");
-        if (!disposed) setSearchResult({ query, items: readItems<MarketSymbol>(payload), error: null });
+        if (!response.ok) throw new Error(`${EXCHANGE_LABELS[exchange]} symbol search is unavailable.`);
+        if (!disposed) setSearchResult({ query, exchange, items: readItems<MarketSymbol>(payload), error: null });
       }).catch((reason: unknown) => {
-        if (!disposed) setSearchResult({ query, items: [], error: reason instanceof Error ? reason.message : "Search failed." });
+        if (!disposed) setSearchResult({ query, exchange, items: [], error: reason instanceof Error ? reason.message : "Search failed." });
       }).finally(() => { if (!disposed) setLoading(false); });
     }, 180);
     return () => { disposed = true; window.clearTimeout(timer); };
-  }, [query, open]);
+  }, [query, open, exchange]);
 
-  const result = searchResult?.query === query ? searchResult : null;
+  const result = searchResult?.query === query && searchResult.exchange === exchange ? searchResult : null;
   const items = result?.items ?? [];
   const error = result?.error ?? null;
   const showLoading = open && query.trim().length >= 1 && loading;
@@ -125,7 +135,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
   return <div className="symbol-picker">
     <div className={`symbol-search ${open ? "focused" : ""}`}>
       <Search size={14} />
-      <input aria-label="Search Binance Spot symbols" disabled={disabled} value={open ? query : symbol} onFocus={() => { if (!disabled) { setOpen(true); setQuery(""); } }} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
+      <input aria-label={`Search ${exchange} Spot symbols`} disabled={disabled} value={open ? query : symbol} onFocus={() => { if (!disabled) { setOpen(true); setQuery(""); } }} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
         if (event.key === "Escape") { setOpen(false); setQuery(symbol); }
         if (event.key === "Enter" && items[0]) choose(items[0].symbol);
       }} placeholder="Search market" />
@@ -134,7 +144,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
     {open && <>
       <button className="popover-backdrop" aria-label="Close symbol search" onClick={() => { setOpen(false); setQuery(symbol); }} />
       <div className="symbol-results">
-        <div className="popover-title">BINANCE SPOT · USDT MARKETS</div>
+        <div className="popover-title">{EXCHANGE_LABELS[exchange].toUpperCase()} · SPOT MARKETS</div>
         {showLoading && <div className="popover-state"><LoaderCircle className="spin" size={14} />Searching markets…</div>}
         {error && <div className="popover-error">{error}</div>}
         {!showLoading && !error && items.map((item) => <button className="symbol-result" key={item.symbol} onClick={() => choose(item.symbol)}>
@@ -146,14 +156,14 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
   </div>;
 }
 
-function MarketSummaryBar({ summary, error, replayMode, replayPrice }: { summary: MarketSummary | null; error: string | null; replayMode: boolean; replayPrice: number | null }): React.JSX.Element {
+function MarketSummaryBar({ summary, error, replayMode, replayPrice, onRetry }: { summary: MarketSummary | null; error: string | null; replayMode: boolean; replayPrice: number | null; onRetry: () => void }): React.JSX.Element {
   const change = summary?.changePct24h;
-  return <div className="summary-strip">
+  return <div className={`summary-strip ${error && summary ? "stale" : ""}`}>
     <div className="summary-price"><span>{replayMode ? "CURSOR CLOSE" : "LAST"}</span><strong>{formatPrice(replayMode ? replayPrice : summary?.last)}</strong>{!replayMode && typeof change === "number" && <small className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</small>}</div>
     {!replayMode && <><div><span>24H HIGH</span><strong>{formatPrice(summary?.high24h)}</strong></div>
       <div><span>24H LOW</span><strong>{formatPrice(summary?.low24h)}</strong></div>
       <div><span>24H QUOTE VOL</span><strong>{typeof summary?.quoteVolume24h === "number" ? `${(summary.quoteVolume24h / 1_000_000).toFixed(2)}M` : "—"}</strong></div></>}
-    <div className="summary-source">{replayMode ? "HISTORICAL ONLY · NO LIVE QUOTES" : error ? <span className="negative">Ticker unavailable</span> : <><i className="live-dot" />PUBLIC MARKET DATA</>}</div>
+    <div className="summary-source">{replayMode ? "HISTORICAL ONLY · NO LIVE QUOTES" : error ? <><span className="negative">{summary ? "STALE · RETRYING" : "Ticker unavailable"}</span><button className="summary-retry link-button" type="button" aria-label="Retry ticker request" onClick={onRetry}>Retry</button></> : <><i className="live-dot" />PUBLIC MARKET DATA</>}</div>
   </div>;
 }
 
@@ -178,12 +188,13 @@ function DragHandle({ direction, onDelta, style }: { direction: "horizontal" | "
 }
 
 export function Terminal(): React.JSX.Element {
+  const exchange = useWorkspaceStore((state) => state.exchange);
   const [workspace, setWorkspace, symbol, timeframe, theme, setTheme, layout, setLayout, visibleRange, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
     state.activeWorkspace, state.setWorkspace, state.symbol, state.timeframe, state.theme, state.setTheme, state.layout, state.setLayout,
     state.visibleRange, state.setVisibleRange, state.setBacktest, state.setDockTab, state.selectedStrategyId, state.strategyParameters, state.backtestConfig,
     state.activeReplayId, state.setActiveReplayId,
   ]));
-  const { summary, error: summaryError } = useSummary(symbol, workspace !== "replay");
+  const { summary, error: summaryError, retry: retrySummary } = useSummary(symbol, exchange, workspace !== "replay");
   const [running, setRunning] = useState(false);
   const [backtestError, setBacktestError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
@@ -205,6 +216,8 @@ export function Terminal(): React.JSX.Element {
   }, [theme]);
 
   const setPage = (next: WorkspaceState["activeWorkspace"]): void => {
+    if (next === "backtest" && exchange !== "binance") return;
+    if (next === "replay" && exchange !== "binance") return;
     if (next !== "replay") setReplayPlaying(false);
     setWorkspace(next);
     if (next === "backtest") setDockTab("backtest");
@@ -411,7 +424,7 @@ export function Terminal(): React.JSX.Element {
   const resizeDock = (delta: number): void => setLayout({ ...layout, bottomHeight: Math.max(150, Math.min(480, layout.bottomHeight + delta)) });
 
   const workspaceName = useMemo(() => ({ terminal: "Terminal", research: "Research", backtest: "Backtest", replay: "Replay" }[workspace]), [workspace]);
-  const replayLocked = workspace === "replay" && replaySession !== null;
+  const replayLocked = workspace === "replay";
   const replayBars = workspace === "replay" ? replaySession?.bars ?? EMPTY_REPLAY_BARS : null;
   const replayPrice = replaySession?.bars.at(-1)?.close ?? null;
 
@@ -421,16 +434,16 @@ export function Terminal(): React.JSX.Element {
       <div className="brand-lockup"><div className="brand-mark"><Activity size={16} strokeWidth={2.4} /></div><span>newBeing</span><span className="workspace-label">WORKSPACE</span></div>
       <div className="topbar-divider" />
       <nav className="workspace-nav" aria-label="Workspaces">
-        {(["terminal", "research", "backtest", "replay"] as const).map((item) => <button key={item} data-testid={`workspace-${item}`} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{item}</button>)}
+        {(["terminal", "research", "backtest", "replay"] as const).map((item) => <button key={item} data-testid={`workspace-${item}`} disabled={(item === "replay" || item === "backtest") && exchange !== "binance"} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{item}</button>)}
       </nav>
       <div className="topbar-spacer" />
       <SymbolPicker disabled={replayLocked} />
       <div className="topbar-divider narrow-divider" />
       <div className="timeframe-selector" aria-label="Timeframe">
-        {TIMEFRAMES.map((item) => <button key={item} disabled={replayLocked} className={timeframe === item ? "active" : ""} onClick={() => useWorkspaceStore.getState().setTimeframe(item)}>{item}</button>)}
+        {TIMEFRAMES.map((item) => <button key={item} disabled={replayLocked || !EXCHANGE_TIMEFRAMES[exchange].includes(item)} className={timeframe === item ? "active" : ""} onClick={() => useWorkspaceStore.getState().setTimeframe(item)}>{item}</button>)}
       </div>
       <div className="topbar-divider narrow-divider" />
-      <div className="exchange-select"><span className="exchange-logo">B</span><span>Binance Spot</span><ChevronDown size={12} /></div>
+      <label className="exchange-select"><span className="exchange-logo">{exchange.slice(0, 1).toUpperCase()}</span><select aria-label="Exchange" value={exchange} disabled={replayLocked} onChange={(event) => useWorkspaceStore.getState().setExchange(event.target.value as WorkspaceState["exchange"])}><option value="binance">Binance Spot</option><option value="coinbaseexchange">Coinbase Exchange</option><option value="okx">OKX Spot</option><option value="kraken">Kraken Spot</option></select><ChevronDown size={12} /></label>
       <span className="mode-pill"><i />PAPER</span>
       <Button variant="ghost" size="icon" title="Live trading disabled" disabled aria-label="Live trading disabled"><span className="live-off">LIVE OFF</span></Button>
       <Button variant="ghost" size="icon" title="Toggle theme" aria-label="Toggle theme" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}</Button>
@@ -439,7 +452,7 @@ export function Terminal(): React.JSX.Element {
 
     <div className="market-heading">
       <div className="market-title"><span className="base-symbol">{symbol.split("/")[0]}</span><span className="quote-symbol">/ {symbol.split("/")[1]}</span><span className="spot-tag">SPOT</span><span className="ticker-chevron"><ChevronDown size={13} /></span></div>
-      <MarketSummaryBar summary={workspace === "replay" ? null : summary} error={workspace === "replay" ? null : summaryError} replayMode={workspace === "replay"} replayPrice={replayPrice} />
+      <MarketSummaryBar summary={workspace === "replay" ? null : summary} error={workspace === "replay" ? null : summaryError} replayMode={workspace === "replay"} replayPrice={replayPrice} onRetry={retrySummary} />
       <div className="market-heading-right"><span className="exchange-time">{workspace === "replay" && replaySession?.bars.at(-1) ? `Cursor ${new Date(replaySession.cursor).toLocaleTimeString()}` : summary?.timestamp ? `Updated ${new Date(summary.timestamp).toLocaleTimeString()}` : "Awaiting ticker"}</span></div>
     </div>
 
@@ -451,10 +464,11 @@ export function Terminal(): React.JSX.Element {
           <div className="chart-toolbar-left"><span className="section-kicker">{workspaceName.toUpperCase()}</span><span className="toolbar-separator">/</span><span>{symbol} · {timeframe}</span>{result && <span className="signal-chip">{result.trades.length} signals</span>}</div>
           <div className="chart-toolbar-right">
             {running ? <span className="run-status"><LoaderCircle size={13} className="spin" />{lastAction ?? "Running…"}</span> : lastAction && <span className="run-status">{lastAction}</span>}
-            {workspace !== "replay" && <Button data-testid="run-backtest" variant="primary" size="sm" onClick={() => void runBacktest()} disabled={running}><Command size={13} />Run backtest</Button>}
+            {workspace !== "replay" && <Button data-testid="run-backtest" title={exchange === "binance" ? undefined : "Backtests currently require Binance Spot"} variant="primary" size="sm" onClick={() => void runBacktest()} disabled={running || exchange !== "binance"}><Command size={13} />Run backtest</Button>}
           </div>
         </div>
-        {backtestError && <div className="global-alert"><span>{backtestError}</span><button onClick={() => setBacktestError(null)} aria-label="Dismiss"><X size={14} /></button></div>}
+        {exchange !== "binance" && <div className="global-alert" role="status">Public charts and quotes use {EXCHANGE_LABELS[exchange]}. Backtests, Replay, and Paper orders currently require Binance Spot.</div>}
+
         {workspace === "replay" && <ReplayControls
           symbol={symbol}
           timeframe={timeframe}

@@ -48,6 +48,7 @@ export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Ele
     state.backtestConfig,
     state.setBacktestConfig,
   ]));
+  const exchange = useWorkspaceStore((state) => state.exchange);
   const strategy = STRATEGIES.find((item) => item.id === strategyId) ?? STRATEGIES[0];
   const [editorValues, setEditorValues] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
@@ -165,7 +166,8 @@ export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Ele
       {saveError && <div className="error-inline">{saveError}</div>}
       <div className="strategy-actions">
         <Button data-testid="save-strategy-draft" variant="outline" size="sm" onClick={() => void saveSource()}>{saved ? <Check size={13} /> : <Save size={13} />}{saved ? "Saved" : "Save draft"}</Button>
-        <Button variant="primary" size="sm" onClick={onRun} disabled={running || invalidSma}>{running ? <span className="spin"><Play size={13} /></span> : <Play size={13} />}{running ? "Running" : "Run backtest"}</Button>
+        {exchange !== "binance" && <p className="assumption-note">Backtests currently use Binance Spot history. Select Binance to run this strategy.</p>}
+        <Button variant="primary" size="sm" onClick={onRun} disabled={running || invalidSma || exchange !== "binance"}>{running ? <span className="spin"><Play size={13} /></span> : <Play size={13} />}{running ? "Running" : "Run backtest"}</Button>
       </div>
     </div>
   );

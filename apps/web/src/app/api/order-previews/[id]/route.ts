@@ -9,7 +9,11 @@ const actionSchema = z.object({ action: z.enum(["confirm", "dismiss"]) });
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
   try {
-    if (getWorkspaceState().state.activeWorkspace === "replay") {
+    const workspace = getWorkspaceState().state;
+    if (workspace.exchange !== "binance") {
+      return NextResponse.json({ error: "Paper order previews currently support Binance Spot only." }, { status: 409 });
+    }
+    if (workspace.activeWorkspace === "replay") {
       return NextResponse.json({ error: "Normal Paper preview confirmation is disabled during Replay." }, { status: 409 });
     }
     const { id } = await context.params;

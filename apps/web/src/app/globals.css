@@ -107,6 +107,15 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .summary-price small { font-size: 10px; font-variant-numeric: tabular-nums; }
 .summary-source { display: flex; align-items: center; gap: 7px; margin-left: auto; white-space: nowrap; color: var(--text-dim); letter-spacing: .06em; font-size: 8px; }
 .summary-source .live-dot { width: 5px; height: 5px; }
+.summary-strip.stale .summary-source { color: var(--warning); }
+.summary-retry { flex: 0 0 auto; padding: 2px 5px; font-size: 8px; }
+.watch-row.stale .watch-quote strong, .watch-row.stale .watch-quote small { color: var(--warning); }
+.watchlist-error { display: flex; align-items: flex-start; gap: 6px; padding: 8px; color: var(--warning); font-size: 9px; line-height: 1.4; }
+.watchlist-error > span { flex: 1; min-width: 0; }
+.watchlist-retry { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 3px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--surface-2); font-size: 8px; cursor: pointer; }
+.watchlist-retry:hover:not(:disabled) { border-color: var(--focus); }
+.watchlist-retry:disabled { color: var(--text-dim); cursor: wait; }
+
 .market-heading-right { width: 120px; text-align: right; white-space: nowrap; color: var(--text-dim); font-size: 9px; }
 
 .workspace-grid { display: grid; flex: 1 1 auto; min-height: 0; background: var(--bg); }

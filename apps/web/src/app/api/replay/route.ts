@@ -18,6 +18,9 @@ const requestSchema = z.object({
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
+    if (getWorkspaceState().state.exchange !== "binance") {
+      return NextResponse.json({ error: "Historical Replay currently supports Binance Spot only. Select Binance to start a replay." }, { status: 409 });
+    }
     const body: unknown = await request.json();
     const parsed = requestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid replay start request." }, { status: 400 });
@@ -25,7 +28,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const timeframe = parsed.data.timeframe as Timeframe;
     const interval = timeframeMilliseconds(timeframe);
     const since = Math.max(0, parsed.data.endAt - interval * (parsed.data.limit + 4));
-    const fetched = await getWebMarketAdapter().fetchOHLCVSince(parsed.data.symbol, timeframe, since, parsed.data.limit + 4);
+    const fetched = await getWebMarketAdapter("binance").fetchOHLCVSince(parsed.data.symbol, timeframe, since, parsed.data.limit + 4);
     const candles = completedBarsThrough(fetched, timeframe, parsed.data.endAt).slice(-parsed.data.limit);
     if (candles.length < 2) return NextResponse.json({ error: "Not enough completed historical bars at this time." }, { status: 422 });
     const gaps = findCandleGaps(candles, timeframe);
@@ -34,21 +37,14 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (!last) return NextResponse.json({ error: "Replay seed is empty." }, { status: 422 });
     const now = new Date().toISOString();
     const session: ReplaySession = {
-      id: randomUUID(),
-      symbol: parsed.data.symbol,
-      timeframe,
-      startAt: parsed.data.endAt,
-      cursor: last.timestamp,
-      bars: candles,
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
+      id: randomUUID(), symbol: parsed.data.symbol, timeframe, startAt: parsed.data.endAt,
+      cursor: last.timestamp, bars: candles, status: "active", createdAt: now, updatedAt: now,
     };
     createReplaySession(session);
     const portfolio = getPaperPortfolio(replayAccountId(session.id, session.symbol));
     const current = getWorkspaceState().state;
     saveWorkspaceState({ ...current, activeWorkspace: "replay", activeReplayId: session.id });
-    return NextResponse.json({ session, portfolio, source: `${marketDataSourceLabel()} historical bars`, futureBarsLoaded: 0 }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ session, portfolio, source: `${marketDataSourceLabel("binance")} historical bars`, futureBarsLoaded: 0 }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Replay could not be initialized.";
     logEvent("warn", "replay.start_failed", { message });

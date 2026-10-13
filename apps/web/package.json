@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "predev": "node scripts/copy-monaco-assets.mjs",
-    "dev": "next dev --hostname 127.0.0.1",
+    "dev": "next dev --webpack --hostname 127.0.0.1",
     "prebuild": "node scripts/copy-monaco-assets.mjs",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",

@@ -1,3 +1,4 @@
+import type { ExchangeId } from "@newbeing/core";
 import type { Candle, Timeframe } from "@newbeing/core";
 
 export interface MarketSummary {
@@ -40,7 +41,7 @@ export interface MarketSymbol {
 }
 
 export interface ExchangeAdapter {
-  readonly id: "binance";
+  readonly id: ExchangeId;
   searchSymbols(query: string, limit?: number): Promise<MarketSymbol[]>;
   fetchOHLCV(symbol: string, timeframe: Timeframe, limit?: number): Promise<Candle[]>;
   fetchOHLCVSince(symbol: string, timeframe: Timeframe, since: number, limit?: number): Promise<Candle[]>;

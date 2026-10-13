@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { DEFAULT_WORKSPACE_STATE, type WorkspaceState } from "@newbeing/core";
+import { DEFAULT_WORKSPACE_STATE, EXCHANGE_TIMEFRAMES, type WorkspaceState } from "@newbeing/core";
 import { getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const stateSchema = z.object({
   symbol: z.string().regex(/^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/),
   timeframe: z.enum(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]),
-  exchange: z.literal("binance"),
+  exchange: z.enum(["binance", "coinbaseexchange", "okx", "kraken"]),
   mode: z.literal("paper"),
   activeWorkspace: z.enum(["terminal", "research", "backtest", "replay"]),
   selectedStrategyId: z.string().min(1).max(120),
@@ -37,6 +37,12 @@ export async function PUT(request: Request): Promise<NextResponse> {
     const parsed = stateSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid workspace state." }, { status: 400 });
     const state: WorkspaceState = parsed.data;
+    if (!EXCHANGE_TIMEFRAMES[state.exchange].includes(state.timeframe)) {
+      return NextResponse.json({ error: `${state.exchange} does not support ${state.timeframe} candles.` }, { status: 400 });
+    }
+    if (state.exchange !== "binance" && (state.activeWorkspace === "backtest" || state.activeWorkspace === "replay")) {
+      return NextResponse.json({ error: "Backtest and Replay currently support Binance Spot only." }, { status: 409 });
+    }
     const updatedAt = saveWorkspaceState(state);
     return NextResponse.json({ state, updatedAt }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
