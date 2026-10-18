@@ -28,7 +28,10 @@ test("chart, backtest, source draft, Paper order, Replay and workspace sync use 
   await activate(page.getByRole("button", { name: "Save draft" }), useKeyboard);
   expect((await saveDraft).ok()).toBeTruthy();
 
-  await activate(page.getByRole("button", { name: "backtest", exact: true }), useKeyboard);
+  // Research owns the backtest now (the separate Backtest workspace was merged
+  // into it), so the run is launched from the merged workspace and its result
+  // board is a dock tab there.
+  await activate(page.getByRole("button", { name: "research", exact: true }), useKeyboard);
   const backtestRequest = page.waitForResponse((response) => response.url().endsWith("/api/backtests") && response.request().method() === "POST");
   const runBacktestButton = page.getByRole("button", { name: "Run backtest" }).first();
   if (apiMock) {

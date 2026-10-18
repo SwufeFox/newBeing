@@ -154,7 +154,7 @@ function BacktestView({ result, onOpenStrategy }: { result: BacktestResult | nul
         <Metric label="PROFIT FACTOR" value={metric.profitFactor?.toFixed(2) ?? "—"} />
         <Metric label="TRADES" value={String(metric.tradeCount)} />
       </div>
-      <div className="equity-chart-wrap"><div className="equity-chart-label">EQUITY CURVE</div><EquityChart result={result} /></div>
+      <div className="equity-chart-wrap"><div className="equity-chart-label">EQUITY CURVE · {result.symbol.split("/")[1]}</div><EquityChart result={result} /></div>
     </div>
     <div className="backtest-meta">
       <span>{result.symbol} · {result.timeframe}</span><span>{result.strategyId} v{result.strategyVersion}</span>
@@ -163,7 +163,7 @@ function BacktestView({ result, onOpenStrategy }: { result: BacktestResult | nul
     </div>
     <div className="table-scroll trade-table-scroll">
       {result.trades.length === 0 ? <div className="empty-inline"><AlertCircle size={14} />No completed trades under these parameters.</div> : <table className="data-table"><thead><tr><th>#</th><th>SIDE</th><th>ENTRY UTC</th><th>ENTRY</th><th>EXIT UTC</th><th>EXIT</th><th>NET PNL</th><th>FEES</th><th>REASON</th></tr></thead><tbody>
-        {result.trades.map((trade, index) => <tr key={trade.id}><td>{index + 1}</td><td className={trade.side === "long" ? "positive" : "negative"}>{trade.side.toUpperCase()}</td><td>{timestamp(trade.entryTime)}</td><td>{trade.entryPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td><td>{timestamp(trade.exitTime)}</td><td>{trade.exitPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td><td className={trade.netPnl >= 0 ? "positive" : "negative"}>{money(trade.netPnl)}</td><td>{money(trade.fees)}</td><td>{trade.exitReason}</td></tr>)}
+        {result.trades.map((trade, index) => <tr key={trade.id}><td>{index + 1}</td><td className={trade.side === "long" ? "positive" : "negative"}>{trade.side.toUpperCase()}</td><td>{timestamp(trade.entryTime)}</td><td>{trade.entryPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td><td>{timestamp(trade.exitTime)}</td><td>{trade.exitPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td><td className={trade.netPnl >= 0 ? "positive" : "negative"}>{money(trade.netPnl, result.symbol.split("/")[1])}</td><td>{money(trade.fees, result.symbol.split("/")[1])}</td><td>{trade.exitReason}</td></tr>)}
       </tbody></table>}
     </div>
     <div className="result-provenance">Result {result.resultId} · dataset {result.datasetId} · {new Date(result.createdAt).toLocaleString()}</div>
@@ -195,7 +195,7 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
 }
 
 export function BottomDock({ replayMode = false, replaySession = null, replayPortfolio = null, replayOrders = [], workspace = "terminal" }: {
-  workspace?: "terminal" | "research" | "backtest" | "replay";
+  workspace?: "terminal" | "research" | "replay";
   replayMode?: boolean;
   replaySession?: ReplaySession | null;
   replayPortfolio?: PaperPortfolio | null;
@@ -205,12 +205,13 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
     state.dockTab, state.setDockTab, state.symbol, state.exchange, state.backtest, state.activeBacktestId, state.setBacktest, state.setWorkspace, state.setInspectorTab, state.setExchange,
   ]));
   /* A stored dockTab may belong to another workspace (e.g. "history" while in
-     Markets). Resolve to the first tab this mode actually offers. */
+     Markets). Resolve to the first tab this mode actually offers.
+     Research carries the results board too, which used to live in a separate
+     Backtest workspace: parameters, saved runs and the metrics for the run you
+     picked are all part of studying one strategy. */
   const allowedTabs = workspace === "terminal" || workspace === "replay"
     ? ["positions", "orders"] as const
-    : workspace === "research"
-      ? ["history", "logs"] as const
-      : ["backtest", "logs"] as const;
+    : ["backtest", "history", "logs"] as const;
   const activeTab = (allowedTabs as readonly string[]).includes(tab) ? tab : allowedTabs[0];
 
   const [paper, setPaper] = useState<PaperPayload | null>(null);
@@ -260,9 +261,9 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
               Replay = session + orders. */}
           {(workspace === "terminal" || workspace === "replay") && <TabsTrigger value="positions"><Wallet size={12} />Positions</TabsTrigger>}
           {(workspace === "terminal" || workspace === "replay") && <TabsTrigger value="orders"><ListChecks size={12} />Orders</TabsTrigger>}
+          {workspace === "research" && <TabsTrigger value="backtest"><FileText size={12} />Results</TabsTrigger>}
           {workspace === "research" && <TabsTrigger value="history"><Clock3 size={12} />Experiments</TabsTrigger>}
-          {workspace === "backtest" && <TabsTrigger value="backtest"><FileText size={12} />Results</TabsTrigger>}
-          {(workspace === "research" || workspace === "backtest") && <TabsTrigger value="logs"><Boxes size={12} />Execution</TabsTrigger>}
+          {workspace === "research" && <TabsTrigger value="logs"><Boxes size={12} />Execution</TabsTrigger>}
         </TabsList>
       </Tabs>
       <div className="dock-toolbar-right"><span className="dock-mode-dot" />{replayMode ? "REPLAY · ISOLATED ACCOUNT" : "PAPER ACCOUNT"}</div>
@@ -271,8 +272,8 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
       {activeTab === "positions" && (workspace === "terminal" || workspace === "replay") && (replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} />)}
       {activeTab === "orders" && (replayMode ? <OrdersTable orders={replayOrders} /> : paperError && !paper ? <div className="empty-state"><AlertCircle size={18} /><strong>Orders unavailable</strong><span>{paperError}</span></div> : <><div className="table-footnote">Paper order history · symbols shown for each order</div><OrdersTable orders={paper?.orders ?? []} /></>)}
       {activeTab === "history" && workspace === "research" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Experiment history hidden during replay</strong><span>Backtest results can reveal outcomes beyond the current cursor.</span></div> : <ExperimentHistory onSelect={selectResult} />)}
-      {activeTab === "backtest" && workspace === "backtest" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are visible; future-derived results are hidden.</span></div> : <BacktestView result={result} onOpenStrategy={() => { setWorkspace("research"); setInspectorTab("strategy"); }} />)}
-      {activeTab === "logs" && (workspace === "research" || workspace === "backtest") && (replayMode ? <div className="execution-log">
+      {activeTab === "backtest" && workspace === "research" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are visible; future-derived results are hidden.</span></div> : <BacktestView result={result} onOpenStrategy={() => setInspectorTab("strategy")} />)}
+      {activeTab === "logs" && workspace === "research" && (replayMode ? <div className="execution-log">
         <div className="log-line"><span className="log-time">REPLAY</span><span className="log-info">FUTURE</span><span>Only completed bars at or before the cursor are loaded.</span></div>
         {replaySession && <div className="log-line"><span className="log-time">{new Date(replaySession.cursor).toLocaleTimeString()}</span><span className="log-success">CURSOR</span><span>{replaySession.symbol} · {replaySession.timeframe} · {replaySession.status}</span></div>}
         {replayOrders.slice(0, 12).map((order) => <div className="log-line" key={order.clientOrderId}><span className="log-time">{new Date(order.createdAt).toLocaleTimeString()}</span><span className="log-success">{order.status.toUpperCase()}</span><span>{order.side.toUpperCase()} {order.quantity} {order.symbol} @ {order.fillPrice ?? "—"}</span></div>)}

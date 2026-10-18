@@ -123,13 +123,19 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   name: "newbeing-workspace-v1",
   storage: createJSONStorage(() => localStorage),
   skipHydration: true,
-  version: 2,
+  version: 3,
   migrate: (persisted) => {
     const state = persisted as Partial<WorkspaceStore> & { layout?: { watchlistWidth: number; inspectorWidth: number; bottomHeight: number } };
     // v2: recomposed workstation defaults — old persisted layout values predate
     // the ak-ui system rewrite and overflow the canvas; reset them to v2 defaults.
+    // v3: "backtest" is no longer a workspace (Research absorbed it), so a stored
+    // snapshot pointing at it would resolve to no tab at all.
+    const activeWorkspace = (state.activeWorkspace as string | undefined) === "backtest"
+      ? "research"
+      : state.activeWorkspace;
     return {
       ...state,
+      activeWorkspace,
       layout: { watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 },
     } as unknown as WorkspaceStore;
   },

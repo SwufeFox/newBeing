@@ -269,17 +269,20 @@ export function createNewBeingMcpServer(): McpServer {
   server.registerTool("open_workspace_view", {
     title: "Open a newBeing workspace view",
     description: "Synchronize the local browser to a research view or saved backtest. This changes only local workspace navigation.",
-    inputSchema: z.object({
-      workspace: z.enum(["terminal", "research", "backtest", "replay"]),
-      result_id: z.string().min(1).max(120).optional(),
-      replay_id: z.string().min(1).max(120).optional(),
-    }),
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-  }, async ({ workspace, result_id, replay_id }) => {
-    try {
-      const current = getWorkspaceState().state;
-      const replayId = replay_id ?? current.activeReplayId;
-      if ((workspace === "backtest" || workspace === "replay") && current.exchange !== "binance") return errorResult(new Error("Backtest and Replay are currently limited to Binance Spot. Switch venues before opening them."));
+  inputSchema: z.object({
+    /* "backtest" is still accepted so an existing caller does not break; it is
+       normalised to "research", which absorbed that workspace. */
+    workspace: z.enum(["terminal", "research", "backtest", "replay"]),
+    result_id: z.string().min(1).max(120).optional(),
+    replay_id: z.string().min(1).max(120).optional(),
+  }),
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+}, async ({ workspace: requestedWorkspace, result_id, replay_id }) => {
+  try {
+    const workspace: WorkspaceState["activeWorkspace"] = requestedWorkspace === "backtest" ? "research" : requestedWorkspace;
+    const current = getWorkspaceState().state;
+    const replayId = replay_id ?? current.activeReplayId;
+      if (workspace === "replay" && current.exchange !== "binance") return errorResult(new Error("Backtest and Replay are currently limited to Binance Spot. Switch venues before opening them."));
       if (workspace === "replay" && (!replayId || !getReplaySession(replayId))) return errorResult(new Error("Provide a valid replay_id before opening Replay."));
       if (result_id && !getExperiment(result_id)) return errorResult(new Error("Requested backtest result does not exist."));
       const state: WorkspaceState = {

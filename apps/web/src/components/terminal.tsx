@@ -33,8 +33,7 @@ const EMPTY_REPLAY_BARS: readonly Candle[] = [];
 // the top bar owns workspace switching.
 const RAIL_NOTES: Record<WorkspaceState["activeWorkspace"], string> = {
   terminal: "Live public quotes, chart, and paper order previews.",
-  research: "Draft and review a strategy before it earns a backtest.",
-  backtest: "Deterministic run of a reviewed built-in strategy.",
+  research: "Tune a strategy and read its deterministic run results.",
   replay: "Walk historical bars forward with future data hidden.",
 };
 
@@ -217,7 +216,10 @@ function RailRunHistory(): React.JSX.Element {
   const [activeBacktestId, selectedStrategyId, setDockTab] = useWorkspaceStore(useShallow((state) => [
     state.activeBacktestId, state.selectedStrategyId, state.setDockTab,
   ]));
-  const [items, setItems] = useState<Array<{ id: string; strategyId?: string; createdAt?: string; metrics?: { totalReturnPct?: number; tradeCount?: number } }>>([]);
+  /* Field names must match BacktestMetrics exactly: it exposes `totalReturn`
+     as a FRACTION (e.g. -0.0293), not `totalReturnPct`. Reading a name that
+     does not exist made every row render "—" while the data was right there. */
+  const [items, setItems] = useState<Array<{ id: string; strategyId?: string; createdAt?: string; metrics?: { totalReturn?: number; tradeCount?: number } }>>([]);
   const [state, setState] = useState<"loading" | "ready" | "blocked" | "error">("loading");
 
   useEffect(() => {
@@ -252,8 +254,10 @@ function RailRunHistory(): React.JSX.Element {
       >
         <span className="rail-item-main">{(run.strategyId ?? selectedStrategyId).replace(/-/g, " ")}</span>
         <span className="rail-item-meta">
-          {typeof run.metrics?.totalReturnPct === "number"
-            ? <em className={run.metrics.totalReturnPct >= 0 ? "positive" : "negative"}>{run.metrics.totalReturnPct >= 0 ? "+" : ""}{run.metrics.totalReturnPct.toFixed(2)}%</em>
+          {typeof run.metrics?.totalReturn === "number"
+            ? <em className={run.metrics.totalReturn >= 0 ? "positive" : "negative"}>
+                {run.metrics.totalReturn >= 0 ? "+" : "−"}{(Math.abs(run.metrics.totalReturn) * 100).toFixed(2)}%
+              </em>
             : <em className="muted">—</em>}
           <small>{run.metrics?.tradeCount ?? 0} trades</small>
         </span>
@@ -371,8 +375,12 @@ export function Terminal(): React.JSX.Element {
     /* No venue gate: every supported exchange can serve backtests and replays. */
     if (next !== "replay") setReplayPlaying(false);
     setWorkspace(next);
-    if (next === "backtest") setDockTab("backtest");
-    if (next === "research") useWorkspaceStore.getState().setInspectorTab("strategy");
+    /* Research is where strategies are studied, so entering it should land on
+       the parameter form. The results board is one tab away in the dock. */
+    if (next === "research") {
+      useWorkspaceStore.getState().setInspectorTab("strategy");
+      setDockTab("backtest");
+    }
   };
 
   const runBacktest = useCallback(async (): Promise<void> => {
@@ -398,9 +406,11 @@ export function Terminal(): React.JSX.Element {
         throw new Error(message);
       }
       if (typeof payload !== "object" || payload === null || !("resultId" in payload) || !("metrics" in payload)) throw new Error("Backtest response was malformed.");
-      setBacktest(payload as BacktestResult);
-      setWorkspace("backtest");
-      setDockTab("backtest");
+    setBacktest(payload as BacktestResult);
+    /* Stay in Research and surface the result: one system for parameters and
+       outcomes, rather than being thrown into a separate mode to read them. */
+    setWorkspace("research");
+    setDockTab("backtest");
       setLastAction(null);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "Backtest failed.";
@@ -574,7 +584,7 @@ export function Terminal(): React.JSX.Element {
   const resizeInspector = (delta: number): void => setLayout({ ...layout, inspectorWidth: Math.max(240, Math.min(480, layout.inspectorWidth - delta)) });
   const resizeDock = (delta: number): void => setLayout({ ...layout, bottomHeight: Math.max(150, Math.min(480, layout.bottomHeight + delta)) });
 
-  const workspaceName = useMemo(() => ({ terminal: "Terminal", research: "Research", backtest: "Backtest", replay: "Replay" }[workspace]), [workspace]);
+  const workspaceName = useMemo(() => ({ terminal: "Terminal", research: "Research", replay: "Replay" }[workspace]), [workspace]);
   const replayLocked = workspace === "replay";
   const replayBars = workspace === "replay" ? replaySession?.bars ?? EMPTY_REPLAY_BARS : null;
   const replayPrice = replaySession?.bars.at(-1)?.close ?? null;
@@ -595,8 +605,9 @@ export function Terminal(): React.JSX.Element {
     ? { rail: 1, railDrag: 2, chart: 3, inspectorDrag: 4, inspector: 5 }
     : { rail: 0, railDrag: 0, chart: 1, inspectorDrag: 2, inspector: 3 };
 
-  /* Analysis modes need a taller dock: the result table is the product there. */
-  const dockHeight = workspace === "backtest" ? Math.max(layout.bottomHeight, 320)
+  /* Analysis modes need a taller dock: the result table is the product there.
+     Research inherited Backtest's taller dock along with its results board. */
+  const dockHeight = workspace === "research" ? Math.max(layout.bottomHeight, 320)
     : workspace === "replay" ? Math.max(layout.bottomHeight, 210)
     : layout.bottomHeight;
 
@@ -606,7 +617,7 @@ export function Terminal(): React.JSX.Element {
       <div className="brand-lockup"><div className="brand-mark"><Activity size={16} strokeWidth={2.4} /></div><span>newBeing</span><span className="workspace-label">MARKET INTELLIGENCE</span></div>
       <div className="topbar-divider" />
       <nav className="workspace-nav" aria-label="Workspaces">
-        {([ ["terminal", "Markets"], ["research", "Research"], ["backtest", "Backtest"], ["replay", "Replay"] ] as const).map(([item, label]) => <button key={item} data-testid={`workspace-${item}`} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{label}</button>)}
+        {([ ["terminal", "Markets"], ["research", "Research"], ["replay", "Replay"] ] as const).map(([item, label]) => <button key={item} data-testid={`workspace-${item}`} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{label}</button>)}
       </nav>
       <div className="topbar-spacer" />
       <SymbolPicker disabled={replayLocked} />
@@ -648,9 +659,14 @@ export function Terminal(): React.JSX.Element {
         </div>
 
         {/* Every rail carries the data its workspace acts on, so no mode leaves
-            a 694px column holding four lines. */}
-        {workspace === "backtest" && <RailRunHistory />}
-        {workspace === "research" && <RailStrategyRoster />}
+            a 694px column holding four lines.
+            Research shows BOTH lists: choosing a strategy and reopening a past
+            run are the two things you actually do while studying one, and they
+            used to be split across two workspaces that each showed only one. */}
+        {workspace === "research" && <>
+          <RailStrategyRoster />
+          <RailRunHistory />
+        </>}
         {workspace === "replay" && <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />}
 
         <div className="rail-facts">
@@ -721,7 +737,7 @@ export function Terminal(): React.JSX.Element {
       </section>
     </main>
     <nav className="mobile-mode-nav" aria-label="Workspace modes">
-        {([["terminal", "Markets"], ["research", "Strategy"], ["backtest", "Backtest"], ["replay", "Replay"]] as const).map(([item, label]) => <button key={item} type="button" aria-current={workspace === item ? "page" : undefined} className={workspace === item ? "active" : ""} onClick={() => setPage(item)}>{label}</button>)}
+        {([["terminal", "Markets"], ["research", "Research"], ["replay", "Replay"]] as const).map(([item, label]) => <button key={item} type="button" aria-current={workspace === item ? "page" : undefined} className={workspace === item ? "active" : ""} onClick={() => setPage(item)}>{label}</button>)}
     </nav>
     <footer className="statusbar"><div><i className="status-dot" /><span>LOCAL WORKSPACE</span><span className="footer-separator">·</span><span>{symbol} · {timeframe}</span></div><div><span>{workspace === "replay" ? "REPLAY CURSOR DATA" : "PUBLIC MARKET DATA"}</span><span className="footer-separator">·</span><span>LIVE EXECUTION DISABLED</span><span className="footer-separator">·</span><span>LOCAL SQLITE</span></div></footer>
   </div>;

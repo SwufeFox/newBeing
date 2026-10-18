@@ -127,7 +127,9 @@ export interface WorkspaceState {
   timeframe: Timeframe;
   exchange: ExchangeId;
   mode: "paper";
-  activeWorkspace: "terminal" | "research" | "backtest" | "replay";
+  /** Research absorbed the former Backtest workspace: one system for studying a
+   *  strategy, holding both its parameters and its run results. */
+  activeWorkspace: "terminal" | "research" | "replay";
   selectedStrategyId: string;
   activeBacktestId: string | null;
   activeReplayId: string | null;

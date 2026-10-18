@@ -60,7 +60,9 @@ export async function runResearchBacktest(
   saveExperiment(result);
   if (request.openInWorkspace ?? true) {
     const current = getWorkspaceState().state;
-    saveWorkspaceState({ ...current, activeWorkspace: "backtest", selectedStrategyId: strategy.id, activeBacktestId: result.resultId });
+    /* Research is the workspace that studies strategies now, so a fresh run
+       lands there with its result selected rather than in a retired mode. */
+    saveWorkspaceState({ ...current, activeWorkspace: "research", selectedStrategyId: strategy.id, activeBacktestId: result.resultId });
   }
   return result;
 }

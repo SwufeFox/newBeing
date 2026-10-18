@@ -7,6 +7,10 @@ import { symbolForExchange } from "@/lib/exchanges";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/* "backtest" is still ACCEPTED from clients even though the workspace no longer
+   exists: a browser holding a persisted snapshot, or an older MCP caller, would
+   otherwise get a 400 on every write and the sync loop would retry forever.
+   It is normalised to "research" below, which is where that workspace went. */
 const stateSchema = z.object({
   symbol: z.string().regex(/^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/),
   timeframe: z.enum(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]),
@@ -37,7 +41,13 @@ export async function PUT(request: Request): Promise<NextResponse> {
     const body: unknown = await request.json();
     const parsed = stateSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid workspace state." }, { status: 400 });
-    const state: WorkspaceState = parsed.data;
+    const state: WorkspaceState = {
+      ...parsed.data,
+      /* Absorb the retired "backtest" workspace. Done here rather than rejected
+         so an old snapshot heals on its first write instead of wedging the
+         client's sync loop. */
+      activeWorkspace: parsed.data.activeWorkspace === "backtest" ? "research" : parsed.data.activeWorkspace,
+    };
     /* Re-denominate on the server too. The client sends its own symbol, and a
        stale or hand-written client could otherwise persist a pair the venue
        does not list (BTC/USDT on Kraken), leaving the whole UI quoting a market

@@ -22,8 +22,21 @@ export function getWorkspaceState(): { state: WorkspaceState; updatedAt: number 
   const row = getDatabase().select().from(workspaceStates).where(eq(workspaceStates.id, 1)).get();
   if (!row) return { state: DEFAULT_WORKSPACE_STATE, updatedAt: 0 };
   try {
-    const payload = JSON.parse(row.payload) as Partial<WorkspaceState>;
-    return { state: { ...DEFAULT_WORKSPACE_STATE, ...payload }, updatedAt: row.updatedAt };
+    /* Read the stored value as a plain string: the typed union no longer admits
+       "backtest", and that is exactly the legacy value we must detect. */
+    const raw = JSON.parse(row.payload) as Record<string, unknown>;
+    /* A row written before the Backtest workspace was absorbed still names it.
+       Normalising on READ (rather than only on write) means the API never
+       returns a workspace the UI cannot render, even before the next save. */
+    const activeWorkspace = raw.activeWorkspace === "backtest" ? "research" : raw.activeWorkspace;
+    return {
+      state: {
+        ...DEFAULT_WORKSPACE_STATE,
+        ...(raw as Partial<WorkspaceState>),
+        activeWorkspace: activeWorkspace as WorkspaceState["activeWorkspace"],
+      },
+      updatedAt: row.updatedAt,
+    };
   } catch {
     return { state: DEFAULT_WORKSPACE_STATE, updatedAt: row.updatedAt };
   }

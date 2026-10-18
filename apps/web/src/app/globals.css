@@ -3063,3 +3063,35 @@ button, input, select { font: inherit; color: inherit; }
       the chip keeps its own border, and only one of them draws a corner. */
 .chart-toolbar-left .section-kicker::after { display: none; }
 .chart-toolbar-left .signal-chip { position: relative; }
+
+/* The book mid row: a five-figure price (BTC) left no room for "SPREAD" and
+   the two ran into each other. The label stacks above its value, and both
+   sides are allowed to shrink rather than overlap. */
+.book-mid { align-items: flex-end; }
+.book-mid > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.book-spread {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 0;
+  text-align: right;
+}
+.book-spread em {
+  font-style: normal;
+  font-size: var(--t-meta);
+  letter-spacing: var(--track-caps);
+  color: var(--c-fg-4);
+}
+.book-spread b {
+  color: var(--c-fg-2);
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The trade table needs one more column than the dock used to give it; let it
+   scroll rather than clipping REASON off the right edge. */
+.trade-table-scroll { overflow-x: auto; scrollbar-gutter: stable; }
+.trade-table-scroll .data-table { min-width: 100%; }

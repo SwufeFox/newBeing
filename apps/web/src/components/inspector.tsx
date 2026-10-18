@@ -21,7 +21,7 @@ function price(value: number | null | undefined): string {
 }
 
 interface InspectorProps {
-  workspace?: "terminal" | "research" | "backtest" | "replay";
+  workspace?: "terminal" | "research" | "replay";
   summary: MarketSummary | null;
   result: BacktestResult | null;
   running: boolean;
@@ -93,7 +93,13 @@ function OrderBook({ symbol, exchange }: { symbol: string; exchange: ExchangeId 
         <span className="depth-bar" style={{ width: `${Math.max(2, (level.amount / maxSize) * 100)}%` }} />
         <span>{price(level.price)}</span><span>{level.amount.toFixed(4)}</span>
       </div>)}
-      {book && <div className="book-mid"><span>{price(((book.asks[0]?.price ?? 0) + (book.bids[0]?.price ?? 0)) / 2)}</span><small>SPREAD {book.asks[0] && book.bids[0] ? price(book.asks[0].price - book.bids[0].price) : "—"}</small></div>}
+      {/* Mid and spread share one narrow column, and a five-figure price leaves
+          no room for the word "SPREAD" beside it. The figures stay on the
+          baseline; the label sits above the spread value so neither collides. */}
+      {book && <div className="book-mid">
+        <strong>{price(((book.asks[0]?.price ?? 0) + (book.bids[0]?.price ?? 0)) / 2)}</strong>
+        <span className="book-spread"><em>SPREAD</em><b>{book.asks[0] && book.bids[0] ? price(book.asks[0].price - book.bids[0].price) : "—"}</b></span>
+      </div>}
       {book?.bids.slice(0, 6).map((level, index) => <div className="book-row bid" key={`bid-${index}`}>
         <span className="depth-bar" style={{ width: `${Math.max(2, (level.amount / maxSize) * 100)}%` }} />
         <span>{price(level.price)}</span><span>{level.amount.toFixed(4)}</span>
@@ -356,14 +362,15 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
   /* Each workspace offers the readouts it is actually about — Arknights does
      the same: a system's panel only carries that system's data.
        Markets   Book / Trades / Strategy / AI
-       Research  Strategy / Trades / AI
-       Backtest  Strategy / AI
-       Replay    AI only (isolated account, no live book) */
+       Research  Book / Trades / Strategy / AI  (parameters AND the results board)
+       Replay    AI only (isolated account, no live book)
+     Research and Backtest were one system's worth of work split across two tabs,
+     so they are merged: Research now owns the strategy parameters *and* the run
+     results, which is what makes it usable for iterating on a strategy. */
   const tabsForWorkspace =
     workspace === "terminal" ? (["book", "trades", "strategy", "context"] as const)
       : workspace === "research" ? (["book", "trades", "strategy", "context"] as const)
-        : workspace === "backtest" ? (["strategy", "context"] as const)
-          : (["context"] as const);
+        : (["context"] as const);
   const offered = (replayMode ? (["context"] as const) : tabsForWorkspace) as readonly string[];
   const selectedTab: string = offered.includes(tab) ? tab : (offered[0] ?? "context");
   return <aside className="inspector-panel">

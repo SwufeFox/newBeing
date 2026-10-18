@@ -26,8 +26,10 @@ order the other way; the merge is independent (audit §4) and cheaper first.
 | 10 | Symbols re-denominate per venue | ✅ done |
 | 14 | Paper account namespace honoured end-to-end | ✅ done |
 | 15 | Kraken ticker timestamp fallback | ✅ done |
-| 3 | Merge Research + Backtest into one mode | ⬜ todo |
-| 4 | Persistence migration (`backtest` → `research`) | ⬜ todo |
+| 3 | Merge Research + Backtest into one mode | ✅ done |
+| 4 | Persistence migration (`backtest` → `research`) | ✅ done |
+| 16 | Fix two field-name bugs in the results board | ✅ done |
+| 17 | Book mid/spread collision + trade table clipping | ✅ done |
 | 10 | Mode handoffs: Backtest→Replay, Markets→Research | ⬜ todo |
 | 11 | Research closure: parameter sweep + strategy compare | ⬜ todo |
 | 12 | Cross-venue regression tests | ⬜ todo |
@@ -98,6 +100,44 @@ orders.
    watchlist now re-denominate through one shared map, on both the client and
    the server (the server is the authority: it normalises on write, and the
    client adopts the correction instead of keeping the value that was rejected).
+
+### The merge (step 3/4)
+
+Top nav is now **Markets / Research / Replay**. Research owns the strategy
+parameters *and* the results board, which is what makes it usable for iterating;
+previously you configured a strategy in one workspace and read its metrics in
+another. Verified in a real browser: inspector offers Book/Trades/Strategy/AI,
+the dock offers Results/Experiments/Execution, and the rail shows the strategy
+roster and run history together.
+
+**Migration is read-side and idempotent.** An old `activeWorkspace: "backtest"`
+is healed to `research` when the row is READ, so the API never hands the UI a
+workspace it cannot render. Verified 8/8 against a database built to look
+pre-merge: symbol, activeBacktestId and layout all survive; the value is
+`research` afterwards; a second read is unchanged.
+
+Three surfaces still ACCEPT the retired value so nothing breaks:
+the `/api/workspace` PUT (normalises rather than 400s — a 400 would wedge the
+client's sync loop, which retries every 350ms), the MCP `open_workspace_view`
+enum, and the localStorage `migrate` (version 2 → 3).
+
+### Two field-name bugs found by looking at the rendered result
+
+Both were silent: the data was correct and the UI read the wrong name.
+
+1. The run-history rail read `metrics.totalReturnPct`; `BacktestMetrics` exposes
+   `totalReturn` as a **fraction**. Every row rendered "—".
+2. The trade table and equity-curve label defaulted to `USDT` instead of the
+   pair's own quote, so a `BTC/USD` run was labelled USD in one place and USDT
+   in another.
+
+### Two layout defects the merge exposed
+
+1. The book mid row: `81,188.895` and `SPREAD 0.0100` overlapped once a
+   five-figure price needed more room than the ETH-era layout gave. Now the
+   spread stacks label-over-value; measured 85px of clearance.
+2. The trade table's `REASON` column was clipped by its own scroll box. It
+   scrolls now (871px of content in a 775px client).
 
 ### A build failure I caused
 
