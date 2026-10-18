@@ -29,6 +29,7 @@ describe("event-driven backtest", () => {
       parameters: {},
       config,
       resultId: "result-a",
+      exchange: "binance",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     expect(result.trades).toHaveLength(1);
@@ -48,6 +49,7 @@ describe("event-driven backtest", () => {
       parameters: {},
       config: { ...config, stopLossPct: 0.05, takeProfitPct: 0.1 },
       resultId: "result-b",
+      exchange: "binance",
     });
     expect(result.trades[0]?.exitReason).toBe("stop-loss");
     expect(result.trades[0]?.exitPrice).toBe(95);
@@ -63,6 +65,7 @@ describe("event-driven backtest", () => {
       parameters: {},
       config: { ...config, feeRate: 0.001, slippageRate: 0.002 },
       resultId: "result-c",
+      exchange: "binance",
     });
     expect(result.metrics.totalFees).toBeGreaterThan(0);
     expect(result.trades[0]?.entryPrice).toBeGreaterThan(120);
@@ -79,6 +82,7 @@ describe("event-driven backtest", () => {
       parameters: {},
       config,
       resultId: "result-d",
+      exchange: "binance" as const,
     };
     expect(() => runBacktest({ ...base, candles: [candle(1, 10, 11, 9, 10), candle(1, 10, 11, 9, 10)] })).toThrow(/increasing/);
     expect(() => runBacktest({ ...base, candles: [candle(1, 10, 9, 8, 10), candle(2, 10, 11, 9, 10)] })).toThrow(/OHLC/);
@@ -101,6 +105,7 @@ describe("event-driven backtest", () => {
       symbol: "BTC/USDT",
       timeframe: "1m" as const,
       datasetId: "dataset-repeatable",
+      exchange: "binance" as const,
       strategy: alwaysLongFromFirst,
       parameters: {},
       config,

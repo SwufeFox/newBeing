@@ -98,6 +98,9 @@ export interface BacktestExecutionAssumptions {
 export interface BacktestResult {
   resultId: string;
   datasetId: string;
+  /** Which venue the dataset came from. Without this a result cannot be
+   *  replayed, compared, or re-run against its own source. */
+  exchange: ExchangeId;
   symbol: string;
   timeframe: Timeframe;
   strategyId: string;
@@ -134,6 +137,9 @@ export interface WorkspaceState {
 
 export interface ReplaySession {
   id: string;
+  /** The venue this session's bars came from. The step endpoint re-fetches by
+   *  id, so without it a session would silently continue on the default venue. */
+  exchange: ExchangeId;
   symbol: string;
   timeframe: Timeframe;
   startAt: number;

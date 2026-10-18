@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { DEFAULT_WORKSPACE_STATE, EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestConfig, type BacktestResult, type ExchangeId, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
+import { symbolForExchange } from "@/lib/exchanges";
 
 export type ThemeMode = "dark" | "light";
 export type InspectorTab = "watchlist" | "book" | "trades" | "strategy" | "context";
@@ -55,20 +56,23 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   backtest: null,
   syncUpdatedAt: 0,
   setSymbol: (symbol) => set({ symbol, visibleRange: { from: null, to: null } }),
+  /* Switching venues keeps the session intact. Every venue can now serve
+     backtests and replays, so dropping the user's results on a venue change
+     would be destroying work for no reason — it used to be the only way to
+     avoid showing data that the server would refuse to extend.
+     The symbols do have to follow the venue, though: BTC/USDT is not listed on
+     Coinbase or Kraken, so the pair is re-denominated or the app would sit on a
+     market the venue has never heard of. */
   setExchange: (exchange) => set((state) => ({
     exchange,
+    symbol: symbolForExchange(state.symbol, exchange),
+    watchlist: state.watchlist.map((item) => symbolForExchange(item, exchange)),
     timeframe: EXCHANGE_TIMEFRAMES[exchange].includes(state.timeframe) ? state.timeframe : "15m",
-    activeWorkspace: exchange === "binance" ? state.activeWorkspace : "terminal",
-    activeBacktestId: exchange === "binance" ? state.activeBacktestId : null,
-    activeReplayId: exchange === "binance" ? state.activeReplayId : null,
-    backtest: exchange === "binance" ? state.backtest : null,
     visibleRange: { from: null, to: null },
   })),
 
   setTimeframe: (timeframe) => set({ timeframe, visibleRange: { from: null, to: null } }),
-  setWorkspace: (activeWorkspace) => set((state) => ({
-    activeWorkspace: state.exchange === "binance" || (activeWorkspace !== "backtest" && activeWorkspace !== "replay") ? activeWorkspace : "terminal",
-  })),
+  setWorkspace: (activeWorkspace) => set({ activeWorkspace }),
   setInspectorTab: (inspectorTab) => set({ inspectorTab }),
   setDockTab: (dockTab) => set({ dockTab }),
   setTheme: (theme) => set({ theme }),
@@ -83,7 +87,13 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   setFromRemote: (state, updatedAt) => set((current) => ({
     ...state,
     theme: current.theme,
-    watchlist: current.watchlist,
+    /* The watchlist is client-only, but its pairs are not venue-neutral, so it
+       is re-denominated whenever the incoming venue differs. Otherwise the list
+       keeps quoting BTC/USDT after the app has switched to Kraken, and every
+       row in it is a market that venue does not have. */
+    watchlist: state.exchange === current.exchange
+      ? current.watchlist
+      : current.watchlist.map((item) => symbolForExchange(item, state.exchange)),
     inspectorTab: current.inspectorTab,
     dockTab: current.dockTab,
     strategyParameters: current.selectedStrategyId === state.selectedStrategyId

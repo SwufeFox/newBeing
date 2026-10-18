@@ -20,18 +20,13 @@ import { Decoded } from "@/components/decoded";
 import { WATCHLIST_DRAG_TYPE } from "@/components/watchlist";
 import { WorkspaceSync } from "@/components/workspace-sync";
 import { Button } from "@/components/ui/button";
+import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import { EXCHANGE_TIMEFRAMES, type BacktestResult, type Candle, type PaperOrder, type PaperPortfolio, type ReplaySession, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import type { MarketSummary, MarketSymbol } from "@newbeing/market-data/types";
 
 const TIMEFRAMES: readonly Timeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
-const EXCHANGE_LABELS: Record<WorkspaceState["exchange"], string> = {
-  binance: "Binance Spot",
-  coinbaseexchange: "Coinbase Exchange",
-  kraken: "Kraken Spot",
-  okx: "OKX Spot",
-};
 const EMPTY_REPLAY_BARS: readonly Candle[] = [];
 
 // What each system in the rail is for. Keeps the rail informative now that
@@ -171,7 +166,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
         >
           <span className="symbol-result-pair"><strong>{item.base}</strong><small>/ {item.quote}</small></span><span className="result-quote">{item.quote}<ChevronDown size={12} /></span>
         </button>)}
-        {!showLoading && !error && query.trim().length > 0 && items.length === 0 && <div className="popover-state">No active USDT spot pair found.</div>}
+        {!showLoading && !error && query.trim().length > 0 && items.length === 0 && <div className="popover-state">No active spot pair for “{query.trim().toUpperCase()}” on {EXCHANGE_LABELS[exchange]}.</div>}
       </div>
     </>}
   </div>;
@@ -373,8 +368,7 @@ export function Terminal(): React.JSX.Element {
   }, [theme]);
 
   const setPage = (next: WorkspaceState["activeWorkspace"]): void => {
-    if (next === "backtest" && exchange !== "binance") return;
-    if (next === "replay" && exchange !== "binance") return;
+    /* No venue gate: every supported exchange can serve backtests and replays. */
     if (next !== "replay") setReplayPlaying(false);
     setWorkspace(next);
     if (next === "backtest") setDockTab("backtest");
@@ -612,7 +606,7 @@ export function Terminal(): React.JSX.Element {
       <div className="brand-lockup"><div className="brand-mark"><Activity size={16} strokeWidth={2.4} /></div><span>newBeing</span><span className="workspace-label">MARKET INTELLIGENCE</span></div>
       <div className="topbar-divider" />
       <nav className="workspace-nav" aria-label="Workspaces">
-        {([ ["terminal", "Markets"], ["research", "Research"], ["backtest", "Backtest"], ["replay", "Replay"] ] as const).map(([item, label]) => <button key={item} data-testid={`workspace-${item}`} disabled={(item === "replay" || item === "backtest") && exchange !== "binance"} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{label}</button>)}
+        {([ ["terminal", "Markets"], ["research", "Research"], ["backtest", "Backtest"], ["replay", "Replay"] ] as const).map(([item, label]) => <button key={item} data-testid={`workspace-${item}`} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{label}</button>)}
       </nav>
       <div className="topbar-spacer" />
       <SymbolPicker disabled={replayLocked} />
@@ -682,7 +676,9 @@ export function Terminal(): React.JSX.Element {
             {running ? <span className="run-status"><LoaderCircle size={13} className="spin" />{lastAction ?? "Running…"}</span> : lastAction && <span className="run-status">{lastAction}</span>}
           </div>
         </div>
-        {exchange !== "binance" && <div className="global-alert" role="status">Public charts and quotes use {EXCHANGE_LABELS[exchange]}. Backtests, Replay, and Paper orders currently require Binance Spot.</div>}
+        {/* Every venue is fully usable now, so this states which source is in
+            use rather than warning that something is missing. */}
+        {exchange !== "binance" && <div className="global-alert" role="status">Charts, quotes, backtests, Replay and Paper orders all use {EXCHANGE_LABELS[exchange]} public market data.</div>}
 
         {workspace === "replay" && <ReplayControls
           symbol={symbol}
@@ -725,7 +721,7 @@ export function Terminal(): React.JSX.Element {
       </section>
     </main>
     <nav className="mobile-mode-nav" aria-label="Workspace modes">
-      {([["terminal", "Markets"], ["research", "Strategy"], ["backtest", "Backtest"], ["replay", "Replay"]] as const).map(([item, label]) => <button key={item} type="button" disabled={(item === "replay" || item === "backtest") && exchange !== "binance"} aria-current={workspace === item ? "page" : undefined} className={workspace === item ? "active" : ""} onClick={() => setPage(item)}>{label}</button>)}
+        {([["terminal", "Markets"], ["research", "Strategy"], ["backtest", "Backtest"], ["replay", "Replay"]] as const).map(([item, label]) => <button key={item} type="button" aria-current={workspace === item ? "page" : undefined} className={workspace === item ? "active" : ""} onClick={() => setPage(item)}>{label}</button>)}
     </nav>
     <footer className="statusbar"><div><i className="status-dot" /><span>LOCAL WORKSPACE</span><span className="footer-separator">·</span><span>{symbol} · {timeframe}</span></div><div><span>{workspace === "replay" ? "REPLAY CURSOR DATA" : "PUBLIC MARKET DATA"}</span><span className="footer-separator">·</span><span>LIVE EXECUTION DISABLED</span><span className="footer-separator">·</span><span>LOCAL SQLITE</span></div></footer>
   </div>;

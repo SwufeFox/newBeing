@@ -5,10 +5,13 @@ import { AreaSeries, ColorType, createChart, type IChartApi, type Time, type UTC
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileText, ListChecks, RefreshCw, Wallet } from "lucide-react";
 import type { BacktestResult, ExchangeId, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
+import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
 
+/** Format an amount in the symbol's own quote currency (USD on Coinbase and
+ *  Kraken, USDT elsewhere) rather than assuming USDT everywhere. */
 function money(value: number, currency = "USDT"): string {
   return `${value < 0 ? "−" : ""}${Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
@@ -68,12 +71,11 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
   const [price, setPrice] = useState<number | null>(null);
   const [stale, setStale] = useState(false);
   useEffect(() => {
-    if (exchange !== "binance") return;
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
         const [accountResponse, tickerResponse] = await Promise.all([
-          fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" }),
+          fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" }),
           fetch(`/api/market?kind=summary&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" }),
         ]);
         const account: unknown = await accountResponse.json();
@@ -92,24 +94,25 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
     const timer = window.setInterval(() => void refresh(), 8_000);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [symbol, exchange]);
-  if (exchange !== "binance") return <div className="empty-state"><Wallet size={18} /><strong>Paper positions unavailable</strong><span>Paper accounts and mark prices are available on Binance Spot.</span></div>;
   if (!payload) return <div className="empty-state"><Wallet size={18} /><strong>Paper account unavailable</strong><span>Waiting for local account state.</span></div>;
   const { portfolio } = payload;
   const unrealized = portfolio.averageEntryPrice !== null && price !== null
     ? (price - portfolio.averageEntryPrice) * portfolio.baseBalance
     : 0;
+  /* The wallet is denominated in the pair's quote asset. */
+  const quoteCurrency = symbol.split("/")[1] ?? "USDT";
   return <div className="position-table-wrap">
-    <div className="paper-isolation-note"><span className="paper-chip">PAPER ONLY</span><span>Isolated per-symbol demo wallet · never routes an order to Binance</span></div>
-    {stale && <div className="table-footnote">STALE · Showing the last Binance account snapshot; mark price may also be out of date.</div>}
+    <div className="paper-isolation-note"><span className="paper-chip">PAPER ONLY</span><span>Isolated per-symbol demo wallet · never routes an order to {EXCHANGE_LABELS[exchange]}</span></div>
+    {stale && <div className="table-footnote">STALE · Showing the last {EXCHANGE_LABELS[exchange]} account snapshot; mark price may also be out of date.</div>}
     <table className="data-table"><thead><tr><th>ASSET</th><th>SIZE</th><th>AVG ENTRY</th><th>MARK</th><th>UNREALIZED PNL</th><th>REALIZED PNL</th><th>AVAILABLE</th></tr></thead>
       <tbody><tr>
         <td className="instrument"><strong>{symbol.split("/")[0]}</strong><small>/{symbol.split("/")[1]}</small></td>
         <td>{portfolio.baseBalance.toFixed(6)}</td>
         <td>{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
         <td>{price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
-        <td className={unrealized >= 0 ? "positive" : "negative"}>{money(unrealized)}</td>
-        <td className={portfolio.realizedPnl >= 0 ? "positive" : "negative"}>{money(portfolio.realizedPnl)}</td>
-        <td>{money(portfolio.quoteBalance)}</td>
+        <td className={unrealized >= 0 ? "positive" : "negative"}>{money(unrealized, quoteCurrency)}</td>
+        <td className={portfolio.realizedPnl >= 0 ? "positive" : "negative"}>{money(portfolio.realizedPnl, quoteCurrency)}</td>
+        <td>{money(portfolio.quoteBalance, quoteCurrency)}</td>
       </tr></tbody>
     </table>
     {portfolio.baseBalance === 0 && <div className="table-footnote">No open Paper position for {symbol.split("/")[0]}.</div>}
@@ -122,10 +125,11 @@ function ReplayPositions({ session, portfolio }: { session: ReplaySession | null
   const unrealized = current && portfolio.averageEntryPrice !== null
     ? (current.close - portfolio.averageEntryPrice) * portfolio.baseBalance
     : 0;
+  const quoteCurrency = session.symbol.split("/")[1] ?? "USDT";
   return <div className="position-table-wrap">
     <div className="paper-isolation-note"><span className="paper-chip">REPLAY</span><span>Separate per-session account · marked only to the last revealed bar close</span></div>
     <table className="data-table"><thead><tr><th>ASSET</th><th>SIZE</th><th>AVG ENTRY</th><th>REPLAY CLOSE</th><th>UNREALIZED PNL</th><th>REALIZED PNL</th><th>AVAILABLE</th></tr></thead><tbody>
-      <tr><td className="instrument"><strong>{session.symbol.split("/")[0]}</strong><small>/{session.symbol.split("/")[1]} · {session.timeframe}</small></td><td>{portfolio.baseBalance.toFixed(6)}</td><td>{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td><td>{current?.close.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td><td className={unrealized >= 0 ? "positive" : "negative"}>{money(unrealized)}</td><td className={portfolio.realizedPnl >= 0 ? "positive" : "negative"}>{money(portfolio.realizedPnl)}</td><td>{money(portfolio.quoteBalance)}</td></tr>
+      <tr><td className="instrument"><strong>{session.symbol.split("/")[0]}</strong><small>/{session.symbol.split("/")[1]} · {session.timeframe}</small></td><td>{portfolio.baseBalance.toFixed(6)}</td><td>{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td><td>{current?.close.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td><td className={unrealized >= 0 ? "positive" : "negative"}>{money(unrealized, quoteCurrency)}</td><td className={portfolio.realizedPnl >= 0 ? "positive" : "negative"}>{money(portfolio.realizedPnl, quoteCurrency)}</td><td>{money(portfolio.quoteBalance, quoteCurrency)}</td></tr>
     </tbody></table>
   </div>;
 }
@@ -137,9 +141,8 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
   </tbody></table></div>;
 }
 
-function BacktestView({ result, exchange, onOpenStrategy, onSwitchToBinance }: { result: BacktestResult | null; exchange: ExchangeId; onOpenStrategy: () => void; onSwitchToBinance: () => void }): React.JSX.Element {
-  if (!result && exchange !== "binance") return <div className="empty-state"><FileText size={18} /><strong>Backtests use Binance Spot</strong><span>Switch to Binance to run a test. Public market data on other exchanges remains available.</span><Button variant="outline" size="sm" onClick={onSwitchToBinance}>Switch to Binance Spot</Button></div>;
-  if (!result) return <div className="empty-state"><FileText size={18} /><strong>No backtest selected</strong><span>Start with a reviewed built-in strategy, then run a deterministic historical test.</span><Button variant="outline" size="sm" onClick={onOpenStrategy}>Open Strategy Lab</Button></div>;
+function BacktestView({ result, onOpenStrategy }: { result: BacktestResult | null; onOpenStrategy: () => void }): React.JSX.Element {
+  if (!result) return <div className="empty-state"><FileText size={18} /><strong>No backtest selected</strong><span>Start with a reviewed built-in strategy, then run a deterministic historical test on any supported venue.</span><Button variant="outline" size="sm" onClick={onOpenStrategy}>Open Strategy Lab</Button></div>;
   const metric = result.metrics;
   return <div className="backtest-view">
     <div className="backtest-summary-row">
@@ -228,11 +231,11 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
     }).catch(() => undefined);
   }, [activeBacktestId, result?.resultId, setBacktest, replayMode]);
   useEffect(() => {
-    if (replayMode || exchange !== "binance") return;
+    if (replayMode) return;
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
-        const response = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+        const response = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
         const payload: unknown = await response.json();
         if (!response.ok) throw new Error("Paper account could not be loaded.");
         if (typeof payload === "object" && payload !== null && "portfolio" in payload && "orders" in payload && !disposed) {
@@ -266,9 +269,9 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
     </div>
     <div className="dock-content">
       {activeTab === "positions" && (workspace === "terminal" || workspace === "replay") && (replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} />)}
-      {activeTab === "orders" && (replayMode ? <OrdersTable orders={replayOrders} /> : exchange !== "binance" ? <div className="empty-state"><AlertCircle size={18} /><strong>Paper order history unavailable</strong><span>Paper data is available on Binance Spot.</span></div> : paperError && !paper ? <div className="empty-state"><AlertCircle size={18} /><strong>Orders unavailable</strong><span>{paperError}</span></div> : <><div className="table-footnote">Paper order history · symbols shown for each order</div><OrdersTable orders={paper?.orders ?? []} /></>)}
+      {activeTab === "orders" && (replayMode ? <OrdersTable orders={replayOrders} /> : paperError && !paper ? <div className="empty-state"><AlertCircle size={18} /><strong>Orders unavailable</strong><span>{paperError}</span></div> : <><div className="table-footnote">Paper order history · symbols shown for each order</div><OrdersTable orders={paper?.orders ?? []} /></>)}
       {activeTab === "history" && workspace === "research" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Experiment history hidden during replay</strong><span>Backtest results can reveal outcomes beyond the current cursor.</span></div> : <ExperimentHistory onSelect={selectResult} />)}
-      {activeTab === "backtest" && workspace === "backtest" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are visible; future-derived results are hidden.</span></div> : <BacktestView result={result} exchange={exchange} onSwitchToBinance={() => setExchange("binance")} onOpenStrategy={() => { setWorkspace("research"); setInspectorTab("strategy"); }} />)}
+      {activeTab === "backtest" && workspace === "backtest" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are visible; future-derived results are hidden.</span></div> : <BacktestView result={result} onOpenStrategy={() => { setWorkspace("research"); setInspectorTab("strategy"); }} />)}
       {activeTab === "logs" && (workspace === "research" || workspace === "backtest") && (replayMode ? <div className="execution-log">
         <div className="log-line"><span className="log-time">REPLAY</span><span className="log-info">FUTURE</span><span>Only completed bars at or before the cursor are loaded.</span></div>
         {replaySession && <div className="log-line"><span className="log-time">{new Date(replaySession.cursor).toLocaleTimeString()}</span><span className="log-success">CURSOR</span><span>{replaySession.symbol} · {replaySession.timeframe} · {replaySession.status}</span></div>}

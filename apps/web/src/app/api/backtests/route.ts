@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runResearchBacktest } from "@newbeing/application";
 import { getWorkspaceState, listExperiments } from "@newbeing/storage";
-import { logEvent } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES, logEvent, type ExchangeId } from "@newbeing/core";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
 export const runtime = "nodejs";
@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 const requestSchema = z.object({
   symbol: z.string().regex(/^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/),
   timeframe: z.enum(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]),
+  /* Optional: defaults to the workspace's active venue. */
+  exchange: z.enum(["binance", "coinbaseexchange", "okx", "kraken"]).optional(),
   strategyId: z.string().min(1).max(120),
   parameters: z.record(z.string(), z.union([z.number().finite(), z.boolean()])),
   config: z.object({
@@ -37,9 +39,6 @@ export async function GET(request: Request): Promise<NextResponse> {
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    if (getWorkspaceState().state.exchange !== "binance") {
-      return NextResponse.json({ error: "Backtests currently use Binance Spot historical data only. Select Binance to run a backtest." }, { status: 409 });
-    }
     const body: unknown = await request.json();
     const parsed = requestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid backtest request." }, { status: 400 });
@@ -52,14 +51,21 @@ export async function POST(request: Request): Promise<NextResponse> {
       ...(parsed.data.config.stopLossPct === undefined ? {} : { stopLossPct: parsed.data.config.stopLossPct }),
       ...(parsed.data.config.takeProfitPct === undefined ? {} : { takeProfitPct: parsed.data.config.takeProfitPct }),
     };
+    /* One venue for the whole run: the adapter that fetches the candles is the
+       same venue recorded on the result. */
+    const exchange: ExchangeId = parsed.data.exchange ?? getWorkspaceState().state.exchange;
+    if (!EXCHANGE_TIMEFRAMES[exchange].includes(parsed.data.timeframe)) {
+      return NextResponse.json({ error: `${exchange} does not provide ${parsed.data.timeframe} candles.` }, { status: 422 });
+    }
     const result = await runResearchBacktest({
+      exchange,
       symbol: parsed.data.symbol,
       timeframe: parsed.data.timeframe,
       strategyId: parsed.data.strategyId,
       parameters: parsed.data.parameters,
       config,
       ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
-    }, { marketAdapter: getWebMarketAdapter("binance") });
+    }, { marketAdapter: getWebMarketAdapter(exchange) });
     return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Backtest failed.";

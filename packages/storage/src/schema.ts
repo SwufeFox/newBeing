@@ -66,6 +66,10 @@ export const orderPreviews = sqliteTable("order_previews", {
 
 export const replaySessions = sqliteTable("replay_sessions", {
   id: text("id").primaryKey(),
+  /* Which venue the session's bars came from. Rows written before this column
+     existed are backfilled to "binance" by the migration in db.ts, since that
+     was the only venue the app could source from at the time. */
+  exchange: text("exchange").notNull().default("binance"),
   symbol: text("symbol").notNull(),
   timeframe: text("timeframe").notNull(),
   startAt: integer("start_at").notNull(),

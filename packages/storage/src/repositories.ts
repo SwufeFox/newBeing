@@ -1,7 +1,12 @@
 import { and, desc, eq } from "drizzle-orm";
-import { DEFAULT_WORKSPACE_STATE, fillPaperOrder, type BacktestResult, type Candle, type OrderPreview, type PaperOrder, type PaperPortfolio, type ReplaySession, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
+import { DEFAULT_WORKSPACE_STATE, fillPaperOrder, type BacktestResult, type Candle, type ExchangeId, type OrderPreview, type PaperOrder, type PaperPortfolio, type ReplaySession, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import { getDatabase } from "./db.js";
 import { experiments, orderPreviews, paperAccounts, paperOrders, replaySessions, strategies, workspaceStates } from "./schema.js";
+
+/** Venues a stored row may legitimately name. A row holding anything else is
+ *  treated as legacy rather than trusted, so a corrupt value cannot send a
+ *  request to an adapter that does not exist. */
+const EXCHANGE_IDS: readonly ExchangeId[] = ["binance", "coinbaseexchange", "okx", "kraken"];
 
 export interface StoredStrategy {
   id: string;
@@ -101,21 +106,34 @@ export function listExperiments(limit = 20): BacktestResult[] {
     .map((row) => JSON.parse(row.result) as BacktestResult);
 }
 
+/* Account ids are namespaced per venue. The Binance namespace is deliberately
+   spelled exactly as it always was ("binance-spot") so the ids of accounts that
+   already hold balances keep resolving — renaming them would orphan real paper
+   positions rather than migrate them. */
+const PAPER_NAMESPACE: Record<ExchangeId, string> = {
+  binance: "binance-spot",
+  coinbaseexchange: "coinbase-spot",
+  okx: "okx-spot",
+  kraken: "kraken-spot",
+};
+
 export const PAPER_ACCOUNT_ID = "paper:binance-spot:USDT";
 
-export function paperAccountId(symbol: string): string {
+export function paperAccountId(symbol: string, exchange: ExchangeId = "binance"): string {
   const [base, quote, extra] = symbol.toUpperCase().split("/");
-  if (!base || quote !== "USDT" || extra !== undefined || !/^[A-Z0-9]{2,20}$/.test(base)) {
-    throw new Error("Paper trading currently supports USDT-quoted Binance Spot markets only.");
+  if (!base || !quote || extra !== undefined || !/^[A-Z0-9]{2,20}$/.test(base) || !/^[A-Z0-9]{2,20}$/.test(quote)) {
+    throw new Error("Paper trading needs a BASE/QUOTE symbol, for example BTC/USDT.");
   }
-  return `paper:binance-spot:${base}:USDT`;
+  return `paper:${PAPER_NAMESPACE[exchange]}:${base}:${quote}`;
 }
 
-export function replayAccountId(sessionId: string, symbol: string): string {
+export function replayAccountId(sessionId: string, symbol: string, exchange: ExchangeId = "binance"): string {
   if (!/^[A-Za-z0-9-]{8,80}$/.test(sessionId)) throw new Error("Invalid replay session ID.");
-  const base = paperAccountId(symbol).split(":")[2];
-  if (!base) throw new Error("Invalid replay symbol.");
-  return `paper:replay:${sessionId}:${base}:USDT`;
+  const parts = paperAccountId(symbol, exchange).split(":");
+  const base = parts[2];
+  const quote = parts[3];
+  if (!base || !quote) throw new Error("Invalid replay symbol.");
+  return `paper:replay:${sessionId}:${base}:${quote}`;
 }
 
 export function getPaperPortfolio(accountId = PAPER_ACCOUNT_ID): PaperPortfolio {
@@ -308,6 +326,7 @@ function replaySessionFromRow(row: typeof replaySessions.$inferSelect): ReplaySe
     if (!Array.isArray(bars)) return undefined;
     return {
       id: row.id,
+      exchange: (EXCHANGE_IDS.includes(row.exchange as ExchangeId) ? row.exchange : "binance") as ExchangeId,
       symbol: row.symbol,
       timeframe: row.timeframe as Timeframe,
       startAt: row.startAt,
@@ -325,6 +344,7 @@ function replaySessionFromRow(row: typeof replaySessions.$inferSelect): ReplaySe
 export function createReplaySession(session: ReplaySession): void {
   getDatabase().insert(replaySessions).values({
     id: session.id,
+    exchange: session.exchange,
     symbol: session.symbol,
     timeframe: session.timeframe,
     startAt: session.startAt,

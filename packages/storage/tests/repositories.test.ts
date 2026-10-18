@@ -71,13 +71,21 @@ describe("SQLite repositories", () => {
     beginPaperIntent(input);
     expect(() => beginPaperIntent({ ...input, quantity: 0.2 })).toThrow(/different order parameters/);
     expect(getPaperPortfolio("paper:binance-spot:ETH:USDT").quoteBalance).toBe(10_000);
-    expect(() => paperAccountId("BTC/USDC")).toThrow(/USDT-quoted/);
+    /* Non-USDT quotes are supported now (Coinbase and Kraken pair against USD),
+       and wallets are namespaced per venue so the same pair on two exchanges
+       cannot share a balance. */
+    expect(paperAccountId("BTC/USDC")).toBe("paper:binance-spot:BTC:USDC");
+    expect(paperAccountId("BTC/USD", "kraken")).toBe("paper:kraken-spot:BTC:USD");
+    expect(paperAccountId("BTC/USD", "kraken")).not.toBe(paperAccountId("BTC/USD", "binance"));
+    // A malformed symbol is still rejected.
+    expect(() => paperAccountId("BTC")).toThrow(/BASE\/QUOTE/);
   });
 
   it("persists only the replay cursor and atomically releases one next bar", () => {
     const candle = (timestamp: number, close: number): Candle => ({ timestamp, open: close, high: close, low: close, close, volume: 1 });
     const session: ReplaySession = {
       id: "replay-session-1234",
+      exchange: "binance",
       symbol: "BTC/USDT",
       timeframe: "1m",
       startAt: 120_000,

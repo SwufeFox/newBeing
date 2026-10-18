@@ -110,12 +110,12 @@ export function getWebMarketAdapter(exchange: ExchangeId = "binance"): ExchangeA
   return getExchangeAdapter(exchange);
 }
 
-const EXCHANGE_LABELS: Record<ExchangeId, string> = {
-  binance: "Binance Spot",
-  coinbaseexchange: "Coinbase Exchange",
-  kraken: "Kraken Spot",
-  okx: "OKX Spot",
-};
+/* The venue label map lives in ./exchanges.ts, not here: this module pulls in
+   ccxt (a server-only dependency), so importing it from a client component
+   would try to bundle the whole exchange library into the browser. Re-exported
+   for existing server-side callers. */
+export { EXCHANGE_LABELS } from "./exchanges";
+import { EXCHANGE_LABELS } from "./exchanges";
 
 export function marketDataSourceLabel(exchange: ExchangeId = "binance"): string {
   return isFixtureMode && exchange === "binance" ? "Deterministic test fixture" : `${EXCHANGE_LABELS[exchange]} via CCXT`;

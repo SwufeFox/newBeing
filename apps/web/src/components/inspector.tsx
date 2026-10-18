@@ -87,7 +87,7 @@ function OrderBook({ symbol, exchange }: { symbol: string; exchange: ExchangeId 
   const maxSize = Math.max(0.000001, ...(book?.bids.map((level) => level.amount) ?? []), ...(book?.asks.map((level) => level.amount) ?? []));
   return (
     <div className="orderbook-panel">
-      <div className="book-columns"><span>PRICE (USDT)</span><span>SIZE</span></div>
+      <div className="book-columns"><span>PRICE ({symbol.split("/")[1] ?? "USDT"})</span><span>SIZE</span></div>
       {error && !book && <div className="small-error">{error}</div>}
       {book?.asks.slice(0, 6).reverse().map((level, index) => <div className="book-row ask" key={`ask-${index}`}>
         <span className="depth-bar" style={{ width: `${Math.max(2, (level.amount / maxSize) * 100)}%` }} />
@@ -199,13 +199,15 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
   const mode = useWorkspaceStore((state) => state.mode);
   const number = Number(quantity);
   const referencePrice = summary?.last ?? null;
+  /* The wallet is denominated in the symbol's quote asset, which is USD on
+     Coinbase and Kraken rather than USDT. */
+  const quote = symbol.split("/")[1] ?? "USDT";
 
   useEffect(() => {
-    if (exchange !== "binance") return;
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
-        const response = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+        const response = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
         const payload: unknown = await response.json();
         const parsed = parsePaper(payload);
         if (response.ok && parsed && !disposed) setPortfolio(parsed.portfolio);
@@ -236,7 +238,7 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
         throw new Error(message);
       }
       setNotice(action === "confirm" ? "Paper preview confirmed · simulated order recorded" : "Preview dismissed · no order created");
-      const refresh = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+      const refresh = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
       const account = parsePaper(await refresh.json());
       if (refresh.ok && account) setPortfolio(account.portfolio);
     } catch (reason) {
@@ -255,7 +257,7 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
       const response = await fetch("/api/paper", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientOrderId, symbol, side, quantity: number, mode: "paper" }),
+        body: JSON.stringify({ clientOrderId, symbol, side, quantity: number, mode: "paper", exchange }),
       });
       const payload: unknown = await response.json();
       if (!response.ok && response.status !== 202) {
@@ -276,8 +278,10 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
     }
   };
 
-  const activePortfolio = exchange === "binance" ? portfolio : null;
-  const activePreviews = exchange === "binance" ? previews : [];
+  /* The portfolio and previews are already the ones fetched for this venue
+     (the fetch is venue-scoped), so there is nothing to filter out. */
+  const activePortfolio = portfolio;
+  const activePreviews = previews;
   const estimated = referencePrice !== null && Number.isFinite(number) ? number * referencePrice : null;
   const pnl = activePortfolio && referencePrice !== null && activePortfolio.averageEntryPrice !== null
     ? activePortfolio.baseBalance * (referencePrice - activePortfolio.averageEntryPrice)
@@ -285,19 +289,18 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
 
   return <div className="paper-ticket">
     <div className="ticket-heading"><div><Wallet size={13} /><span>SIMULATED ORDER</span></div><span className="paper-chip">PAPER</span></div>
-    <div className="account-summary"><span>USDT AVAILABLE</span><strong>{activePortfolio ? `$${activePortfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}</strong></div>
-    <div className="account-summary position"><span>{symbol.split("/")[0]} POSITION</span><strong>{activePortfolio ? `${activePortfolio.baseBalance.toFixed(6)} ${symbol.split("/")[0]}` : "—"}</strong><small className={pnl >= 0 ? "positive" : "negative"}>uPnL {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT</small></div>
-    {exchange !== "binance" && <div className="ticket-disclaimer">Paper execution and order previews are currently locked to Binance Spot.</div>}
+    <div className="account-summary"><span>{quote} AVAILABLE</span><strong>{activePortfolio ? `$${activePortfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}</strong></div>
+    <div className="account-summary position"><span>{symbol.split("/")[0]} POSITION</span><strong>{activePortfolio ? `${activePortfolio.baseBalance.toFixed(6)} ${symbol.split("/")[0]}` : "—"}</strong><small className={pnl >= 0 ? "positive" : "negative"}>uPnL {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} {quote}</small></div>
     <label className="ticket-field"><span>QUANTITY · {symbol.split("/")[0]}</span><input data-testid="paper-quantity" type="number" min="0" step="0.0001" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
     <div className="ticket-estimate"><span>Est. notional</span><strong>{estimated === null ? "—" : `$${estimated.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</strong></div>
     <div className="ticket-actions">
-      <Button data-testid="paper-buy" variant="primary" size="sm" disabled={exchange !== "binance" || busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"} onClick={() => void submit("buy")}><TrendingUp size={13} />Buy</Button>
-      <Button variant="danger" size="sm" disabled={exchange !== "binance" || busy || !Number.isFinite(number) || number <= 0 || !activePortfolio || number > activePortfolio.baseBalance || mode !== "paper"} onClick={() => void submit("sell")}><TrendingDown size={13} />Sell</Button>
+      <Button data-testid="paper-buy" variant="primary" size="sm" disabled={busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"} onClick={() => void submit("buy")}><TrendingUp size={13} />Buy</Button>
+      <Button variant="danger" size="sm" disabled={busy || !Number.isFinite(number) || number <= 0 || !activePortfolio || number > activePortfolio.baseBalance || mode !== "paper"} onClick={() => void submit("sell")}><TrendingDown size={13} />Sell</Button>
     </div>
     {activePreviews.map((preview) => <div className="order-preview-card" key={preview.id}>
       <div className="preview-topline"><span>AI ORDER PREVIEW</span><span className="paper-chip">{preview.status.toUpperCase()}</span></div>
       <strong className={preview.side === "buy" ? "positive" : "negative"}>{preview.side.toUpperCase()} {preview.quantity} {symbol.split("/")[0]}</strong>
-      <small>Ref {price(preview.referencePrice)} · est. {price(preview.estimatedNotional)} USDT · fee {price(preview.estimatedFee)}</small>
+      <small>Ref {price(preview.referencePrice)} · est. {price(preview.estimatedNotional)} {quote} · fee {price(preview.estimatedFee)}</small>
       <small>Expires {new Date(preview.expiresAt).toLocaleTimeString()}</small>
       <div className="preview-actions"><Button size="sm" variant="primary" disabled={resolvingPreview === preview.id} onClick={() => void resolvePreview(preview.id, "confirm")}>Confirm Paper</Button><Button size="sm" variant="ghost" disabled={resolvingPreview === preview.id} onClick={() => void resolvePreview(preview.id, "dismiss")}>Dismiss</Button></div>
     </div>)}
@@ -328,14 +331,16 @@ function ReplayTicket({
   const unrealized = portfolio && current && portfolio.averageEntryPrice !== null
     ? portfolio.baseBalance * (current.close - portfolio.averageEntryPrice)
     : 0;
+  /* The replay wallet is denominated in the pair's quote asset. */
+  const quote = symbol.split("/")[1] ?? "USDT";
   if (!session || !portfolio || !current) {
     return <div className="paper-ticket replay-ticket"><div className="ticket-heading"><div><Clock3 size={13} /><span>REPLAY ACCOUNT</span></div><span className="paper-chip">ISOLATED</span></div><span className="ticket-disclaimer">Start a historical session to create its isolated Paper wallet. No live market quotes are used.</span></div>;
   }
   return <div className="paper-ticket replay-ticket">
     <div className="ticket-heading"><div><Clock3 size={13} /><span>REPLAY SIMULATOR</span></div><span className="paper-chip">{session.status.toUpperCase()}</span></div>
-    <div className="account-summary"><span>USDT AVAILABLE</span><strong>${portfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
-    <div className="account-summary position"><span>{symbol.split("/")[0]} POSITION</span><strong>{portfolio.baseBalance.toFixed(6)} {symbol.split("/")[0]}</strong><small className={unrealized >= 0 ? "positive" : "negative"}>uPnL {unrealized >= 0 ? "+" : ""}{unrealized.toFixed(2)} USDT</small></div>
-    <div className="ticket-estimate"><span>Current replay close</span><strong>{price(current.close)} USDT</strong></div>
+    <div className="account-summary"><span>{quote} AVAILABLE</span><strong>${portfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+    <div className="account-summary position"><span>{symbol.split("/")[0]} POSITION</span><strong>{portfolio.baseBalance.toFixed(6)} {symbol.split("/")[0]}</strong><small className={unrealized >= 0 ? "positive" : "negative"}>uPnL {unrealized >= 0 ? "+" : ""}{unrealized.toFixed(2)} {quote}</small></div>
+    <div className="ticket-estimate"><span>Current replay close</span><strong>{price(current.close)} {quote}</strong></div>
     <label className="ticket-field"><span>QUANTITY · {symbol.split("/")[0]}</span><input type="number" min="0" step="0.0001" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
     <div className="ticket-actions">
       <Button variant="primary" size="sm" disabled={busy || session.status !== "active" || !Number.isFinite(size) || size <= 0} onClick={() => void onOrder("buy", size)}><TrendingUp size={13} />Buy at close</Button>

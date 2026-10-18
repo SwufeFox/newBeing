@@ -10,9 +10,7 @@ const actionSchema = z.object({ action: z.enum(["confirm", "dismiss"]) });
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
   try {
     const workspace = getWorkspaceState().state;
-    if (workspace.exchange !== "binance") {
-      return NextResponse.json({ error: "Paper order previews currently support Binance Spot only." }, { status: 409 });
-    }
+    /* Replay isolation only; the venue no longer gates confirmation. */
     if (workspace.activeWorkspace === "replay") {
       return NextResponse.json({ error: "Normal Paper preview confirmation is disabled during Replay." }, { status: 409 });
     }
@@ -40,6 +38,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       symbol: preview.symbol,
       side: preview.side,
       quantity: preview.quantity,
+      exchange: getWorkspaceState().state.exchange,
     });
     updateOrderPreview(id, { status: "confirmed", orderId });
     const status = result.order.status === "filled" ? 201 : result.order.status === "unknown" ? 202 : 422;

@@ -43,7 +43,16 @@ export function WorkspaceSync(): null {
         const envelope = await response.json() as WorkspaceEnvelope;
         lastLocalWrite = envelope.updatedAt;
         lastServerTime = Math.max(lastServerTime, envelope.updatedAt);
-        useWorkspaceStore.getState().markSynced(envelope.updatedAt);
+        /* The server is the authority on venue-consistent values: it re-denominates
+           a pair the venue does not list (BTC/USDT on Kraken). If it corrected
+           anything, adopt its version rather than keeping the value it rejected,
+           which would otherwise stick in the UI forever. */
+        if (JSON.stringify(envelope.state) !== JSON.stringify(state)) {
+          applyingRemote = true;
+          useWorkspaceStore.getState().setFromRemote(envelope.state, envelope.updatedAt);
+        } else {
+          useWorkspaceStore.getState().markSynced(envelope.updatedAt);
+        }
       } catch {
         // The browser's persisted Zustand snapshot remains the offline fallback.
       }

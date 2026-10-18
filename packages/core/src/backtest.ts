@@ -26,6 +26,9 @@ export interface RunBacktestInput {
   candles: readonly Candle[];
   symbol: string;
   timeframe: BacktestResult["timeframe"];
+  /** Venue the candles came from; carried onto the result so the run stays
+   *  traceable to its source. */
+  exchange: BacktestResult["exchange"];
   datasetId: string;
   strategy: StrategyDefinition;
   parameters: StrategyParameters;
@@ -252,6 +255,7 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
   return {
     resultId: input.resultId,
     datasetId: input.datasetId,
+    exchange: input.exchange,
     symbol: input.symbol,
     timeframe: input.timeframe,
     strategyId: strategy.id,

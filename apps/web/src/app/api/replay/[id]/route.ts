@@ -62,7 +62,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (action.data.action === "step") {
       const interval = timeframeMilliseconds(session.timeframe as Timeframe);
       const from = session.cursor + interval;
-      const fetched = await getWebMarketAdapter().fetchOHLCVSince(session.symbol, session.timeframe as Timeframe, from, 4);
+      /* The session's own venue, never the adapter default. Stepping a Kraken
+         session through Binance would mix two price series into one run. */
+      const fetched = await getWebMarketAdapter(session.exchange).fetchOHLCVSince(session.symbol, session.timeframe as Timeframe, from, 4);
       const next = nextCompletedBarAfter(fetched, session.timeframe as Timeframe, session.cursor);
       if (!next) return NextResponse.json({ session, bar: null, hasNext: false, futureBarsLoaded: 0 });
       if (next.timestamp > session.cursor + interval) {

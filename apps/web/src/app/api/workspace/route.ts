@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { DEFAULT_WORKSPACE_STATE, EXCHANGE_TIMEFRAMES, type WorkspaceState } from "@newbeing/core";
 import { getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
+import { symbolForExchange } from "@/lib/exchanges";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,12 +38,17 @@ export async function PUT(request: Request): Promise<NextResponse> {
     const parsed = stateSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid workspace state." }, { status: 400 });
     const state: WorkspaceState = parsed.data;
+    /* Re-denominate on the server too. The client sends its own symbol, and a
+       stale or hand-written client could otherwise persist a pair the venue
+       does not list (BTC/USDT on Kraken), leaving the whole UI quoting a market
+       that cannot be fetched. */
+    state.symbol = symbolForExchange(state.symbol, state.exchange);
     if (!EXCHANGE_TIMEFRAMES[state.exchange].includes(state.timeframe)) {
       return NextResponse.json({ error: `${state.exchange} does not support ${state.timeframe} candles.` }, { status: 400 });
     }
-    if (state.exchange !== "binance" && (state.activeWorkspace === "backtest" || state.activeWorkspace === "replay")) {
-      return NextResponse.json({ error: "Backtest and Replay currently support Binance Spot only." }, { status: 409 });
-    }
+    /* No venue/workspace gate: every supported venue can serve backtests and
+       replays. The only per-venue rule left is that the venue must actually
+       publish the requested timeframe (checked above). */
     const updatedAt = saveWorkspaceState(state);
     return NextResponse.json({ state, updatedAt }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

@@ -62,11 +62,20 @@ export function getDatabase(): NewBeingDatabase {
     );
     CREATE INDEX IF NOT EXISTS order_previews_status_idx ON order_previews(status, created_at DESC);
     CREATE TABLE IF NOT EXISTS replay_sessions (
-      id TEXT PRIMARY KEY, symbol TEXT NOT NULL, timeframe TEXT NOT NULL,
-      start_at INTEGER NOT NULL, cursor INTEGER NOT NULL, bars TEXT NOT NULL,
-      status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      id TEXT PRIMARY KEY, exchange TEXT NOT NULL DEFAULT 'binance', symbol TEXT NOT NULL,
+      timeframe TEXT NOT NULL, start_at INTEGER NOT NULL, cursor INTEGER NOT NULL,
+      bars TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
   `);
+  /* Migration: databases created before replay sessions recorded their venue
+     have the table without the column. CREATE TABLE IF NOT EXISTS leaves such a
+     table untouched, so add the column explicitly. Every existing session could
+     only have been sourced from Binance, so the default is the truthful value,
+     not a guess. Replay is NOT NULL + has a default, so this cannot lose rows. */
+  const replayColumns = sqlite.pragma("table_info(replay_sessions)") as Array<{ name: string }>;
+  if (!replayColumns.some((column) => column.name === "exchange")) {
+    sqlite.exec("ALTER TABLE replay_sessions ADD COLUMN exchange TEXT NOT NULL DEFAULT 'binance'");
+  }
   const drizzleDb = drizzle(sqlite, { schema });
   globalWithDb[globalKey] = { sqlite, drizzle: drizzleDb };
   return drizzleDb;

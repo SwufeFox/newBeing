@@ -127,6 +127,7 @@ export async function installApiMocks(page: Page): Promise<ApiMockState> {
       }));
       const result = {
         resultId: "e2e-backtest-fixture",
+        exchange: "binance",
         datasetId: "e2e-dataset-fixture",
         symbol: SYMBOL,
         timeframe: TIMEFRAME,

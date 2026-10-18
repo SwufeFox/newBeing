@@ -25,6 +25,7 @@ const baseInput = {
   parameters: {},
   config: { initialCapital: 10_000, positionFraction: 0.5, feeRate: 0, slippageRate: 0, allowShorts: false },
   resultId: "metrics-test",
+  exchange: "binance" as const,
   createdAt: "2026-10-09T00:00:00.000Z",
 };
 

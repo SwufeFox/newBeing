@@ -15,7 +15,12 @@ export async function GET(request: Request): Promise<NextResponse> {
     if (!exchange.success) return NextResponse.json({ error: "Unsupported exchange." }, { status: 400 });
     const id = exchange.data as ExchangeId;
     const markets = await getWebMarketAdapter(id).searchSymbols(query, 60);
-    const usdt = markets.filter((market) => market.quote === "USDT");
+    /* Prefer the venue's dominant quote (USD on Coinbase and Kraken, USDT
+       elsewhere) but keep the others: filtering to a single quote is what made
+       non-USDT venues look empty. */
+    const preferredQuote = id === "coinbaseexchange" || id === "kraken" ? "USD" : "USDT";
+    const preferred = markets.filter((market) => market.quote === preferredQuote);
+    const usdt = preferred.length > 0 ? preferred : markets;
 
     /* The exchange returns its own order, which puts BNSOL and RESOLV ahead of
        a literal SOL query. Rank by match quality so the obvious answer is first:

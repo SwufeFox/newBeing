@@ -1,12 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 import { getStrategy, runBacktest, type BacktestConfig, type BacktestResult, type StrategyParameters } from "@newbeing/core";
-import { findCandleGaps, getBinanceAdapter, removeFormingCandles, type ExchangeAdapter } from "@newbeing/market-data";
-import type { Timeframe } from "@newbeing/core";
+import { findCandleGaps, getExchangeAdapter, removeFormingCandles, type ExchangeAdapter } from "@newbeing/market-data";
+import type { ExchangeId, Timeframe } from "@newbeing/core";
 import { getWorkspaceState, saveExperiment, saveWorkspaceState } from "@newbeing/storage";
 export * from "./paper.js";
 export * from "./replay.js";
 
 export interface ResearchBacktestRequest {
+  /** Venue to source candles from. Optional for backwards compatibility;
+   *  falls back to the workspace's active exchange. */
+  exchange?: ExchangeId;
   symbol: string;
   timeframe: Timeframe;
   strategyId: string;
@@ -32,9 +35,13 @@ export async function runResearchBacktest(
   }
   const strategy = getStrategy(request.strategyId);
   if (!strategy) throw new Error(`Unknown built-in strategy: ${request.strategyId}`);
-  const rawCandles = await (dependencies.marketAdapter ?? getBinanceAdapter()).fetchOHLCV(request.symbol, request.timeframe, request.limit ?? 600);
+  /* One venue for the whole run: sourcing candles from one place and labelling
+     the result with another would make the result untraceable. */
+  const exchange = request.exchange ?? getWorkspaceState().state.exchange;
+  const adapter = dependencies.marketAdapter ?? getExchangeAdapter(exchange);
+  const rawCandles = await adapter.fetchOHLCV(request.symbol, request.timeframe, request.limit ?? 600);
   const candles = removeFormingCandles(rawCandles, request.timeframe);
-  if (candles.length < 2) throw new Error("Binance returned fewer than two completed bars; no backtest was saved.");
+  if (candles.length < 2) throw new Error(`${exchange} returned fewer than two completed bars; no backtest was saved.`);
   const gaps = findCandleGaps(candles, request.timeframe);
   if (gaps.length > 0) {
     throw new Error(`Dataset contains ${gaps.length} missing interval(s). Refresh data or choose another symbol; incomplete data was not backtested.`);
@@ -43,6 +50,7 @@ export async function runResearchBacktest(
     candles,
     symbol: request.symbol,
     timeframe: request.timeframe,
+    exchange,
     datasetId: datasetId(request.symbol, request.timeframe, candles),
     strategy,
     parameters: { ...strategy.defaults, ...request.parameters },

@@ -73,7 +73,24 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
       await this.exchange.loadMarkets();
       return this.exchange.fetchTicker(normalized);
     });
-    return { symbol: normalized, last: finiteOrNull(ticker.last), changePct24h: finiteOrNull(ticker.percentage), high24h: finiteOrNull(ticker.high), low24h: finiteOrNull(ticker.low), quoteVolume24h: finiteOrNull(ticker.quoteVolume), bid: finiteOrNull(ticker.bid), ask: finiteOrNull(ticker.ask), timestamp: finiteOrNull(ticker.timestamp) };
+    /* Some venues (Kraken) return a ticker with no timestamp at all. Downstream
+       quote-freshness checks reject a missing timestamp, which would make those
+       venues unusable for paper fills. Fall back to the most recent trade time —
+       an observed exchange value, not a locally invented clock — and leave it
+       null if the venue cannot supply that either. */
+    const timestamp = finiteOrNull(ticker.timestamp) ?? await this.recentTradeTimestamp(normalized);
+    return { symbol: normalized, last: finiteOrNull(ticker.last), changePct24h: finiteOrNull(ticker.percentage), high24h: finiteOrNull(ticker.high), low24h: finiteOrNull(ticker.low), quoteVolume24h: finiteOrNull(ticker.quoteVolume), bid: finiteOrNull(ticker.bid), ask: finiteOrNull(ticker.ask), timestamp };
+  }
+
+  /** Timestamp of the newest reported trade, or null when unavailable. */
+  private async recentTradeTimestamp(symbol: string): Promise<number | null> {
+    try {
+      const trades = await coalesceRequest(`${this.id}|lasttrade|${symbol}`, () => this.exchange.fetchTrades(symbol, undefined, 1));
+      const newest = trades.at(-1);
+      return newest ? finiteOrNull(newest.timestamp) : null;
+    } catch {
+      return null;
+    }
   }
 
   async fetchSummaries(symbols: readonly string[]): Promise<MarketSummary[]> {

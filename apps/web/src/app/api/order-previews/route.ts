@@ -7,9 +7,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<NextResponse> {
   const workspace = getWorkspaceState().state;
-  if (workspace.exchange !== "binance") {
-    return NextResponse.json({ error: "Paper order previews currently support Binance Spot only." }, { status: 409 });
-  }
+  /* Replay isolation only: previews are venue-agnostic, so the venue no longer
+     decides whether they can be listed. */
   if (workspace.activeWorkspace === "replay") {
     return NextResponse.json({ error: "Normal order previews are hidden during Replay." }, { status: 409 });
   }

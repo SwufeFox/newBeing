@@ -1,4 +1,4 @@
-import { getBinanceAdapter, type ExchangeAdapter } from "@newbeing/market-data";
+import { getExchangeAdapter, type ExchangeAdapter } from "@newbeing/market-data";
 import {
   beginPaperIntent,
   finalizePaperFill,
@@ -7,13 +7,16 @@ import {
   markPaperIntentUnknown,
   paperAccountId,
 } from "@newbeing/storage";
-import type { PaperOrder, PaperOrderSide, PaperPortfolio } from "@newbeing/core";
+import type { ExchangeId, PaperOrder, PaperOrderSide, PaperPortfolio } from "@newbeing/core";
 
 export interface ExecutePaperOrderRequest {
   clientOrderId: string;
   symbol: string;
   side: PaperOrderSide;
   quantity: number;
+  /** Venue whose prices fill the order and whose namespace holds the account.
+   *  Optional so existing callers keep their Binance behaviour. */
+  exchange?: ExchangeId;
 }
 
 export interface ExecutePaperOrderResult {
@@ -74,10 +77,14 @@ export async function executePaperOrderWithDependencies(
 
 export async function executePaperOrder(
   request: ExecutePaperOrderRequest,
-  marketAdapter: ExchangeAdapter = getBinanceAdapter(),
+  marketAdapter: ExchangeAdapter = getExchangeAdapter(request.exchange ?? "binance"),
 ): Promise<ExecutePaperOrderResult> {
+  /* Price source and account namespace must name the same venue: filling a
+     Kraken order at Binance's price and booking it to Binance's account would
+     make the paper book meaningless. */
+  const exchange = request.exchange ?? "binance";
   return executePaperOrderWithDependencies(request, {
-    beginIntent: (order) => beginPaperIntent(order, paperAccountId(order.symbol)),
+    beginIntent: (order) => beginPaperIntent(order, paperAccountId(order.symbol, exchange)),
     markSubmitted: markPaperIntentSubmitted,
     fetchReferencePrice: async (symbol, side) => {
       const ticker = await marketAdapter.fetchSummary(symbol);
@@ -87,11 +94,15 @@ export async function executePaperOrder(
     },
     now: Date.now,
     maxQuoteAgeMs: PAPER_MAX_QUOTE_AGE_MS,
-    finalize: (clientOrderId, price) => finalizePaperFill(clientOrderId, price),
+    /* Every portfolio read and write must name the same account as the intent
+       above. Letting these fall back to the default venue meant a non-Binance
+       order was booked against a Binance-namespaced account and then read back
+       from a different one, which surfaced as "Paper account not found". */
+    finalize: (clientOrderId, price) => finalizePaperFill(clientOrderId, price, paperAccountId(request.symbol, exchange)),
     markUnknown: (clientOrderId) => ({
       order: markPaperIntentUnknown(clientOrderId),
-      portfolio: getPaperPortfolio(paperAccountId(request.symbol)),
+      portfolio: getPaperPortfolio(paperAccountId(request.symbol, exchange)),
     }),
-    readPortfolio: (symbol) => getPaperPortfolio(paperAccountId(symbol)),
+    readPortfolio: (symbol) => getPaperPortfolio(paperAccountId(symbol, exchange)),
   });
 }
