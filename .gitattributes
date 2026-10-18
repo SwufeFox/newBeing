@@ -1,0 +1,15 @@
+# Normalize line endings at the repository boundary.
+# The history is pure LF (90/90 tracked text files), but core.autocrlf=true on
+# Windows let two files slip into the index with CRLF, which rewrote them
+# entirely on every subsequent edit. Declaring the rule here makes the
+# normalisation explicit instead of depending on each machine's git config.
+* text=auto eol=lf
+
+*.woff2 binary
+*.woff binary
+*.ttf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary

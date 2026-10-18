@@ -12,3 +12,9 @@ test-results/
 *.tsbuildinfo
 apps/web/public/monaco/vs/
 .alma-snapshots
+
+# Local development evidence: screenshots and probe scripts are working
+# artefacts, not source. 119 files / 15.1 MB had accumulated in the index while
+# the whole repository pack is only 185 KB.
+shots/
+*.tmp
