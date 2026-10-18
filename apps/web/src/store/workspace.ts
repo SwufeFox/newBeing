@@ -36,6 +36,8 @@ export interface WorkspaceStore extends WorkspaceState {
   setFromRemote: (state: WorkspaceState, updatedAt: number) => void;
   markSynced: (updatedAt: number) => void;
   addWatchlistSymbol: (symbol: string) => void;
+  /** Move a watchlist entry to a new index (drag-to-reorder). */
+  moveWatchlistSymbol: (symbol: string, toIndex: number) => void;
   removeWatchlistSymbol: (symbol: string) => void;
 }
 
@@ -98,10 +100,29 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   removeWatchlistSymbol: (symbol) => set((state) => ({
     watchlist: state.watchlist.filter((item) => item !== symbol),
   })),
+  moveWatchlistSymbol: (symbol, toIndex) => set((state) => {
+    const from = state.watchlist.indexOf(symbol);
+    if (from < 0) return {};
+    const next = state.watchlist.slice();
+    next.splice(from, 1);
+    const bounded = Math.max(0, Math.min(next.length, toIndex));
+    next.splice(bounded, 0, symbol);
+    return { watchlist: next };
+  }),
 }), {
   name: "newbeing-workspace-v1",
   storage: createJSONStorage(() => localStorage),
   skipHydration: true,
+  version: 2,
+  migrate: (persisted) => {
+    const state = persisted as Partial<WorkspaceStore> & { layout?: { watchlistWidth: number; inspectorWidth: number; bottomHeight: number } };
+    // v2: recomposed workstation defaults — old persisted layout values predate
+    // the ak-ui system rewrite and overflow the canvas; reset them to v2 defaults.
+    return {
+      ...state,
+      layout: { watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 },
+    } as unknown as WorkspaceStore;
+  },
   partialize: (state) => ({
     symbol: state.symbol,
     timeframe: state.timeframe,

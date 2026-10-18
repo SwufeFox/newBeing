@@ -169,7 +169,7 @@ export const DEFAULT_WORKSPACE_STATE: WorkspaceState = {
   activeBacktestId: null,
   activeReplayId: null,
   visibleRange: { from: null, to: null },
-  layout: { watchlistWidth: 220, inspectorWidth: 300, bottomHeight: 224 },
+  layout: { watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 },
 };
 
 export const BACKTEST_EXECUTION_ASSUMPTIONS: BacktestExecutionAssumptions = {

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "ak-ui": {
+      "source": "YunYouJun/ak-ui",
+      "sourceType": "github",
+      "skillPath": "skills/ak-ui/SKILL.md",
+      "computedHash": "73f7312b1bb2394882594b841aecfe0c6c6b533e2b2c4c2636b5a6a62cc9eafb"
+    }
+  }
+}

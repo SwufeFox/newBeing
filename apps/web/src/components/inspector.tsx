@@ -21,6 +21,7 @@ function price(value: number | null | undefined): string {
 }
 
 interface InspectorProps {
+  workspace?: "terminal" | "research" | "backtest" | "replay";
   summary: MarketSummary | null;
   result: BacktestResult | null;
   running: boolean;
@@ -345,16 +346,28 @@ function ReplayTicket({
   </div>;
 }
 
-export function Inspector({ summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
+export function Inspector({ workspace = "terminal", summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
   const [symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
-  const selectedTab = replayMode ? "context" : tab === "watchlist" ? "book" : tab;
+  /* Each workspace offers the readouts it is actually about — Arknights does
+     the same: a system's panel only carries that system's data.
+       Markets   Book / Trades / Strategy / AI
+       Research  Strategy / Trades / AI
+       Backtest  Strategy / AI
+       Replay    AI only (isolated account, no live book) */
+  const tabsForWorkspace =
+    workspace === "terminal" ? (["book", "trades", "strategy", "context"] as const)
+      : workspace === "research" ? (["book", "trades", "strategy", "context"] as const)
+        : workspace === "backtest" ? (["strategy", "context"] as const)
+          : (["context"] as const);
+  const offered = (replayMode ? (["context"] as const) : tabsForWorkspace) as readonly string[];
+  const selectedTab: string = offered.includes(tab) ? tab : (offered[0] ?? "context");
   return <aside className="inspector-panel">
     <Tabs value={selectedTab} onValueChange={(value) => setTab(value as "book" | "trades" | "strategy" | "context")} className="inspector-tabs">
       <TabsList className="inspector-tab-list">
-        {!replayMode && <TabsTrigger value="book" aria-label="Order book"><BookOpen size={13} /><span>Book</span></TabsTrigger>}
-        {!replayMode && <TabsTrigger value="trades" aria-label="Recent trades"><History size={13} /><span>Trades</span></TabsTrigger>}
-        {!replayMode && <TabsTrigger value="strategy" aria-label="Strategy lab"><Layers3 size={13} /><span>Strategy</span></TabsTrigger>}
-        <TabsTrigger value="context" aria-label="AI context"><Braces size={13} /><span>AI</span></TabsTrigger>
+        {offered.includes("book") && <TabsTrigger value="book" aria-label="Order book"><BookOpen size={13} /><span>Book</span></TabsTrigger>}
+        {offered.includes("trades") && <TabsTrigger value="trades" aria-label="Recent trades"><History size={13} /><span>Trades</span></TabsTrigger>}
+        {offered.includes("strategy") && <TabsTrigger value="strategy" aria-label="Strategy lab"><Layers3 size={13} /><span>Strategy</span></TabsTrigger>}
+        {offered.includes("context") && <TabsTrigger value="context" aria-label="AI context"><Braces size={13} /><span>AI</span></TabsTrigger>}
       </TabsList>
 
       <TabsContent value="book"><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} /></TabsContent>

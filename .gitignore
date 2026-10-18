@@ -18,3 +18,5 @@ apps/web/public/monaco/vs/
 # the whole repository pack is only 185 KB.
 shots/
 *.tmp
+# Commit-message scratch files
+.msg*.txt

@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ChevronDown,
-  Command,
   LayoutDashboard,
   LoaderCircle,
   Moon,
@@ -17,6 +16,8 @@ import { BottomDock } from "@/components/bottom-dock";
 import { Inspector } from "@/components/inspector";
 import { ReplayControls } from "@/components/replay-controls";
 import { Watchlist } from "@/components/watchlist";
+import { Decoded } from "@/components/decoded";
+import { WATCHLIST_DRAG_TYPE } from "@/components/watchlist";
 import { WorkspaceSync } from "@/components/workspace-sync";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceStore } from "@/store/workspace";
@@ -32,6 +33,15 @@ const EXCHANGE_LABELS: Record<WorkspaceState["exchange"], string> = {
   okx: "OKX Spot",
 };
 const EMPTY_REPLAY_BARS: readonly Candle[] = [];
+
+// What each system in the rail is for. Keeps the rail informative now that
+// the top bar owns workspace switching.
+const RAIL_NOTES: Record<WorkspaceState["activeWorkspace"], string> = {
+  terminal: "Live public quotes, chart, and paper order previews.",
+  research: "Draft and review a strategy before it earns a backtest.",
+  backtest: "Deterministic run of a reviewed built-in strategy.",
+  replay: "Walk historical bars forward with future data hidden.",
+};
 
 function readItems<T>(payload: unknown): T[] {
   if (typeof payload !== "object" || payload === null || !("items" in payload) || !Array.isArray(payload.items)) return [];
@@ -147,8 +157,19 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
         <div className="popover-title">{EXCHANGE_LABELS[exchange].toUpperCase()} · SPOT MARKETS</div>
         {showLoading && <div className="popover-state"><LoaderCircle className="spin" size={14} />Searching markets…</div>}
         {error && <div className="popover-error">{error}</div>}
-        {!showLoading && !error && items.map((item) => <button className="symbol-result" key={item.symbol} onClick={() => choose(item.symbol)}>
-          <span><strong>{item.base}</strong><small>{item.symbol}</small></span><span className="result-quote">{item.quote}<ChevronDown size={12} /></span>
+        {!showLoading && !error && items.map((item) => <button
+          className="symbol-result"
+          key={item.symbol}
+          draggable
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "copy";
+            event.dataTransfer.setData(WATCHLIST_DRAG_TYPE, item.symbol);
+            event.dataTransfer.setData("text/plain", item.symbol);
+          }}
+          title="Click to open · drag into the watchlist to add"
+          onClick={() => choose(item.symbol)}
+        >
+          <span className="symbol-result-pair"><strong>{item.base}</strong><small>/ {item.quote}</small></span><span className="result-quote">{item.quote}<ChevronDown size={12} /></span>
         </button>)}
         {!showLoading && !error && query.trim().length > 0 && items.length === 0 && <div className="popover-state">No active USDT spot pair found.</div>}
       </div>
@@ -156,14 +177,18 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
   </div>;
 }
 
-function MarketSummaryBar({ summary, error, replayMode, replayPrice, onRetry }: { summary: MarketSummary | null; error: string | null; replayMode: boolean; replayPrice: number | null; onRetry: () => void }): React.JSX.Element {
+function MarketSummaryBar({ summary, error, replayMode, replayPrice, subject, onRetry }: { summary: MarketSummary | null; error: string | null; replayMode: boolean; replayPrice: number | null; subject: string; onRetry: () => void }): React.JSX.Element {
   const change = summary?.changePct24h;
+  /* Switching the subject must not leave the plate on an em-dash: the readout
+     rolls as noise and decodes into the real value when it arrives. */
+  const last = formatPrice(replayMode ? replayPrice : summary?.last);
+  const changeText = typeof change === "number" ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "—";
   return <div className={`summary-strip ${error && summary ? "stale" : ""}`}>
-    <div className="summary-price"><span>{replayMode ? "CURSOR CLOSE" : "LAST"}</span><strong>{formatPrice(replayMode ? replayPrice : summary?.last)}</strong>{!replayMode && typeof change === "number" && <small className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</small>}</div>
-    {!replayMode && <><div><span>24H HIGH</span><strong>{formatPrice(summary?.high24h)}</strong></div>
-      <div><span>24H LOW</span><strong>{formatPrice(summary?.low24h)}</strong></div>
-      <div><span>24H QUOTE VOL</span><strong>{typeof summary?.quoteVolume24h === "number" ? `${(summary.quoteVolume24h / 1_000_000).toFixed(2)}M` : "—"}</strong></div></>}
-    <div className="summary-source">{replayMode ? "HISTORICAL ONLY · NO LIVE QUOTES" : error ? <><span className="negative">{summary ? "STALE · RETRYING" : "Ticker unavailable"}</span><button className="summary-retry link-button" type="button" aria-label="Retry ticker request" onClick={onRetry}>Retry</button></> : <><i className="live-dot" />PUBLIC MARKET DATA</>}</div>
+    <div className="summary-price"><span>{replayMode ? "CURSOR CLOSE" : "LAST"}</span><Decoded className="decoded-price" value={last} trigger={subject} />{!replayMode && <small className={typeof change === "number" && change >= 0 ? "positive" : "negative"}><Decoded value={changeText} trigger={`${subject}|chg`} /></small>}</div>
+    {!replayMode && <><div><span>24H HIGH</span><Decoded className="decoded-stat" value={formatPrice(summary?.high24h)} trigger={`${subject}|hi`} /></div>
+      <div><span>24H LOW</span><Decoded className="decoded-stat" value={formatPrice(summary?.low24h)} trigger={`${subject}|lo`} /></div>
+      <div><span>24H QUOTE VOL</span><Decoded className="decoded-stat" value={typeof summary?.quoteVolume24h === "number" ? `${(summary.quoteVolume24h / 1_000_000).toFixed(2)}M` : "—"} trigger={`${subject}|vol`} /></div></>}
+    <div className="summary-source">{replayMode ? "HISTORICAL ONLY · NO LIVE QUOTES" : error ? <><span className="negative">{summary ? "STALE · RETRYING" : "Ticker unavailable"}</span><button className="summary-retry link-button" type="button" aria-label="Retry ticker request" onClick={onRetry}>Retry</button></> : null}</div>
   </div>;
 }
 
@@ -187,6 +212,134 @@ function DragHandle({ direction, onDelta, style }: { direction: "horizontal" | "
   return <div className={`drag-handle drag-${direction}`} style={style} role="separator" aria-orientation={direction === "horizontal" ? "vertical" : "horizontal"} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} />;
 }
 
+
+/* ══ Rail readouts ══════════════════════════════════════════════════════════
+   The rail is 269×694. Four key/value pairs left 86% of it empty. Each
+   workspace now fills that column with the data it actually acts on — all of it
+   derived from existing state, nothing fabricated. */
+
+function RailRunHistory(): React.JSX.Element {
+  const [activeBacktestId, selectedStrategyId, setDockTab] = useWorkspaceStore(useShallow((state) => [
+    state.activeBacktestId, state.selectedStrategyId, state.setDockTab,
+  ]));
+  const [items, setItems] = useState<Array<{ id: string; strategyId?: string; createdAt?: string; metrics?: { totalReturnPct?: number; tradeCount?: number } }>>([]);
+  const [state, setState] = useState<"loading" | "ready" | "blocked" | "error">("loading");
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/backtests");
+        /* 409 = the server is holding history back because the workspace is in
+           Replay. That is a deliberate boundary, not an empty history. */
+        if (res.status === 409) { if (alive) setState("blocked"); return; }
+        if (!res.ok) throw new Error(String(res.status));
+        const body = await res.json();
+        const list = Array.isArray(body) ? body : body.items ?? body.results ?? [];
+        if (alive) { setItems(list.slice(0, 20)); setState("ready"); }
+      } catch { if (alive) setState("error"); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  return <div className="rail-block">
+    <span className="rail-block-head">RUN HISTORY <b>{items.length || "—"}</b></span>
+    {state === "loading" && <span className="rail-hint">Loading local runs…</span>}
+    {state === "blocked" && <span className="rail-hint">History is withheld while a Replay session is active, so future-derived results cannot leak. Leave Replay to see saved runs.</span>}
+    {state === "error" && <span className="rail-hint">Local history unavailable.</span>}
+    {state === "ready" && items.length === 0 && <span className="rail-hint">No saved runs yet. Run a backtest to fill this list.</span>}
+    <div className="rail-list">
+      {items.map((run) => <button
+        key={run.id}
+        type="button"
+        className={`rail-item ${activeBacktestId === run.id ? "is-active" : ""}`}
+        onClick={() => setDockTab("backtest")}
+      >
+        <span className="rail-item-main">{(run.strategyId ?? selectedStrategyId).replace(/-/g, " ")}</span>
+        <span className="rail-item-meta">
+          {typeof run.metrics?.totalReturnPct === "number"
+            ? <em className={run.metrics.totalReturnPct >= 0 ? "positive" : "negative"}>{run.metrics.totalReturnPct >= 0 ? "+" : ""}{run.metrics.totalReturnPct.toFixed(2)}%</em>
+            : <em className="muted">—</em>}
+          <small>{run.metrics?.tradeCount ?? 0} trades</small>
+        </span>
+      </button>)}
+    </div>
+  </div>;
+}
+
+function RailStrategyRoster(): React.JSX.Element {
+  const [selectedStrategyId, parameters, setStrategy, setInspectorTab] = useWorkspaceStore(useShallow((state) => [
+    state.selectedStrategyId, state.strategyParameters, state.setStrategy, state.setInspectorTab,
+  ]));
+  const [items, setItems] = useState<Array<{ id: string; name?: string; description?: string }>>([]);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/strategies");
+        if (!res.ok) return;
+        const body = await res.json();
+        const list = Array.isArray(body) ? body : body.items ?? [];
+        if (alive) setItems(list);
+      } catch { /* the select in the inspector still works without this list */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const params = Object.entries(parameters ?? {});
+
+  return <>
+    <div className="rail-block">
+      <span className="rail-block-head">STRATEGIES <b>{items.length || "—"}</b></span>
+      {items.length === 0 && <span className="rail-hint">Loading built-in strategies…</span>}
+      <div className="rail-list">
+        {items.map((s) => <button
+          key={s.id}
+          type="button"
+          className={`rail-item ${selectedStrategyId === s.id ? "is-active" : ""}`}
+          onClick={() => { setStrategy(s.id, {}); setInspectorTab("strategy"); }}
+        >
+          <span className="rail-item-main">{s.name ?? s.id}</span>
+          <span className="rail-item-sub">{s.id}</span>
+        </button>)}
+      </div>
+    </div>
+
+    {/* what the selected strategy actually does — same values the inspector edits */}
+    {params.length > 0 && <div className="rail-block">
+      <span className="rail-block-head">PARAMETERS</span>
+      <div className="rail-facts compact">
+        {params.map(([key, value]) => <span key={key}>
+          <em>{key.replace(/([A-Z])/g, " $1").trim()}</em>
+          <strong>{typeof value === "boolean" ? (value ? "ON" : "OFF") : String(value)}</strong>
+        </span>)}
+      </div>
+    </div>}
+  </>;
+}
+
+function RailReplayState({ session, playing, speed }: { session: ReplaySession | null; playing: boolean; speed: number }): React.JSX.Element {
+  const bars = session?.bars ?? [];
+  const first = bars[0];
+  const last = bars.at(-1);
+  const range = first && last
+    ? `${new Date(first.timestamp).toISOString().slice(5, 16).replace("T", " ")} → ${new Date(last.timestamp).toISOString().slice(5, 16).replace("T", " ")}`
+    : null;
+
+  return <div className="rail-block">
+    <span className="rail-block-head">SESSION</span>
+    <div className="rail-facts compact">
+      <span><em>STATE</em><strong className={playing ? "positive" : ""}>{session ? (playing ? "PLAYING" : "PAUSED") : "IDLE"}</strong></span>
+      <span><em>BARS</em><strong>{bars.length || "—"}</strong></span>
+      <span><em>SPEED</em><strong>{speed}×</strong></span>
+      {range && <span><em>WINDOW</em><strong className="rail-range">{range}</strong></span>}
+      <span><em>ISOLATION</em><strong>NO LIVE QUOTES</strong></span>
+    </div>
+    {!session && <span className="rail-hint">Start a session from the transport bar to load bars.</span>}
+  </div>;
+}
+
 export function Terminal(): React.JSX.Element {
   const exchange = useWorkspaceStore((state) => state.exchange);
   const [workspace, setWorkspace, symbol, timeframe, theme, setTheme, layout, setLayout, visibleRange, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
@@ -194,6 +347,10 @@ export function Terminal(): React.JSX.Element {
     state.visibleRange, state.setVisibleRange, state.setBacktest, state.setDockTab, state.selectedStrategyId, state.strategyParameters, state.backtestConfig,
     state.activeReplayId, state.setActiveReplayId,
   ]));
+  // The nav paints from the urgent workspace value. The chart and the dock
+  // remount from a deferred copy, so React commits the tab colour first
+  // instead of paying for a chart teardown in the same frame as the click.
+  const deferredWorkspace = useDeferredValue(workspace);
   const { summary, error: summaryError, retry: retrySummary } = useSummary(symbol, exchange, workspace !== "replay");
   const [running, setRunning] = useState(false);
   const [backtestError, setBacktestError] = useState<string | null>(null);
@@ -427,14 +584,35 @@ export function Terminal(): React.JSX.Element {
   const replayLocked = workspace === "replay";
   const replayBars = workspace === "replay" ? replaySession?.bars ?? EMPTY_REPLAY_BARS : null;
   const replayPrice = replaySession?.bars.at(-1)?.close ?? null;
+  /* Each workspace is a different room, not the same room in another colour.
+     Reference: Arknights recomposes the canvas per system instead of relabelling
+     one grid. The watchlist is a Markets instrument; research/backtest/replay
+     give that width back to the chart. */
+  const showsWatchlist = workspace === "terminal";
+  const gridColumns = showsWatchlist
+    ? `${layout.watchlistWidth}px 5px minmax(0, 1fr) 5px ${layout.inspectorWidth}px`
+    : `minmax(0, 1fr) 5px ${workspace === "research"
+        ? Math.max(layout.inspectorWidth, 380)
+        : Math.max(layout.inspectorWidth, 320)}px`;
 
-  return <div className="application-shell">
+  /* Column indices shift when the watchlist is absent, so children ask for a
+     slot by role instead of a hardcoded number. */
+  const col = showsWatchlist
+    ? { rail: 1, railDrag: 2, chart: 3, inspectorDrag: 4, inspector: 5 }
+    : { rail: 0, railDrag: 0, chart: 1, inspectorDrag: 2, inspector: 3 };
+
+  /* Analysis modes need a taller dock: the result table is the product there. */
+  const dockHeight = workspace === "backtest" ? Math.max(layout.bottomHeight, 320)
+    : workspace === "replay" ? Math.max(layout.bottomHeight, 210)
+    : layout.bottomHeight;
+
+  return <div className={`application-shell mode-${workspace}`} data-ak-ui="system" data-theme={theme === "light" ? "light" : undefined}>
     <WorkspaceSync />
     <header className="topbar">
-      <div className="brand-lockup"><div className="brand-mark"><Activity size={16} strokeWidth={2.4} /></div><span>newBeing</span><span className="workspace-label">WORKSPACE</span></div>
+      <div className="brand-lockup"><div className="brand-mark"><Activity size={16} strokeWidth={2.4} /></div><span>newBeing</span><span className="workspace-label">MARKET INTELLIGENCE</span></div>
       <div className="topbar-divider" />
       <nav className="workspace-nav" aria-label="Workspaces">
-        {(["terminal", "research", "backtest", "replay"] as const).map((item) => <button key={item} data-testid={`workspace-${item}`} disabled={(item === "replay" || item === "backtest") && exchange !== "binance"} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{item}</button>)}
+        {([ ["terminal", "Markets"], ["research", "Research"], ["backtest", "Backtest"], ["replay", "Replay"] ] as const).map(([item, label]) => <button key={item} data-testid={`workspace-${item}`} disabled={(item === "replay" || item === "backtest") && exchange !== "binance"} className={`workspace-tab ${workspace === item ? "active" : ""}`} onClick={() => setPage(item)}>{label}</button>)}
       </nav>
       <div className="topbar-spacer" />
       <SymbolPicker disabled={replayLocked} />
@@ -444,27 +622,64 @@ export function Terminal(): React.JSX.Element {
       </div>
       <div className="topbar-divider narrow-divider" />
       <label className="exchange-select"><span className="exchange-logo">{exchange.slice(0, 1).toUpperCase()}</span><select aria-label="Exchange" value={exchange} disabled={replayLocked} onChange={(event) => useWorkspaceStore.getState().setExchange(event.target.value as WorkspaceState["exchange"])}><option value="binance">Binance Spot</option><option value="coinbaseexchange">Coinbase Exchange</option><option value="okx">OKX Spot</option><option value="kraken">Kraken Spot</option></select><ChevronDown size={12} /></label>
-      <span className="mode-pill"><i />PAPER</span>
-      <Button variant="ghost" size="icon" title="Live trading disabled" disabled aria-label="Live trading disabled"><span className="live-off">LIVE OFF</span></Button>
+      {/* One status panel instead of a pill plus a button: the header reads
+          like upstream's SYSTEM block, and the two facts it carries —
+          paper execution, live trading off — stay visible and labelled. */}
+      <div className="topbar-status" aria-label={`Execution mode: paper. Live trading disabled. Active workspace: ${workspaceName}.`}>
+        <span className="topbar-status-mark" aria-hidden="true" />
+        <span className="topbar-status-text">
+          <em>{workspaceName.toUpperCase()}</em>
+          <strong>PAPER · LIVE OFF</strong>
+        </span>
+      </div>
       <Button variant="ghost" size="icon" title="Toggle theme" aria-label="Toggle theme" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}</Button>
-      <Button variant="ghost" size="icon" title="Reset layout" aria-label="Reset layout" onClick={() => setLayout({ watchlistWidth: 220, inspectorWidth: 300, bottomHeight: 224 })}><LayoutDashboard size={15} /></Button>
+      <Button variant="ghost" size="icon" title="Reset layout" aria-label="Reset layout" onClick={() => setLayout({ watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 })}><LayoutDashboard size={15} /></Button>
     </header>
 
-    <div className="market-heading">
-      <div className="market-title"><span className="base-symbol">{symbol.split("/")[0]}</span><span className="quote-symbol">/ {symbol.split("/")[1]}</span><span className="spot-tag">SPOT</span><span className="ticker-chevron"><ChevronDown size={13} /></span></div>
-      <MarketSummaryBar summary={workspace === "replay" ? null : summary} error={workspace === "replay" ? null : summaryError} replayMode={workspace === "replay"} replayPrice={replayPrice} onRetry={retrySummary} />
-      <div className="market-heading-right"><span className="exchange-time">{workspace === "replay" && replaySession?.bars.at(-1) ? `Cursor ${new Date(replaySession.cursor).toLocaleTimeString()}` : summary?.timestamp ? `Updated ${new Date(summary.timestamp).toLocaleTimeString()}` : "Awaiting ticker"}</span></div>
+    <div className="market-heading" id="workspace-home">
+      <div className="market-identity"><span className="market-eyebrow">{EXCHANGE_LABELS[exchange]} · SPOT MARKET</span><div className="market-title"><Decoded className="base-symbol" value={symbol.split("/")[0] ?? symbol} trigger={`sym|${symbol}`} /><span className="quote-symbol">/ <Decoded value={symbol.split("/")[1] ?? ""} trigger={`quote|${symbol}`} /></span><span className="spot-tag">{timeframe}</span><span className="ticker-chevron"><ChevronDown size={13} /></span></div></div>
+      <MarketSummaryBar summary={workspace === "replay" ? null : summary} error={workspace === "replay" ? null : summaryError} replayMode={workspace === "replay"} replayPrice={replayPrice} subject={`${exchange}|${symbol}|${timeframe}|${workspace}`} onRetry={retrySummary} />
+      <div className="market-heading-right"><span className="exchange-time">{workspace === "replay" && replaySession?.bars.at(-1) ? `Cursor ${new Date(replaySession.cursor).toLocaleTimeString()}` : summary?.timestamp ? `Updated ${new Date(summary.timestamp).toLocaleTimeString()}` : "Awaiting ticker"}</span><span className="market-source-tag"><i className={summaryError ? "warning-dot" : "live-dot"} />{workspace === "replay" ? "REPLAY DATA" : summaryError ? "DELAYED" : "PUBLIC MARKET DATA"}</span></div>
     </div>
 
-    <main className="workspace-grid" style={{ gridTemplateColumns: `${layout.watchlistWidth}px 5px minmax(380px, 1fr) 5px ${layout.inspectorWidth}px`, gridTemplateRows: `minmax(0, 1fr) 5px ${layout.bottomHeight}px` }}>
-      <div className="left-rail" style={{ gridColumn: 1, gridRow: "1 / 4" }}><Watchlist disabled={replayLocked} /></div>
-      <DragHandle direction="horizontal" onDelta={resizeWatchlist} style={{ gridColumn: 2, gridRow: "1 / 4" }} />
-      <section className="chart-column" style={{ gridColumn: 3, gridRow: 1 }}>
+    <main className={`workspace-layout mode-layout-${workspace}`}>
+      {/* The top-bar nav already switches workspaces, so this rail is not a
+          second nav. It states which system you are inside (with the mode
+          signal) and what that system lets you do — the diegetic readout. */}
+      <div className="primary-rail" aria-label="Active workspace">
+        <span className="rail-caption">WORKSPACE</span>
+        <div className={`rail-status ${workspace}`}>
+          <span className="rail-status-head"><i />{workspaceName.toUpperCase()}</span>
+          <span className="rail-status-note">{RAIL_NOTES[workspace]}</span>
+        </div>
+
+        {/* Every rail carries the data its workspace acts on, so no mode leaves
+            a 694px column holding four lines. */}
+        {workspace === "backtest" && <RailRunHistory />}
+        {workspace === "research" && <RailStrategyRoster />}
+        {workspace === "replay" && <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />}
+
+        <div className="rail-facts">
+          <span><em>SYMBOL</em><strong>{symbol}</strong></span>
+          <span><em>TIMEFRAME</em><strong>{timeframe}</strong></span>
+          <span><em>VENUE</em><strong>{EXCHANGE_LABELS[exchange]}</strong></span>
+          <span><em>MODE</em><strong>PAPER</strong></span>
+        </div>
+      </div>
+      <section className="market-canvas" aria-label={`${workspaceName} market workspace`}>
+        <div className="workspace-grid" style={{ gridTemplateColumns: gridColumns, gridTemplateRows: `minmax(0, 1fr) 5px ${dockHeight}px` }}>
+      {showsWatchlist && <>
+        <div className="left-rail" style={{ gridColumn: col.rail, gridRow: "1 / 4" }}><Watchlist disabled={replayLocked} /></div>
+        <DragHandle direction="horizontal" onDelta={resizeWatchlist} style={{ gridColumn: col.railDrag, gridRow: "1 / 4" }} />
+      </>}
+      <section className="chart-column" style={{ gridColumn: col.chart, gridRow: 1 }}>
         <div className="chart-toolbar">
-          <div className="chart-toolbar-left"><span className="section-kicker">{workspaceName.toUpperCase()}</span><span className="toolbar-separator">/</span><span>{symbol} · {timeframe}</span>{result && <span className="signal-chip">{result.trades.length} signals</span>}</div>
+          <div className="chart-toolbar-left"><span className="section-kicker">01</span><span className="toolbar-separator">/</span><span>{workspaceName.toUpperCase()} · {symbol} · {timeframe}</span>{result && <span className="signal-chip">{result.trades.length} signals</span>}</div>
+          {/* No run button here: the Strategy panel owns the parameters and
+              carries the single Run action, so a second one up here would be
+              a duplicate call to action. */}
           <div className="chart-toolbar-right">
             {running ? <span className="run-status"><LoaderCircle size={13} className="spin" />{lastAction ?? "Running…"}</span> : lastAction && <span className="run-status">{lastAction}</span>}
-            {workspace !== "replay" && <Button data-testid="run-backtest" title={exchange === "binance" ? undefined : "Backtests currently require Binance Spot"} variant="primary" size="sm" onClick={() => void runBacktest()} disabled={running || exchange !== "binance"}><Command size={13} />Run backtest</Button>}
           </div>
         </div>
         {exchange !== "binance" && <div className="global-alert" role="status">Public charts and quotes use {EXCHANGE_LABELS[exchange]}. Backtests, Replay, and Paper orders currently require Binance Spot.</div>}
@@ -488,10 +703,11 @@ export function Terminal(): React.JSX.Element {
           onFinish={() => void finishReplay()}
           onNewSession={resetReplay}
         />}
-        <MarketChart key={`${exchange}|${symbol}|${timeframe}|${workspace}`} backtest={workspace === "replay" ? null : result} replayBars={replayBars} onRangeChange={handleVisibleRange} />
+        <MarketChart key={`${exchange}|${symbol}|${timeframe}|${deferredWorkspace}`} backtest={workspace === "replay" ? null : result} replayBars={replayBars} onRangeChange={handleVisibleRange} />
       </section>
-      <DragHandle direction="horizontal" onDelta={resizeInspector} style={{ gridColumn: 4, gridRow: "1 / 4" }} />
-      <div style={{ gridColumn: 5, gridRow: "1 / 4", minHeight: 0 }}><Inspector
+      <DragHandle direction="horizontal" onDelta={resizeInspector} style={{ gridColumn: col.inspectorDrag, gridRow: "1 / 4" }} />
+      <div style={{ gridColumn: col.inspector, gridRow: "1 / 4", minHeight: 0, display: "flex", flexDirection: "column" }} className="inspector-slot"><Inspector
+        workspace={workspace}
         summary={workspace === "replay" ? null : summary}
         result={workspace === "replay" ? null : result}
         running={running}
@@ -503,9 +719,14 @@ export function Terminal(): React.JSX.Element {
         onRun={() => void runBacktest()}
         onReplayOrder={placeReplayOrder}
       /></div>
-      <DragHandle direction="vertical" onDelta={resizeDock} style={{ gridColumn: 3, gridRow: 2 }} />
-      <div className="dock-slot" style={{ gridColumn: 3, gridRow: 3 }}><BottomDock key={`${exchange}|${symbol}|${workspace}`} replayMode={workspace === "replay"} replaySession={replaySession} replayPortfolio={replayPortfolio} replayOrders={replayOrders} /></div>
+      <DragHandle direction="vertical" onDelta={resizeDock} style={{ gridColumn: col.chart, gridRow: 2 }} />
+      <div className="dock-slot" style={{ gridColumn: col.chart, gridRow: 3 }}><BottomDock key={`${exchange}|${symbol}|${deferredWorkspace}`} workspace={workspace} replayMode={workspace === "replay"} replaySession={replaySession} replayPortfolio={replayPortfolio} replayOrders={replayOrders} /></div>
+      </div>
+      </section>
     </main>
+    <nav className="mobile-mode-nav" aria-label="Workspace modes">
+      {([["terminal", "Markets"], ["research", "Strategy"], ["backtest", "Backtest"], ["replay", "Replay"]] as const).map(([item, label]) => <button key={item} type="button" disabled={(item === "replay" || item === "backtest") && exchange !== "binance"} aria-current={workspace === item ? "page" : undefined} className={workspace === item ? "active" : ""} onClick={() => setPage(item)}>{label}</button>)}
+    </nav>
     <footer className="statusbar"><div><i className="status-dot" /><span>LOCAL WORKSPACE</span><span className="footer-separator">·</span><span>{symbol} · {timeframe}</span></div><div><span>{workspace === "replay" ? "REPLAY CURSOR DATA" : "PUBLIC MARKET DATA"}</span><span className="footer-separator">·</span><span>LIVE EXECUTION DISABLED</span><span className="footer-separator">·</span><span>LOCAL SQLITE</span></div></footer>
   </div>;
 }

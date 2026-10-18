@@ -15,7 +15,26 @@ export async function GET(request: Request): Promise<NextResponse> {
     if (!exchange.success) return NextResponse.json({ error: "Unsupported exchange." }, { status: 400 });
     const id = exchange.data as ExchangeId;
     const markets = await getWebMarketAdapter(id).searchSymbols(query, 60);
-    const items = markets.filter((market) => market.quote === "USDT");
+    const usdt = markets.filter((market) => market.quote === "USDT");
+
+    /* The exchange returns its own order, which puts BNSOL and RESOLV ahead of
+       a literal SOL query. Rank by match quality so the obvious answer is first:
+         exact base > base starts with the query > base contains it > symbol contains it. */
+    const q = query.trim().toUpperCase();
+    const rank = (base: string): number => {
+      if (!q) return 3;
+      if (base === q) return 0;
+      if (base.startsWith(q)) return 1;
+      if (base.includes(q)) return 2;
+      return 3;
+    };
+    const items = [...usdt].sort((a, b) => {
+      const d = rank(a.base) - rank(b.base);
+      if (d !== 0) return d;
+      // shorter bases win ties: "SOL" over "SOLV"
+      return a.base.length - b.base.length || a.base.localeCompare(b.base);
+    });
+
     return NextResponse.json({ items, source: marketDataSourceLabel(id) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Market search failed.";

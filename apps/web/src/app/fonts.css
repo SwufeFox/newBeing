@@ -1,0 +1,63 @@
+/* ============================================================
+   Arknights typefaces — self-hosted, taken from prts-design
+   (MooncellWiki/prts-design, extracted from the official site + torappu).
+
+   Roles (upstream tokens):
+     display  → Novecento Sans Wide   — wide geometric caps for titles/plates
+     label    → Bender                — HUD numerals and status values
+     mono     → JetBrains Mono        — tabular data, micro-labels
+   The CJK body face (Noto Sans SC) comes from next/font.
+   ============================================================ */
+
+@font-face {
+  font-family: "Novecento Sans Wide";
+  src: url("/fonts/novecento/Novecento-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Novecento Sans Wide";
+  src: url("/fonts/novecento/Novecento-UltraBold.woff2") format("woff2");
+  font-weight: 800 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Bender";
+  src: url("/fonts/bender/Bender-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bender";
+  src: url("/fonts/bender/Bender-Bold.woff2") format("woff2");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains/JetBrainsMono.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Chakra Petch";
+  src: url("/fonts/chakra/ChakraPetch-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Chakra Petch";
+  src: url("/fonts/chakra/ChakraPetch-700.woff2") format("woff2");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}

@@ -1,30 +1,59 @@
-import { cva, type VariantProps } from "class-variance-authority";
-import type { ButtonHTMLAttributes } from "react";
-import { cn } from "@/lib/cn";
+"use client";
 
-const buttonStyles = cva(
-  "inline-flex select-none items-center justify-center gap-1.5 rounded-md text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] disabled:pointer-events-none disabled:opacity-45",
-  {
-    variants: {
-      variant: {
-        primary: "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]",
-        subtle: "bg-[var(--surface-2)] text-[var(--text)] hover:bg-[var(--surface-hover)]",
-        outline: "border border-[var(--line)] bg-transparent text-[var(--text)] hover:bg-[var(--surface-hover)]",
-        ghost: "bg-transparent text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]",
-        danger: "bg-[var(--negative)] text-white hover:brightness-110",
-      },
-      size: {
-        sm: "h-7 px-2.5",
-        md: "h-8 px-3",
-        icon: "size-8 p-0",
-      },
-    },
-    defaultVariants: { variant: "subtle", size: "md" },
-  },
-);
+import { AkButton as AkButtonPrimitive } from "@swufefox/ak-ui-react";
+import type { AkButtonProps } from "@swufefox/ak-ui-react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonStyles> {}
+/**
+ * newBeing bridge to ak-ui AkButton.
+ * Keeps the product's existing variant/size vocabulary so call sites stay
+ * untouched, while the rendered control is the real ak-ui component.
+ * AkButton already defaults type="button".
+ */
+export type ButtonVariant = "primary" | "subtle" | "outline" | "ghost" | "danger";
+export type ButtonSize = "sm" | "md" | "icon";
 
-export function Button({ className, variant, size, type = "button", ...props }: ButtonProps): React.JSX.Element {
-  return <button className={cn(buttonStyles({ variant, size }), className)} type={type} {...props} />;
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  block?: boolean;
+}
+
+const variantToAk: Record<ButtonVariant, NonNullable<AkButtonProps["variant"]>> = {
+  primary: "action",
+  subtle: "default",
+  outline: "outline",
+  ghost: "outline",
+  danger: "action",
+};
+
+const sizeStyle: Record<ButtonSize, string> = {
+  sm: "ak-btn-size-sm",
+  md: "ak-btn-size-md",
+  icon: "ak-btn-size-icon",
+};
+
+const variantStyle: Record<ButtonVariant, string> = {
+  primary: "ak-btn-variant-primary",
+  subtle: "ak-btn-variant-subtle",
+  outline: "ak-btn-variant-outline",
+  ghost: "ak-btn-variant-ghost",
+  danger: "ak-btn-variant-danger",
+};
+
+export function Button({ variant = "subtle", size = "md", block = false, className = "", type = "button", children, ...rest }: ButtonProps): React.JSX.Element {
+  const { children: _children, ...htmlRest } = rest as ButtonHTMLAttributes<HTMLButtonElement> & { children?: ReactNode };
+  void _children;
+  return (
+    <AkButtonPrimitive
+      {...(htmlRest as Omit<AkButtonProps, "children" | "type" | "variant" | "block" | "className">)}
+      type={type}
+      variant={variantToAk[variant]}
+      block={block}
+      data-size={size}
+      className={`nb-button ${variantStyle[variant]} ${sizeStyle[size]} ${className}`}
+    >
+      {children}
+    </AkButtonPrimitive>
+  );
 }

@@ -103,7 +103,7 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
     {stale && <div className="table-footnote">STALE · Showing the last Binance account snapshot; mark price may also be out of date.</div>}
     <table className="data-table"><thead><tr><th>ASSET</th><th>SIZE</th><th>AVG ENTRY</th><th>MARK</th><th>UNREALIZED PNL</th><th>REALIZED PNL</th><th>AVAILABLE</th></tr></thead>
       <tbody><tr>
-        <td><strong>{symbol.split("/")[0]}</strong><small>{symbol}</small></td>
+        <td className="instrument"><strong>{symbol.split("/")[0]}</strong><small>/{symbol.split("/")[1]}</small></td>
         <td>{portfolio.baseBalance.toFixed(6)}</td>
         <td>{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
         <td>{price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
@@ -125,7 +125,7 @@ function ReplayPositions({ session, portfolio }: { session: ReplaySession | null
   return <div className="position-table-wrap">
     <div className="paper-isolation-note"><span className="paper-chip">REPLAY</span><span>Separate per-session account · marked only to the last revealed bar close</span></div>
     <table className="data-table"><thead><tr><th>ASSET</th><th>SIZE</th><th>AVG ENTRY</th><th>REPLAY CLOSE</th><th>UNREALIZED PNL</th><th>REALIZED PNL</th><th>AVAILABLE</th></tr></thead><tbody>
-      <tr><td><strong>{session.symbol.split("/")[0]}</strong><small>{session.symbol} · {session.timeframe}</small></td><td>{portfolio.baseBalance.toFixed(6)}</td><td>{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td><td>{current?.close.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td><td className={unrealized >= 0 ? "positive" : "negative"}>{money(unrealized)}</td><td className={portfolio.realizedPnl >= 0 ? "positive" : "negative"}>{money(portfolio.realizedPnl)}</td><td>{money(portfolio.quoteBalance)}</td></tr>
+      <tr><td className="instrument"><strong>{session.symbol.split("/")[0]}</strong><small>/{session.symbol.split("/")[1]} · {session.timeframe}</small></td><td>{portfolio.baseBalance.toFixed(6)}</td><td>{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td><td>{current?.close.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td><td className={unrealized >= 0 ? "positive" : "negative"}>{money(unrealized)}</td><td className={portfolio.realizedPnl >= 0 ? "positive" : "negative"}>{money(portfolio.realizedPnl)}</td><td>{money(portfolio.quoteBalance)}</td></tr>
     </tbody></table>
   </div>;
 }
@@ -137,8 +137,9 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
   </tbody></table></div>;
 }
 
-function BacktestView({ result }: { result: BacktestResult | null }): React.JSX.Element {
-  if (!result) return <div className="empty-state"><FileText size={18} /><strong>No backtest selected</strong><span>Choose a reviewed strategy, then run a deterministic historical test.</span></div>;
+function BacktestView({ result, exchange, onOpenStrategy, onSwitchToBinance }: { result: BacktestResult | null; exchange: ExchangeId; onOpenStrategy: () => void; onSwitchToBinance: () => void }): React.JSX.Element {
+  if (!result && exchange !== "binance") return <div className="empty-state"><FileText size={18} /><strong>Backtests use Binance Spot</strong><span>Switch to Binance to run a test. Public market data on other exchanges remains available.</span><Button variant="outline" size="sm" onClick={onSwitchToBinance}>Switch to Binance Spot</Button></div>;
+  if (!result) return <div className="empty-state"><FileText size={18} /><strong>No backtest selected</strong><span>Start with a reviewed built-in strategy, then run a deterministic historical test.</span><Button variant="outline" size="sm" onClick={onOpenStrategy}>Open Strategy Lab</Button></div>;
   const metric = result.metrics;
   return <div className="backtest-view">
     <div className="backtest-summary-row">
@@ -190,15 +191,25 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
   </tbody></table></div>;
 }
 
-export function BottomDock({ replayMode = false, replaySession = null, replayPortfolio = null, replayOrders = [] }: {
+export function BottomDock({ replayMode = false, replaySession = null, replayPortfolio = null, replayOrders = [], workspace = "terminal" }: {
+  workspace?: "terminal" | "research" | "backtest" | "replay";
   replayMode?: boolean;
   replaySession?: ReplaySession | null;
   replayPortfolio?: PaperPortfolio | null;
   replayOrders?: PaperOrder[];
 }): React.JSX.Element {
-  const [tab, setTab, symbol, exchange, result, activeBacktestId, setBacktest] = useWorkspaceStore(useShallow((state) => [
-    state.dockTab, state.setDockTab, state.symbol, state.exchange, state.backtest, state.activeBacktestId, state.setBacktest,
+  const [tab, setTab, symbol, exchange, result, activeBacktestId, setBacktest, setWorkspace, setInspectorTab, setExchange] = useWorkspaceStore(useShallow((state) => [
+    state.dockTab, state.setDockTab, state.symbol, state.exchange, state.backtest, state.activeBacktestId, state.setBacktest, state.setWorkspace, state.setInspectorTab, state.setExchange,
   ]));
+  /* A stored dockTab may belong to another workspace (e.g. "history" while in
+     Markets). Resolve to the first tab this mode actually offers. */
+  const allowedTabs = workspace === "terminal" || workspace === "replay"
+    ? ["positions", "orders"] as const
+    : workspace === "research"
+      ? ["history", "logs"] as const
+      : ["backtest", "logs"] as const;
+  const activeTab = (allowedTabs as readonly string[]).includes(tab) ? tab : allowedTabs[0];
+
   const [paper, setPaper] = useState<PaperPayload | null>(null);
   const [paperError, setPaperError] = useState<string | null>(null);
   const selectResult = (resultId: string): void => {
@@ -239,23 +250,26 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
 
   return <section className="bottom-dock">
     <div className="dock-toolbar">
-      <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+      <Tabs value={activeTab} onValueChange={(value) => setTab(value as typeof tab)}>
         <TabsList className="dock-tabs">
-          <TabsTrigger value="positions"><Wallet size={12} />Positions</TabsTrigger>
-          <TabsTrigger value="orders"><ListChecks size={12} />Orders</TabsTrigger>
-          <TabsTrigger value="history"><Clock3 size={12} />Experiments</TabsTrigger>
-          <TabsTrigger value="backtest"><FileText size={12} />Backtest</TabsTrigger>
-          <TabsTrigger value="logs"><Boxes size={12} />Execution</TabsTrigger>
+          {/* Each workspace offers only the readouts it can act on.
+              Markets = desk, Research = experiments, Backtest = results,
+              Replay = session + orders. */}
+          {(workspace === "terminal" || workspace === "replay") && <TabsTrigger value="positions"><Wallet size={12} />Positions</TabsTrigger>}
+          {(workspace === "terminal" || workspace === "replay") && <TabsTrigger value="orders"><ListChecks size={12} />Orders</TabsTrigger>}
+          {workspace === "research" && <TabsTrigger value="history"><Clock3 size={12} />Experiments</TabsTrigger>}
+          {workspace === "backtest" && <TabsTrigger value="backtest"><FileText size={12} />Results</TabsTrigger>}
+          {(workspace === "research" || workspace === "backtest") && <TabsTrigger value="logs"><Boxes size={12} />Execution</TabsTrigger>}
         </TabsList>
       </Tabs>
       <div className="dock-toolbar-right"><span className="dock-mode-dot" />{replayMode ? "REPLAY · ISOLATED ACCOUNT" : "PAPER ACCOUNT"}</div>
     </div>
     <div className="dock-content">
-      {tab === "positions" && (replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} />)}
-      {tab === "orders" && (replayMode ? <OrdersTable orders={replayOrders} /> : exchange !== "binance" ? <div className="empty-state"><AlertCircle size={18} /><strong>Paper order history unavailable</strong><span>Paper data is available on Binance Spot.</span></div> : paperError && !paper ? <div className="empty-state"><AlertCircle size={18} /><strong>Orders unavailable</strong><span>{paperError}</span></div> : <><div className="table-footnote">Paper order history · symbols shown for each order</div><OrdersTable orders={paper?.orders ?? []} /></>)}
-      {tab === "history" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Experiment history hidden during replay</strong><span>Backtest results can reveal outcomes beyond the current cursor.</span></div> : <ExperimentHistory onSelect={selectResult} />)}
-      {tab === "backtest" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are visible; future-derived results are hidden.</span></div> : <BacktestView result={result} />)}
-      {tab === "logs" && (replayMode ? <div className="execution-log">
+      {activeTab === "positions" && (workspace === "terminal" || workspace === "replay") && (replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} />)}
+      {activeTab === "orders" && (replayMode ? <OrdersTable orders={replayOrders} /> : exchange !== "binance" ? <div className="empty-state"><AlertCircle size={18} /><strong>Paper order history unavailable</strong><span>Paper data is available on Binance Spot.</span></div> : paperError && !paper ? <div className="empty-state"><AlertCircle size={18} /><strong>Orders unavailable</strong><span>{paperError}</span></div> : <><div className="table-footnote">Paper order history · symbols shown for each order</div><OrdersTable orders={paper?.orders ?? []} /></>)}
+      {activeTab === "history" && workspace === "research" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Experiment history hidden during replay</strong><span>Backtest results can reveal outcomes beyond the current cursor.</span></div> : <ExperimentHistory onSelect={selectResult} />)}
+      {activeTab === "backtest" && workspace === "backtest" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are visible; future-derived results are hidden.</span></div> : <BacktestView result={result} exchange={exchange} onSwitchToBinance={() => setExchange("binance")} onOpenStrategy={() => { setWorkspace("research"); setInspectorTab("strategy"); }} />)}
+      {activeTab === "logs" && (workspace === "research" || workspace === "backtest") && (replayMode ? <div className="execution-log">
         <div className="log-line"><span className="log-time">REPLAY</span><span className="log-info">FUTURE</span><span>Only completed bars at or before the cursor are loaded.</span></div>
         {replaySession && <div className="log-line"><span className="log-time">{new Date(replaySession.cursor).toLocaleTimeString()}</span><span className="log-success">CURSOR</span><span>{replaySession.symbol} · {replaySession.timeframe} · {replaySession.status}</span></div>}
         {replayOrders.slice(0, 12).map((order) => <div className="log-line" key={order.clientOrderId}><span className="log-time">{new Date(order.createdAt).toLocaleTimeString()}</span><span className="log-success">{order.status.toUpperCase()}</span><span>{order.side.toUpperCase()} {order.quantity} {order.symbol} @ {order.fillPrice ?? "—"}</span></div>)}
