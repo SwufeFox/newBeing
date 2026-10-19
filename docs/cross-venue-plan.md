@@ -30,10 +30,11 @@ order the other way; the merge is independent (audit §4) and cheaper first.
 | 4 | Persistence migration (`backtest` → `research`) | ✅ done |
 | 16 | Fix two field-name bugs in the results board | ✅ done |
 | 17 | Book mid/spread collision + trade table clipping | ✅ done |
+| 11a | Research closure: parameter sweep | ✅ done |
+| 18 | Strategy-to-strategy comparison | ⬜ todo |
 | 10 | Mode handoffs: Backtest→Replay, Markets→Research | ⬜ todo |
-| 11 | Research closure: parameter sweep + strategy compare | ⬜ todo |
 | 12 | Cross-venue regression tests | ⬜ todo |
-| 13 | Front-end gates (disabled tabs, "Binance only" copy) | ⬜ todo |
+| 13 | Front-end gates (disabled tabs, "Binance only" copy) | ✅ done (all found) |
 
 ### Verified so far
 
@@ -162,7 +163,47 @@ was `40-41` (43-44 is the JSON parse). Verified by reading the file.
 2. **Determinism preserved**: same input → identical equity, to the last decimal.
 3. **No silent data loss**: existing SQLite rows and localStorage snapshots must
    survive migration. `backtest` is remapped on READ, not deleted.
-4. **tsc + next build + 40 package tests stay green.**
+4. **tsc + next build + 49 package tests stay green.**
+
+## Research closure: parameter sweep
+
+New: `packages/application/src/sweep.ts`, `POST /api/sweeps`, and a `SweepPanel`
+in the Research dock. Vary one numeric parameter across a range and compare the
+outcomes, instead of running the strategy once and reading one number.
+
+**The candles are fetched once and reused for every run.** Not only faster:
+comparison is only meaningful if every run saw identical data, and re-fetching
+per run would let the live bar change mid-sweep on a short timeframe. Verified —
+every run in a response reports the same `datasetId`.
+
+Guards, each verified against the running server:
+
+- Run ceiling of 40, with a message that says how to fix it
+  (`That range needs 500 runs; the limit is 40. Widen the step.`)
+- An unknown parameter is refused by name
+- Replay isolation preserved — a sweep reads outcomes past the cursor, so it is
+  suppressed while Replay is active
+- Works per venue: verified on Kraken as well as Binance
+- `sweepValues` unit-tested for float drift (`0.1..0.4` by `0.1` gives exact
+  values, not `0.30000000000000004`), inclusive bounds, single-point ranges,
+  and the ceiling
+
+### The finding that justified the feature
+
+A six-value sweep reported `period=25 → +1.05%` and `period=30 → +1.05%`,
+identical to the cent. Investigated rather than assumed: on a synthetic series
+the two periods emit 35 different signals, so they are genuinely different
+strategies — but on that 599-bar dataset each reduces to a single trade, so they
+*cannot* differ. The data, not the code, was the limit.
+
+Reporting six rows as six findings would have overstated what was tested. The
+panel now counts DISTINCT OUTCOMES (by final equity plus trade count) and says so
+plainly: "1 of 6 values produced an identical result and are not independent
+evidence. This dataset yields as little as 1 trade, so most of these values never
+got a chance to differ. Use a longer history or a shorter timeframe."
+
+That is the kind of thing a backtest UI must not hide: otherwise the reader
+believes eight parameter settings were validated when one was.
 
 ## Why step 1 comes first
 

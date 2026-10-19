@@ -5,6 +5,7 @@ import type { ExchangeId, Timeframe } from "@newbeing/core";
 import { getWorkspaceState, saveExperiment, saveWorkspaceState } from "@newbeing/storage";
 export * from "./paper.js";
 export * from "./replay.js";
+export * from "./sweep.js";
 
 export interface ResearchBacktestRequest {
   /** Venue to source candles from. Optional for backwards compatibility;
@@ -28,7 +29,7 @@ function datasetId(symbol: string, timeframe: Timeframe, candles: readonly { tim
 
 export async function runResearchBacktest(
   request: ResearchBacktestRequest,
-  dependencies: { marketAdapter?: ExchangeAdapter } = {},
+  dependencies: { marketAdapter?: ExchangeAdapter; candleProvenance?: () => { source: "live" | "local-cache"; cachedAt: string | null; fallback: boolean } | null } = {},
 ): Promise<BacktestResult> {
   if (getWorkspaceState().state.activeWorkspace === "replay") {
     throw new Error("Backtests are disabled while Replay is active, to avoid exposing future-derived results.");
@@ -57,6 +58,11 @@ export async function runResearchBacktest(
     config: request.config,
     resultId: randomUUID(),
   });
+  const provenance = dependencies.candleProvenance?.();
+  if (provenance) {
+    result.candleSource = provenance.source;
+    result.candleCache = { fallback: provenance.fallback, cachedAt: provenance.cachedAt };
+  }
   saveExperiment(result);
   if (request.openInWorkspace ?? true) {
     const current = getWorkspaceState().state;

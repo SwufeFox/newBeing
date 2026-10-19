@@ -114,6 +114,9 @@ export interface BacktestResult {
   equityCurve: EquityPoint[];
   trades: BacktestTrade[];
   signals: Array<{ timestamp: number; side: MarketSide }>;
+  /** Optional for results created before persistent candle caching. */
+  candleSource?: "live" | "local-cache";
+  candleCache?: { fallback: boolean; cachedAt: string | null };
 }
 
 export interface WorkspaceLayout {

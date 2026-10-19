@@ -3095,3 +3095,109 @@ button, input, select { font: inherit; color: inherit; }
    scroll rather than clipping REASON off the right edge. */
 .trade-table-scroll { overflow-x: auto; scrollbar-gutter: stable; }
 .trade-table-scroll .data-table { min-width: 100%; }
+
+/* ========== parameter sweep ==========
+   A sweep is a comparison table: every row is one parameter value run against
+   the same candles, so the rows must be scannable vertically and the winner
+   has to be findable without reading every cell. */
+.sweep-panel { display: flex; flex-direction: column; gap: var(--s-2); min-height: 0; }
+.sweep-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) repeat(3, minmax(64px, 0.6fr)) auto;
+  gap: var(--s-2);
+  align-items: end;
+  padding: var(--s-2) var(--s-2) 0;
+}
+.sweep-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sweep-field > span {
+  color: var(--c-fg-4);
+  font-family: var(--f-display);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+.sweep-note {
+  margin: 0;
+  padding: 0 var(--s-2);
+  color: var(--c-fg-3);
+  font-size: var(--t-meta);
+  line-height: 1.5;
+}
+
+/* The verdict strip answers "which value won" before the table is read. */
+.sweep-verdict {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--line);
+  padding: 0 var(--s-2);
+}
+/* Below this the five columns are too narrow to read; fall back to wrapping. */
+@media (max-width: 900px) {
+  .sweep-verdict { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
+.sweep-verdict-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--s-1) var(--s-2);
+  background: var(--c-surface-2);
+  border-left: var(--bar) solid var(--mode);
+}
+.sweep-verdict-cell > span {
+  color: var(--c-fg-4);
+  font-family: var(--f-display);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: var(--track-caps);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sweep-verdict-cell > strong {
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The table scrolls rather than clipping its last column, same as the trade
+   table: eight columns do not fit the dock width. */
+.sweep-table-scroll { overflow: auto; scrollbar-gutter: stable; padding: 0 var(--s-2) var(--s-2); min-height: 0; }
+.sweep-table .best-tag {
+  margin-left: var(--s-1);
+  padding: 0 4px;
+  background: var(--mode);
+  color: var(--c-canvas);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.sweep-table tr.is-best { background: color-mix(in srgb, var(--mode) 12%, transparent); }
+.sweep-table td { white-space: nowrap; }
+
+/* The sweep table was clipped: the dock is 320px and a six-row table plus the
+   verdict strip needs more. Cap the scroll region so the panel scrolls inside
+   the dock instead of being cut off, and give the header room to stay put. */
+.sweep-table-scroll { max-height: 190px; }
+.sweep-table thead th { position: sticky; top: 0; z-index: 1; background: var(--c-surface); }
+
+/* Identical outcomes are a finding about the DATA, not the strategy, so the
+   caveat reads as an advisory band rather than an error. */
+.sweep-caveat {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: 0 var(--s-2);
+  padding: var(--s-1) var(--s-2);
+  border-left: var(--bar) solid var(--c-warn);
+  background: color-mix(in srgb, var(--c-warn) 10%, transparent);
+  color: var(--c-fg-2);
+  font-size: var(--t-meta);
+  line-height: 1.55;
+}
+.sweep-caveat strong { color: var(--c-fg); }

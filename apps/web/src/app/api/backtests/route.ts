@@ -5,6 +5,8 @@ import { getWorkspaceState, listExperiments } from "@newbeing/storage";
 import { EXCHANGE_TIMEFRAMES, logEvent, type ExchangeId } from "@newbeing/core";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
+import { createCandleCacheAdapter } from "@/lib/candle-cache-adapter";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -57,6 +59,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (!EXCHANGE_TIMEFRAMES[exchange].includes(parsed.data.timeframe)) {
       return NextResponse.json({ error: `${exchange} does not provide ${parsed.data.timeframe} candles.` }, { status: 422 });
     }
+    const cachedAdapter = createCandleCacheAdapter(exchange, getWebMarketAdapter(exchange));
     const result = await runResearchBacktest({
       exchange,
       symbol: parsed.data.symbol,
@@ -65,7 +68,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       parameters: parsed.data.parameters,
       config,
       ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
-    }, { marketAdapter: getWebMarketAdapter(exchange) });
+    }, { marketAdapter: cachedAdapter.adapter, candleProvenance: cachedAdapter.getLastResult });
     return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Backtest failed.";

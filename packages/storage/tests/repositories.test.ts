@@ -107,6 +107,21 @@ describe("SQLite repositories", () => {
     expect(getReplaySession(session.id)?.cursor).toBe(120_000);
   });
 
+  it("keeps paper account IDs unique across venues and replay wallets isolated", () => {
+    const accounts = [
+      { exchange: "binance", symbol: "BTC/USDT" },
+      { exchange: "okx", symbol: "BTC/USDT" },
+      { exchange: "coinbaseexchange", symbol: "BTC/USD" },
+      { exchange: "kraken", symbol: "BTC/USD" },
+    ] as const;
+    const accountIds = accounts.map(({ exchange, symbol }) => paperAccountId(symbol, exchange));
+    expect(new Set(accountIds).size).toBe(4);
+
+    for (const { exchange, symbol } of accounts) {
+      expect(replayAccountId("session-unique-1234", symbol, exchange)).not.toBe(paperAccountId(symbol, exchange));
+    }
+  });
+
   it("keeps replay Paper wallets separate from the normal simulator", () => {
     const replayId = replayAccountId("session-12345678", "BTC/USDT");
     const paperId = paperAccountId("BTC/USDT");

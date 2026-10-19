@@ -6,6 +6,7 @@ import { loader } from "@monaco-editor/react";
 import { Check, Code2, Play, Save, ShieldAlert } from "lucide-react";
 import { STRATEGIES, type StrategyDefinition, type StrategyParameters } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
+import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 
@@ -49,6 +50,8 @@ export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Ele
     state.setBacktestConfig,
   ]));
   const exchange = useWorkspaceStore((state) => state.exchange);
+  const symbol = useWorkspaceStore((state) => state.symbol);
+  const timeframe = useWorkspaceStore((state) => state.timeframe);
   const strategy = STRATEGIES.find((item) => item.id === strategyId) ?? STRATEGIES[0];
   const [editorValues, setEditorValues] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
@@ -166,8 +169,10 @@ export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Ele
       {saveError && <div className="error-inline">{saveError}</div>}
       <div className="strategy-actions">
         <Button data-testid="save-strategy-draft" variant="outline" size="sm" onClick={() => void saveSource()}>{saved ? <Check size={13} /> : <Save size={13} />}{saved ? "Saved" : "Save draft"}</Button>
-        {exchange !== "binance" && <p className="assumption-note">Backtests currently use Binance Spot history. Select Binance to run this strategy.</p>}
-        <Button variant="primary" size="sm" onClick={onRun} disabled={running || invalidSma || exchange !== "binance"}>{running ? <span className="spin"><Play size={13} /></span> : <Play size={13} />}{running ? "Running" : "Run backtest"}</Button>
+        {/* A run is compared against the venue it was sourced from, so the panel
+            states which one that is rather than gating on Binance. */}
+        <p className="assumption-note">Runs on {EXCHANGE_LABELS[exchange]} history · {symbol} · {timeframe}</p>
+        <Button variant="primary" size="sm" onClick={onRun} disabled={running || invalidSma}>{running ? <span className="spin"><Play size={13} /></span> : <Play size={13} />}{running ? "Running" : "Run backtest"}</Button>
       </div>
     </div>
   );

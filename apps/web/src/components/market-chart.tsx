@@ -26,6 +26,7 @@ type StreamState = "connecting" | "live" | "reconnecting" | "unavailable" | "pol
 interface CandleResponse {
   candles: Candle[];
   gaps: Array<{ from: number; to: number }>;
+  cache: { fallback: boolean; cachedAt: string | null };
 }
 
 
@@ -51,7 +52,15 @@ function parseCandleResponse(value: unknown): CandleResponse {
       volume: row.volume as number,
     });
   }
-  return { candles, gaps: "gaps" in value && Array.isArray(value.gaps) ? value.gaps as CandleResponse["gaps"] : [] };
+  const cacheValue = "cache" in value && typeof value.cache === "object" && value.cache !== null ? value.cache as Record<string, unknown> : null;
+  return {
+    candles,
+    gaps: "gaps" in value && Array.isArray(value.gaps) ? value.gaps as CandleResponse["gaps"] : [],
+    cache: {
+      fallback: cacheValue?.fallback === true,
+      cachedAt: typeof cacheValue?.cachedAt === "string" ? cacheValue.cachedAt : null,
+    },
+  };
 }
 
 function parseKlineEvent(value: unknown): { candle: Candle; closed: boolean } | null {
@@ -92,6 +101,7 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [errorState, setErrorState] = useState<{ key: string; message: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [cacheInfo, setCacheInfo] = useState<{ fallback: boolean; cachedAt: string | null }>({ fallback: false, cachedAt: null });
   const replayMode = replayBars !== null;
   const error = replayMode ? null : errorState?.key === dataKey ? errorState.message : null;
   const loading = !replayMode && (refreshing || (loadedKey !== dataKey && error === null));
@@ -117,6 +127,7 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
     }
     const parsed = parseCandleResponse(payload);
     if (parsed.candles.length === 0) throw new Error("No OHLCV bars were returned for this symbol and timeframe.");
+    setCacheInfo(parsed.cache);
     barsRef.current = parsed.candles;
     const gaps = findCandleGaps(parsed.candles, timeframe);
     setLiveGapCount(gaps.length);
@@ -225,6 +236,7 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
   useEffect(() => {
     const controller = new AbortController();
     if (replayMode) {
+      setCacheInfo({ fallback: false, cachedAt: null });
       const bars = replayBars ?? [];
       barsRef.current = [...bars];
       candleSeriesRef.current?.setData(bars.map((bar) => ({
@@ -388,7 +400,9 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
         {replayMode && replayBars.length === 0 && <div className="chart-overlay"><Clock3 size={16} /><span>Seed a historical session to load past bars only.</span></div>}
       </div>
       <div className="chart-footer">
-        <span>{gapCount > 0 ? <><AlertTriangle size={11} /> {gapCount} gap{gapCount === 1 ? "" : "s"} detected</> : replayMode ? "Future candles are not loaded · UTC" : `UTC · ${exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase()} public spot data`}</span>
+        <span>{cacheInfo.fallback
+          ? <><AlertTriangle size={11} /> LOCAL CACHE · last fetched {cacheInfo.cachedAt ? new Date(cacheInfo.cachedAt).toLocaleString() : "time unavailable"}</>
+          : gapCount > 0 ? <><AlertTriangle size={11} /> {gapCount} gap{gapCount === 1 ? "" : "s"} detected</> : replayMode ? "Future candles are not loaded · UTC" : `UTC · ${exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase()} public spot data`}</span>
         <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noreferrer">Charts by TradingView · Lightweight Charts™</a>
       </div>
     </section>

@@ -386,12 +386,15 @@ export function Terminal(): React.JSX.Element {
   const runBacktest = useCallback(async (): Promise<void> => {
     setRunning(true);
     setBacktestError(null);
-    setLastAction("Fetching completed Binance bars and running the event loop…");
+    setLastAction(`Fetching ${EXCHANGE_LABELS[exchange]} bars and running the event loop…`);
     try {
       const response = await fetch("/api/backtests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          /* Send the venue explicitly: the workspace carries one, but naming it
+             on the request makes the run traceable to its own source. */
+          exchange,
           symbol,
           timeframe,
           strategyId,
@@ -438,8 +441,9 @@ export function Terminal(): React.JSX.Element {
     setReplayPortfolio(parsed.portfolio ?? null);
     setReplayOrders(parsed.orders ?? []);
     const currentWorkspace = useWorkspaceStore.getState();
-    if (currentWorkspace.symbol !== parsed.session.symbol) currentWorkspace.setSymbol(parsed.session.symbol);
-    if (currentWorkspace.timeframe !== parsed.session.timeframe) currentWorkspace.setTimeframe(parsed.session.timeframe);
+    if (currentWorkspace.exchange !== parsed.session.exchange) currentWorkspace.setExchange(parsed.session.exchange);
+    if (useWorkspaceStore.getState().symbol !== parsed.session.symbol) useWorkspaceStore.getState().setSymbol(parsed.session.symbol);
+    if (useWorkspaceStore.getState().timeframe !== parsed.session.timeframe) useWorkspaceStore.getState().setTimeframe(parsed.session.timeframe);
   }, []);
 
   useEffect(() => {
@@ -449,6 +453,40 @@ export function Terminal(): React.JSX.Element {
     });
   }, [activeReplayId, refreshReplay]);
 
+  const startReplayFromBacktest = async (backtest: BacktestResult): Promise<void> => {
+    const finalPoint = backtest.equityCurve.at(-1);
+    if (!finalPoint) return;
+    setReplayBusy(true);
+    setReplayError(null);
+    setReplayPlaying(false);
+    try {
+      const response = await fetch("/api/replay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exchange: backtest.exchange, symbol: backtest.symbol, timeframe: backtest.timeframe, endAt: finalPoint.timestamp, limit: 200 }),
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok) {
+        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Replay could not be started.";
+        throw new Error(message);
+      }
+      const parsed = parseReplayEnvelope(payload);
+      if (!parsed) throw new Error("Replay start response was malformed.");
+      setReplaySession(parsed.session);
+      setReplayPortfolio(parsed.portfolio ?? null);
+      setReplayOrders([]);
+      const store = useWorkspaceStore.getState();
+      store.setExchange(parsed.session.exchange);
+      store.setSymbol(parsed.session.symbol);
+      store.setTimeframe(parsed.session.timeframe);
+      setActiveReplayId(parsed.session.id);
+      setWorkspace("replay");
+    } catch (error) {
+      setReplayError(error instanceof Error ? error.message : "Replay could not be started.");
+    } finally {
+      setReplayBusy(false);
+    }
+  };
   const startReplay = async (): Promise<void> => {
     setReplayBusy(true);
     setReplayError(null);
@@ -457,7 +495,7 @@ export function Terminal(): React.JSX.Element {
       const response = await fetch("/api/replay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, timeframe, endAt: new Date(replayStartAt).getTime(), limit: replayLimit }),
+        body: JSON.stringify({ exchange, symbol, timeframe, endAt: new Date(replayStartAt).getTime(), limit: replayLimit }),
       });
       const payload: unknown = await response.json();
       if (!response.ok) {
@@ -690,6 +728,7 @@ export function Terminal(): React.JSX.Element {
               a duplicate call to action. */}
           <div className="chart-toolbar-right">
             {running ? <span className="run-status"><LoaderCircle size={13} className="spin" />{lastAction ?? "Running…"}</span> : lastAction && <span className="run-status">{lastAction}</span>}
+            {workspace === "terminal" && <Button variant="outline" size="sm" onClick={() => setPage("research")}>Research</Button>}
           </div>
         </div>
         {/* Every venue is fully usable now, so this states which source is in
@@ -732,7 +771,7 @@ export function Terminal(): React.JSX.Element {
         onReplayOrder={placeReplayOrder}
       /></div>
       <DragHandle direction="vertical" onDelta={resizeDock} style={{ gridColumn: col.chart, gridRow: 2 }} />
-      <div className="dock-slot" style={{ gridColumn: col.chart, gridRow: 3 }}><BottomDock key={`${exchange}|${symbol}|${deferredWorkspace}`} workspace={workspace} replayMode={workspace === "replay"} replaySession={replaySession} replayPortfolio={replayPortfolio} replayOrders={replayOrders} /></div>
+      <div className="dock-slot" style={{ gridColumn: col.chart, gridRow: 3 }}><BottomDock key={`${exchange}|${symbol}|${deferredWorkspace}`} workspace={workspace} replayMode={workspace === "replay"} replaySession={replaySession} replayPortfolio={replayPortfolio} replayOrders={replayOrders} onStartReplay={(backtest) => void startReplayFromBacktest(backtest)} replayBusy={replayBusy} replayError={replayError} /></div>
       </div>
       </section>
     </main>

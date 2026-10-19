@@ -52,12 +52,15 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
   private async fetchOHLCVFrom(symbol: string, timeframe: Timeframe, since: number | undefined, limit: number): Promise<Candle[]> {
     if (!EXCHANGE_TIMEFRAMES[this.id].includes(timeframe)) throw new Error(`${this.id} does not support ${timeframe} candles.`);
     const normalized = validSymbol(symbol);
-    const venueLimit = this.id === "coinbaseexchange" ? 300 : 1000;
-    const safeLimit = Math.max(2, Math.min(venueLimit, Number.isFinite(limit) ? Math.floor(limit) : 500));
+    const safeLimit = Math.max(2, Math.min(1000, Number.isFinite(limit) ? Math.floor(limit) : 500));
     const key = `${this.id}|ohlcv|${normalized}|${timeframe}|${since ?? "latest"}|${safeLimit}`;
     return coalesceRequest(key, async () => {
       await this.exchange.loadMarkets();
-      const rows: OHLCV[] = await this.exchange.fetchOHLCV(normalized, timeframe, since, safeLimit);
+      /* CCXT 4.5.85 implements deterministic OHLCV pagination for Coinbase
+         (300 candles per request) and Kraken (720). Keep the requested total
+         limit and let that implementation page, including when `since` is set. */
+      const params = this.id === "coinbaseexchange" || this.id === "kraken" ? { paginate: true } : {};
+      const rows: OHLCV[] = await this.exchange.fetchOHLCV(normalized, timeframe, since, safeLimit, params);
       return rows.map((row) => {
         const [timestamp, open, high, low, close, volume] = row;
         if (typeof timestamp !== "number" || typeof open !== "number" || typeof high !== "number" || typeof low !== "number" || typeof close !== "number" || typeof volume !== "number"

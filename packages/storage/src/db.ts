@@ -33,6 +33,13 @@ export function getDatabase(): NewBeingDatabase {
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("busy_timeout = 5000");
   sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS candle_cache (
+      exchange TEXT NOT NULL, symbol TEXT NOT NULL, timeframe TEXT NOT NULL, timestamp INTEGER NOT NULL,
+      open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL,
+      cached_at INTEGER NOT NULL, PRIMARY KEY(exchange, symbol, timeframe, timestamp)
+    );
+    CREATE INDEX IF NOT EXISTS candle_cache_range_idx ON candle_cache(exchange, symbol, timeframe, timestamp);
+    CREATE INDEX IF NOT EXISTS candle_cache_ttl_idx ON candle_cache(cached_at);
     CREATE TABLE IF NOT EXISTS workspace_states (
       id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL, updated_at INTEGER NOT NULL
     );

@@ -1,12 +1,38 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
 import { DEFAULT_WORKSPACE_STATE, fillPaperOrder, type BacktestResult, type Candle, type ExchangeId, type OrderPreview, type PaperOrder, type PaperPortfolio, type ReplaySession, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import { getDatabase } from "./db.js";
-import { experiments, orderPreviews, paperAccounts, paperOrders, replaySessions, strategies, workspaceStates } from "./schema.js";
+import { experiments, orderPreviews, paperAccounts, paperOrders, replaySessions, strategies, workspaceStates, candleCache } from "./schema.js";
 
 /** Venues a stored row may legitimately name. A row holding anything else is
  *  treated as legacy rather than trusted, so a corrupt value cannot send a
  *  request to an adapter that does not exist. */
 const EXCHANGE_IDS: readonly ExchangeId[] = ["binance", "coinbaseexchange", "okx", "kraken"];
+
+const CANDLE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function saveCachedCandles(exchange: ExchangeId, symbol: string, timeframe: Timeframe, candles: readonly Candle[]): void {
+  const db = getDatabase();
+  const now = Date.now();
+  db.transaction((tx) => {
+    for (const candle of candles) {
+      tx.insert(candleCache).values({ exchange, symbol, timeframe, ...candle, cachedAt: now })
+        .onConflictDoUpdate({
+          target: [candleCache.exchange, candleCache.symbol, candleCache.timeframe, candleCache.timestamp],
+          set: { open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume, cachedAt: now },
+        }).run();
+    }
+    tx.delete(candleCache).where(lt(candleCache.cachedAt, now - CANDLE_CACHE_TTL_MS)).run();
+  })();
+}
+
+export function getCachedCandles(exchange: ExchangeId, symbol: string, timeframe: Timeframe, since: number, limit: number, through = Number.MAX_SAFE_INTEGER): { candles: Candle[]; cachedAt: number | null } {
+  const rows = getDatabase().select().from(candleCache).where(and(
+    eq(candleCache.exchange, exchange), eq(candleCache.symbol, symbol), eq(candleCache.timeframe, timeframe),
+    gte(candleCache.timestamp, since), lte(candleCache.timestamp, through), gte(candleCache.cachedAt, Date.now() - CANDLE_CACHE_TTL_MS),
+  )).orderBy(asc(candleCache.timestamp)).limit(limit).all();
+  return { candles: rows.map(({ timestamp, open, high, low, close, volume }) => ({ timestamp, open, high, low, close, volume })), cachedAt: rows.length ? Math.max(...rows.map((row) => row.cachedAt)) : null };
+}
+
 
 export interface StoredStrategy {
   id: string;

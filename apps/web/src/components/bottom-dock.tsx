@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AreaSeries, ColorType, createChart, type IChartApi, type Time, type UTCTimestamp } from "lightweight-charts";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileText, ListChecks, RefreshCw, Wallet } from "lucide-react";
-import type { BacktestResult, ExchangeId, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileText, ListChecks, RefreshCw, ScanSearch, Wallet } from "lucide-react";
+import { STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplaySession } from "@newbeing/core";
+import { SweepPanel } from "@/components/sweep-panel";
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -141,7 +142,7 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
   </tbody></table></div>;
 }
 
-function BacktestView({ result, onOpenStrategy }: { result: BacktestResult | null; onOpenStrategy: () => void }): React.JSX.Element {
+function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, replayError }: { result: BacktestResult | null; onOpenStrategy: () => void; onStartReplay: (result: BacktestResult) => void; replayBusy: boolean; replayError: string | null }): React.JSX.Element {
   if (!result) return <div className="empty-state"><FileText size={18} /><strong>No backtest selected</strong><span>Start with a reviewed built-in strategy, then run a deterministic historical test on any supported venue.</span><Button variant="outline" size="sm" onClick={onOpenStrategy}>Open Strategy Lab</Button></div>;
   const metric = result.metrics;
   return <div className="backtest-view">
@@ -157,9 +158,14 @@ function BacktestView({ result, onOpenStrategy }: { result: BacktestResult | nul
       <div className="equity-chart-wrap"><div className="equity-chart-label">EQUITY CURVE · {result.symbol.split("/")[1]}</div><EquityChart result={result} /></div>
     </div>
     <div className="backtest-meta">
+      {result.candleSource === "local-cache" && <span className="negative" title={result.candleCache?.cachedAt ? `Last cached ${new Date(result.candleCache.cachedAt).toLocaleString()}` : "Cached timestamp unavailable"}>LOCAL CANDLE CACHE · RESULTS MAY BE STALE</span>}
       <span>{result.symbol} · {result.timeframe}</span><span>{result.strategyId} v{result.strategyVersion}</span>
       <span>Fee {(result.assumptions.feeRate * 10_000).toFixed(1)} bps · Slippage {(result.assumptions.slippageRate * 10_000).toFixed(1)} bps</span>
       <span title={result.execution?.fillTiming}>{result.execution?.fillTiming ?? "Next-bar open"} · {result.engineVersion}</span>
+    </div>
+    <div className="result-actions">
+      <Button variant="outline" size="sm" disabled={replayBusy || result.equityCurve.length === 0} onClick={() => onStartReplay(result)}>{replayBusy ? "Starting replay…" : "Replay from final equity point"}</Button>
+      {replayError && <span role="alert" className="error-inline">{replayError}</span>}
     </div>
     <div className="table-scroll trade-table-scroll">
       {result.trades.length === 0 ? <div className="empty-inline"><AlertCircle size={14} />No completed trades under these parameters.</div> : <table className="data-table"><thead><tr><th>#</th><th>SIDE</th><th>ENTRY UTC</th><th>ENTRY</th><th>EXIT UTC</th><th>EXIT</th><th>NET PNL</th><th>FEES</th><th>REASON</th></tr></thead><tbody>
@@ -177,6 +183,10 @@ function Metric({ label, value, tone, title }: { label: string; value: string; t
 
 function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): React.JSX.Element {
   const [items, setItems] = useState<BacktestResult[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [comparison, setComparison] = useState<BacktestResult[] | null>(null);
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const [loadingComparison, setLoadingComparison] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let disposed = false;
@@ -187,22 +197,66 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
     }).catch((reason: unknown) => { if (!disposed) setError(reason instanceof Error ? reason.message : "History load failed."); });
     return () => { disposed = true; };
   }, []);
+  const compareSelected = async (): Promise<void> => {
+    setLoadingComparison(true);
+    setComparison(null);
+    setComparisonError(null);
+    try {
+      const results = await Promise.all(selectedIds.map(async (id) => {
+        const response = await fetch(`/api/backtests/${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("A selected result could not be loaded.");
+        return await response.json() as BacktestResult;
+      }));
+      setComparison(results);
+    } catch (reason) {
+      setComparisonError(reason instanceof Error ? reason.message : "Comparison could not be loaded.");
+    } finally {
+      setLoadingComparison(false);
+    }
+  };
   if (error) return <div className="empty-state"><AlertCircle size={18} /><strong>History unavailable</strong><span>{error}</span></div>;
   if (items.length === 0) return <div className="empty-state"><Clock3 size={18} /><strong>No saved experiments</strong><span>Each completed backtest is stored in local SQLite.</span></div>;
-  return <div className="table-scroll"><table className="data-table"><thead><tr><th>CREATED</th><th>SYMBOL</th><th>STRATEGY</th><th>RETURN</th><th>MAX DD</th><th>TRADES</th><th>RESULT ID</th></tr></thead><tbody>
-    {items.map((item) => <tr key={item.resultId} onClick={() => onSelect(item.resultId)} className="clickable-row"><td>{new Date(item.createdAt).toLocaleString()}</td><td>{item.symbol} · {item.timeframe}</td><td>{item.strategyId}</td><td className={item.metrics.totalReturn >= 0 ? "positive" : "negative"}>{percentage(item.metrics.totalReturn)}</td><td className="negative">{percentage(-item.metrics.maxDrawdown)}</td><td>{item.metrics.tradeCount}</td><td className="mono">{item.resultId.slice(0, 12)}…</td></tr>)}
-  </tbody></table></div>;
+  const assumptionsKey = (item: BacktestResult): string => JSON.stringify([
+    item.assumptions.initialCapital,
+    item.assumptions.positionFraction,
+    item.assumptions.feeRate,
+    item.assumptions.slippageRate,
+    item.assumptions.allowShorts,
+    item.assumptions.stopLossPct,
+    item.assumptions.takeProfitPct,
+  ]);
+  const groupKey = (item: BacktestResult): string => [item.exchange, item.symbol, item.timeframe, item.engineVersion, assumptionsKey(item)].join("|");
+  const comparable = comparison?.length ? comparison.filter((item) => groupKey(item) === groupKey(comparison[0]!)) : [];
+  const excluded = comparison?.filter((item) => !comparable.includes(item)) ?? [];
+  return <>
+    <div className="table-scroll"><table className="data-table"><thead><tr><th>SELECT</th><th>CREATED</th><th>SYMBOL</th><th>STRATEGY</th><th>RETURN</th><th>MAX DD</th><th>TRADES</th><th>RESULT ID</th></tr></thead><tbody>
+      {items.map((item) => <tr key={item.resultId} className="clickable-row"><td><input aria-label={`Select ${item.resultId} for comparison`} type="checkbox" checked={selectedIds.includes(item.resultId)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, item.resultId] : current.filter((id) => id !== item.resultId))} /></td><td onClick={() => onSelect(item.resultId)}>{new Date(item.createdAt).toLocaleString()}</td><td onClick={() => onSelect(item.resultId)}>{item.symbol} · {item.timeframe}</td><td onClick={() => onSelect(item.resultId)}>{item.strategyId}</td><td onClick={() => onSelect(item.resultId)} className={item.metrics.totalReturn >= 0 ? "positive" : "negative"}>{percentage(item.metrics.totalReturn)}</td><td onClick={() => onSelect(item.resultId)} className="negative">{percentage(-item.metrics.maxDrawdown)}</td><td onClick={() => onSelect(item.resultId)}>{item.metrics.tradeCount}</td><td onClick={() => onSelect(item.resultId)} className="mono">{item.resultId.slice(0, 12)}…</td></tr>)}
+    </tbody></table></div>
+    <div className="result-actions"><span>{selectedIds.length} selected</span><Button variant="outline" size="sm" disabled={selectedIds.length < 2 || loadingComparison} onClick={() => void compareSelected()}>{loadingComparison ? "Loading results…" : "Compare selected"}</Button></div>
+    {comparisonError && <div className="error-inline" role="alert">{comparisonError}</div>}
+    {comparison && <section aria-label="Backtest comparison" className="comparison-panel">
+      <h3>{comparable.length > 0 ? `Comparable group · ${EXCHANGE_LABELS[comparable[0]!.exchange]} · ${comparable[0]!.symbol} · ${comparable[0]!.timeframe} · ${comparable[0]!.engineVersion}` : "Comparable group"}</h3>
+      {comparable.length < 2 ? <p>Results are grouped by venue, symbol, timeframe, engine version, and fixed assumptions: initial capital, position fraction, fee rate, slippage rate, short selling, stop loss, and take profit.</p> : <div className="table-scroll"><table className="data-table"><thead><tr><th>RESULT / STRATEGY</th><th>TOTAL RETURN</th><th>MAX DRAWDOWN</th><th>SHARPE</th><th>WIN RATE</th><th>TRADES</th></tr></thead><tbody>{comparable.map((item) => <tr key={item.resultId}><td><strong>{item.strategyId}</strong><small className="mono">{item.resultId}</small></td><td className={item.metrics.totalReturn >= 0 ? "positive" : "negative"}>{percentage(item.metrics.totalReturn)}</td><td className="negative">{percentage(-item.metrics.maxDrawdown)}</td><td>{item.metrics.sharpeRatio?.toFixed(2) ?? "—"}</td><td>{percentage(item.metrics.winRate)}</td><td>{item.metrics.tradeCount}</td></tr>)}</tbody></table></div>}
+      {comparable.map((item) => <details key={`details-${item.resultId}`}><summary>{item.resultId} · parameters and assumptions</summary><pre>{JSON.stringify({ parameters: item.parameters, assumptions: item.assumptions, execution: item.execution }, null, 2)}</pre></details>)}
+      {excluded.length > 0 && <div className="table-footnote"><strong>Not comparable:</strong> {excluded.map((item) => `${item.resultId.slice(0, 12)}… (${[item.exchange !== comparable[0]?.exchange && "venue", item.symbol !== comparable[0]?.symbol && "symbol", item.timeframe !== comparable[0]?.timeframe && "timeframe", item.engineVersion !== comparable[0]?.engineVersion && "engine version", assumptionsKey(item) !== assumptionsKey(comparable[0]!) && "assumptions"].filter(Boolean).join(", ")})`).join("; ")}</div>}
+    </section>}
+  </>;
 }
 
-export function BottomDock({ replayMode = false, replaySession = null, replayPortfolio = null, replayOrders = [], workspace = "terminal" }: {
+
+export function BottomDock({ replayMode = false, replaySession = null, replayPortfolio = null, replayOrders = [], workspace = "terminal", onStartReplay, replayBusy = false, replayError = null }: {
   workspace?: "terminal" | "research" | "replay";
   replayMode?: boolean;
   replaySession?: ReplaySession | null;
   replayPortfolio?: PaperPortfolio | null;
   replayOrders?: PaperOrder[];
+  onStartReplay: (result: BacktestResult) => void;
+  replayBusy?: boolean;
+  replayError?: string | null;
 }): React.JSX.Element {
-  const [tab, setTab, symbol, exchange, result, activeBacktestId, setBacktest, setWorkspace, setInspectorTab, setExchange] = useWorkspaceStore(useShallow((state) => [
-    state.dockTab, state.setDockTab, state.symbol, state.exchange, state.backtest, state.activeBacktestId, state.setBacktest, state.setWorkspace, state.setInspectorTab, state.setExchange,
+  const [tab, setTab, symbol, exchange, timeframe, result, activeBacktestId, setBacktest, setWorkspace, setInspectorTab, setExchange, selectedStrategyId, strategyParameters, config] = useWorkspaceStore(useShallow((state) => [
+    state.dockTab, state.setDockTab, state.symbol, state.exchange, state.timeframe, state.backtest, state.activeBacktestId, state.setBacktest,
+    state.setWorkspace, state.setInspectorTab, state.setExchange, state.selectedStrategyId, state.strategyParameters, state.backtestConfig,
   ]));
   /* A stored dockTab may belong to another workspace (e.g. "history" while in
      Markets). Resolve to the first tab this mode actually offers.
@@ -211,7 +265,7 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
      picked are all part of studying one strategy. */
   const allowedTabs = workspace === "terminal" || workspace === "replay"
     ? ["positions", "orders"] as const
-    : ["backtest", "history", "logs"] as const;
+    : ["backtest", "sweep", "history", "logs"] as const;
   const activeTab = (allowedTabs as readonly string[]).includes(tab) ? tab : allowedTabs[0];
 
   const [paper, setPaper] = useState<PaperPayload | null>(null);
@@ -262,6 +316,7 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
           {(workspace === "terminal" || workspace === "replay") && <TabsTrigger value="positions"><Wallet size={12} />Positions</TabsTrigger>}
           {(workspace === "terminal" || workspace === "replay") && <TabsTrigger value="orders"><ListChecks size={12} />Orders</TabsTrigger>}
           {workspace === "research" && <TabsTrigger value="backtest"><FileText size={12} />Results</TabsTrigger>}
+          {workspace === "research" && <TabsTrigger value="sweep"><ScanSearch size={12} />Sweep</TabsTrigger>}
           {workspace === "research" && <TabsTrigger value="history"><Clock3 size={12} />Experiments</TabsTrigger>}
           {workspace === "research" && <TabsTrigger value="logs"><Boxes size={12} />Execution</TabsTrigger>}
         </TabsList>
@@ -272,7 +327,12 @@ export function BottomDock({ replayMode = false, replaySession = null, replayPor
       {activeTab === "positions" && (workspace === "terminal" || workspace === "replay") && (replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} />)}
       {activeTab === "orders" && (replayMode ? <OrdersTable orders={replayOrders} /> : paperError && !paper ? <div className="empty-state"><AlertCircle size={18} /><strong>Orders unavailable</strong><span>{paperError}</span></div> : <><div className="table-footnote">Paper order history · symbols shown for each order</div><OrdersTable orders={paper?.orders ?? []} /></>)}
       {activeTab === "history" && workspace === "research" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Experiment history hidden during replay</strong><span>Backtest results can reveal outcomes beyond the current cursor.</span></div> : <ExperimentHistory onSelect={selectResult} />)}
-      {activeTab === "backtest" && workspace === "research" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are visible; future-derived results are hidden.</span></div> : <BacktestView result={result} onOpenStrategy={() => setInspectorTab("strategy")} />)}
+      {activeTab === "backtest" && workspace === "research" && (replayMode ? <div className="empty-state"><AlertCircle size={18} /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are visible; future-derived results are hidden.</span></div> : <BacktestView result={result} onOpenStrategy={() => setInspectorTab("strategy")} onStartReplay={onStartReplay} replayBusy={replayBusy} replayError={replayError} />)}
+      {/* A sweep is future-derived too, so it is suppressed in Replay for the
+          same reason the single-run results are. */}
+      {activeTab === "sweep" && workspace === "research" && (replayMode
+        ? <div className="empty-state"><AlertCircle size={18} /><strong>Sweeps suppressed</strong><span>A sweep reads outcomes beyond the replay cursor, so it stays hidden while Replay is active.</span></div>
+        : <SweepPanel symbol={symbol} timeframe={timeframe} exchange={exchange} strategyId={STRATEGIES.find((s) => s.id === selectedStrategyId)?.id ?? selectedStrategyId} parameters={strategyParameters} config={config} />)}
       {activeTab === "logs" && workspace === "research" && (replayMode ? <div className="execution-log">
         <div className="log-line"><span className="log-time">REPLAY</span><span className="log-info">FUTURE</span><span>Only completed bars at or before the cursor are loaded.</span></div>
         {replaySession && <div className="log-line"><span className="log-time">{new Date(replaySession.cursor).toLocaleTimeString()}</span><span className="log-success">CURSOR</span><span>{replaySession.symbol} · {replaySession.timeframe} · {replaySession.status}</span></div>}

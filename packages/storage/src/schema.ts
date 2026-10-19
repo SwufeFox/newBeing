@@ -1,4 +1,22 @@
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const candleCache = sqliteTable("candle_cache", {
+  exchange: text("exchange").notNull(),
+  symbol: text("symbol").notNull(),
+  timeframe: text("timeframe").notNull(),
+  timestamp: integer("timestamp").notNull(),
+  open: real("open").notNull(),
+  high: real("high").notNull(),
+  low: real("low").notNull(),
+  close: real("close").notNull(),
+  volume: real("volume").notNull(),
+  cachedAt: integer("cached_at").notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.exchange, table.symbol, table.timeframe, table.timestamp] }),
+  rangeIdx: index("candle_cache_range_idx").on(table.exchange, table.symbol, table.timeframe, table.timestamp),
+  ttlIdx: index("candle_cache_ttl_idx").on(table.cachedAt),
+}));
+
 
 export const workspaceStates = sqliteTable("workspace_states", {
   id: integer("id").primaryKey(),

@@ -13,6 +13,8 @@ import {
 } from "@newbeing/storage";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
+import { createCandleCacheAdapter } from "@/lib/candle-cache-adapter";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -64,15 +66,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const from = session.cursor + interval;
       /* The session's own venue, never the adapter default. Stepping a Kraken
          session through Binance would mix two price series into one run. */
-      const fetched = await getWebMarketAdapter(session.exchange).fetchOHLCVSince(session.symbol, session.timeframe as Timeframe, from, 4);
+      const cachedAdapter = createCandleCacheAdapter(session.exchange, getWebMarketAdapter(session.exchange));
+      const fetched = await cachedAdapter.adapter.fetchOHLCVSince(session.symbol, session.timeframe as Timeframe, from, 4);
       const next = nextCompletedBarAfter(fetched, session.timeframe as Timeframe, session.cursor);
-      if (!next) return NextResponse.json({ session, bar: null, hasNext: false, futureBarsLoaded: 0 });
+      const provenance = cachedAdapter.getLastResult();
+      if (!next) return NextResponse.json({ session, bar: null, hasNext: false, source: provenance?.source ?? "live", cache: provenance?.cache ?? { cached: false, cachedAt: null, fallback: false }, futureBarsLoaded: 0 });
       if (next.timestamp > session.cursor + interval) {
         return NextResponse.json({ error: "A missing OHLCV interval blocks safe replay; the cursor was not advanced." }, { status: 409 });
       }
       const advanced = advanceReplaySession(id, session.cursor, next);
       session = advanced.session;
-      return NextResponse.json({ session, bar: session.bars.at(-1) ?? null, hasNext: true, deduplicated: advanced.deduplicated, futureBarsLoaded: 0 });
+      return NextResponse.json({ session, bar: session.bars.at(-1) ?? null, hasNext: true, deduplicated: advanced.deduplicated, source: provenance?.source ?? "live", cache: provenance?.cache ?? { cached: false, cachedAt: null, fallback: false }, futureBarsLoaded: 0 });
     }
 
     const currentBar = session.bars.at(-1);

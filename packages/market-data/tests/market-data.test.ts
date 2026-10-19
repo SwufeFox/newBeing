@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CcxtSpotAdapter, coalesceRequest, completedBarsThrough, findCandleGaps, getExchangeAdapter, mergeCandles, nextCompletedBarAfter, reconnectDelayMs, removeFormingCandles } from "../src/index.js";
 import type { Candle, ExchangeId } from "@newbeing/core";
 
@@ -7,6 +7,59 @@ const candle = (timestamp: number, close: number): Candle => ({ timestamp, open:
 describe("public spot exchange registry", () => {
   it.each(["binance", "coinbaseexchange", "kraken", "okx"] as const)("creates a CCXT adapter for %s", (id) => {
     expect(getExchangeAdapter(id).id).toBe(id);
+  });
+
+  it.each([
+    { id: "binance", symbol: "BTC/USDT", paginate: false },
+    { id: "okx", symbol: "BTC/USDT", paginate: false },
+    { id: "coinbaseexchange", symbol: "BTC/USD", paginate: true },
+    { id: "kraken", symbol: "BTC/USD", paginate: true },
+  ] as const)("fetches and normalizes candles on $id without truncating the requested total", async ({ id, symbol, paginate }) => {
+    const adapter = new CcxtSpotAdapter(id);
+    const fetchOHLCV = vi.fn(async () => [[1_700_000_000_000, 10, 12, 9, 11, 42]] as [number, number, number, number, number, number][]);
+    Object.defineProperty(adapter, "exchange", { value: { loadMarkets: vi.fn(async () => ({})), fetchOHLCV } });
+
+    expect(adapter.id).toBe(id);
+    await expect(adapter.fetchOHLCV(symbol, "1m", 600)).resolves.toEqual([
+      { timestamp: 1_700_000_000_000, open: 10, high: 12, low: 9, close: 11, volume: 42 },
+    ]);
+    expect(fetchOHLCV).toHaveBeenCalledOnce();
+    expect(fetchOHLCV).toHaveBeenNthCalledWith(1, symbol, "1m", undefined, 600, paginate ? { paginate: true } : {});
+    await expect(adapter.fetchOHLCVSince(symbol, "1m", 1_700_000_000_000, 600)).resolves.toEqual([
+      { timestamp: 1_700_000_000_000, open: 10, high: 12, low: 9, close: 11, volume: 42 },
+    ]);
+    expect(fetchOHLCV).toHaveBeenNthCalledWith(2, symbol, "1m", 1_700_000_000_000, 600, paginate ? { paginate: true } : {});
+  });
+
+  it("uses the newest Kraken trade timestamp when the ticker has none", async () => {
+    const adapter = new CcxtSpotAdapter("kraken");
+    const fetchTrades = vi.fn(async () => [{ timestamp: 1_699_999_999_999 }, { timestamp: 1_700_000_000_123 }]);
+    Object.defineProperty(adapter, "exchange", {
+      value: { loadMarkets: vi.fn(async () => ({})), fetchTicker: vi.fn(async () => ({ timestamp: null, last: 10 })), fetchTrades },
+    });
+
+    await expect(adapter.fetchSummary("BTC/USD")).resolves.toMatchObject({ symbol: "BTC/USD", last: 10, timestamp: 1_700_000_000_123 });
+    expect(fetchTrades).toHaveBeenCalledWith("BTC/USD", undefined, 1);
+  });
+
+  it("leaves the summary timestamp null when Kraken has no trades", async () => {
+    const adapter = new CcxtSpotAdapter("kraken");
+    Object.defineProperty(adapter, "exchange", {
+      value: { loadMarkets: vi.fn(async () => ({})), fetchTicker: vi.fn(async () => ({ timestamp: null })), fetchTrades: vi.fn(async () => []) },
+    });
+
+    await expect(adapter.fetchSummary("BTC/USD")).resolves.toMatchObject({ symbol: "BTC/USD", timestamp: null });
+  });
+
+  it("does not fetch trades when the ticker has a timestamp", async () => {
+    const adapter = new CcxtSpotAdapter("kraken");
+    const fetchTrades = vi.fn(async () => []);
+    Object.defineProperty(adapter, "exchange", {
+      value: { loadMarkets: vi.fn(async () => ({})), fetchTicker: vi.fn(async () => ({ timestamp: 1_700_000_000_456 })), fetchTrades },
+    });
+
+    await expect(adapter.fetchSummary("BTC/USD")).resolves.toMatchObject({ symbol: "BTC/USD", timestamp: 1_700_000_000_456 });
+    expect(fetchTrades).not.toHaveBeenCalled();
   });
 
   it("coalesces concurrent OHLCV reads through the selected CCXT adapter", async () => {

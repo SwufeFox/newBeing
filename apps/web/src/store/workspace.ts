@@ -7,7 +7,7 @@ import { symbolForExchange } from "@/lib/exchanges";
 
 export type ThemeMode = "dark" | "light";
 export type InspectorTab = "watchlist" | "book" | "trades" | "strategy" | "context";
-export type DockTab = "positions" | "orders" | "history" | "backtest" | "logs";
+export type DockTab = "positions" | "orders" | "history" | "backtest" | "sweep" | "logs";
 
 export interface WorkspaceStore extends WorkspaceState {
   theme: ThemeMode;
