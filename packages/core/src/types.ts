@@ -150,6 +150,9 @@ export interface ReplaySession {
   startAt: number;
   cursor: number;
   bars: Candle[];
+  /** Provenance for a seed or any later step served from the local candle cache. */
+  candleSource?: "live" | "local-cache";
+  candleCache?: { fallback: boolean; cachedAt: string | null };
   status: "active" | "finished";
   createdAt: string;
   updatedAt: string;

@@ -22,8 +22,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     const exchangeResult = exchangeSchema.safeParse(url.searchParams.get("exchange") ?? workspace.exchange);
     if (!exchangeResult.success) return NextResponse.json({ error: "Unsupported exchange." }, { status: 400 });
     const exchange: ExchangeId = exchangeResult.data;
-    if (workspace.activeWorkspace === "replay" && (kind !== "candles" || exchange !== "binance")) {
-      return NextResponse.json({ error: "Replay market data is Binance only; live quotes and depth are suppressed." }, { status: 409 });
+    if (workspace.activeWorkspace === "replay" && kind !== "candles") {
+      return NextResponse.json({ error: "Live quotes and depth are suppressed during Replay." }, { status: 409 });
     }
     const adapter = getWebMarketAdapter(exchange);
     if (kind === "summary") return NextResponse.json(await adapter.fetchSummary(symbol), { headers: { "Cache-Control": "no-store" } });
@@ -39,10 +39,10 @@ export async function GET(request: Request): Promise<NextResponse> {
     const timeframe = timeframeResult.data as Timeframe;
     if (workspace.activeWorkspace === "replay") {
       const session = workspace.activeReplayId ? getReplaySession(workspace.activeReplayId) : undefined;
-      if (!session || exchange !== "binance" || session.symbol !== symbol || session.timeframe !== timeframe) {
-        return NextResponse.json({ error: "Replay market data is limited to its Binance session and revealed cursor." }, { status: 409 });
+      if (!session || exchange !== session.exchange || session.symbol !== symbol || session.timeframe !== timeframe) {
+        return NextResponse.json({ error: "Replay market data is limited to its session and revealed cursor." }, { status: 409 });
       }
-      return NextResponse.json({ candles: session.bars, completed: session.bars, gaps: findCandleGaps(session.bars, timeframe), source: "Local Binance replay session · revealed bars only", futureBarsLoaded: 0 }, { headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json({ candles: session.bars, completed: session.bars, gaps: findCandleGaps(session.bars, timeframe), source: `Local ${session.exchange} replay session · revealed bars only`, futureBarsLoaded: 0 }, { headers: { "Cache-Control": "no-store" } });
     }
     const limitResult = z.coerce.number().int().min(50).max(1000).safeParse(url.searchParams.get("limit") ?? 500);
     if (!limitResult.success) return NextResponse.json({ error: "Limit must be between 50 and 1000." }, { status: 400 });

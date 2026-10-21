@@ -1,4 +1,6 @@
-import { and, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
+import { matchReplayBar, submitReplayOrder, validateReplayConfig, type InstrumentIdentity, type ReplayConfig, type ReplayExecution, type ReplayOrderInput } from "@newbeing/core";
+import { replayExecutions } from "./schema.js";
+import { and, asc, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { DEFAULT_WORKSPACE_STATE, fillPaperOrder, type BacktestResult, type Candle, type ExchangeId, type OrderPreview, type PaperOrder, type PaperPortfolio, type ReplaySession, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import { getDatabase } from "./db.js";
 import { experiments, orderPreviews, paperAccounts, paperOrders, replaySessions, strategies, workspaceStates, candleCache } from "./schema.js";
@@ -8,6 +10,8 @@ import { experiments, orderPreviews, paperAccounts, paperOrders, replaySessions,
  *  request to an adapter that does not exist. */
 const EXCHANGE_IDS: readonly ExchangeId[] = ["binance", "coinbaseexchange", "okx", "kraken"];
 
+const INTERVALS: Record<Timeframe, number> = { "1m": 60000, "5m": 300000, "15m": 900000, "30m": 1800000, "1h": 3600000, "4h": 14400000, "1d": 86400000 };
+
 const CANDLE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function saveCachedCandles(exchange: ExchangeId, symbol: string, timeframe: Timeframe, candles: readonly Candle[]): void {
@@ -15,6 +19,7 @@ export function saveCachedCandles(exchange: ExchangeId, symbol: string, timefram
   const now = Date.now();
   db.transaction((tx) => {
     for (const candle of candles) {
+      if (candle.timestamp + INTERVALS[timeframe] > now) continue;
       tx.insert(candleCache).values({ exchange, symbol, timeframe, ...candle, cachedAt: now })
         .onConflictDoUpdate({
           target: [candleCache.exchange, candleCache.symbol, candleCache.timeframe, candleCache.timestamp],
@@ -22,15 +27,17 @@ export function saveCachedCandles(exchange: ExchangeId, symbol: string, timefram
         }).run();
     }
     tx.delete(candleCache).where(lt(candleCache.cachedAt, now - CANDLE_CACHE_TTL_MS)).run();
-  })();
+  });
 }
 
 export function getCachedCandles(exchange: ExchangeId, symbol: string, timeframe: Timeframe, since: number, limit: number, through = Number.MAX_SAFE_INTEGER): { candles: Candle[]; cachedAt: number | null } {
   const rows = getDatabase().select().from(candleCache).where(and(
     eq(candleCache.exchange, exchange), eq(candleCache.symbol, symbol), eq(candleCache.timeframe, timeframe),
+    sql`${candleCache.cachedAt} >= ${candleCache.timestamp} + ${INTERVALS[timeframe]}`,
+    lte(candleCache.timestamp, Date.now() - INTERVALS[timeframe]),
     gte(candleCache.timestamp, since), lte(candleCache.timestamp, through), gte(candleCache.cachedAt, Date.now() - CANDLE_CACHE_TTL_MS),
   )).orderBy(asc(candleCache.timestamp)).limit(limit).all();
-  return { candles: rows.map(({ timestamp, open, high, low, close, volume }) => ({ timestamp, open, high, low, close, volume })), cachedAt: rows.length ? Math.max(...rows.map((row) => row.cachedAt)) : null };
+  return { candles: rows.map(({ timestamp, open, high, low, close, volume }) => ({ timestamp, open, high, low, close, volume })), cachedAt: rows.length ? Math.min(...rows.map((row) => row.cachedAt)) : null };
 }
 
 
@@ -363,6 +370,18 @@ function replaySessionFromRow(row: typeof replaySessions.$inferSelect): ReplaySe
   try {
     const bars = JSON.parse(row.bars) as Candle[];
     if (!Array.isArray(bars)) return undefined;
+    const candleSource = row.candleSource === "live" || row.candleSource === "local-cache" ? row.candleSource : undefined;
+    let candleCache: ReplaySession["candleCache"];
+    if (row.candleCache) {
+      try {
+        const parsed = JSON.parse(row.candleCache) as unknown;
+        if (typeof parsed === "object" && parsed !== null && "fallback" in parsed && typeof parsed.fallback === "boolean" && "cachedAt" in parsed && (typeof parsed.cachedAt === "string" || parsed.cachedAt === null)) {
+          candleCache = { fallback: parsed.fallback, cachedAt: parsed.cachedAt };
+        }
+      } catch {
+        /* Bad optional provenance must not make a valid replay session unreadable. */
+      }
+    }
     return {
       id: row.id,
       exchange: (EXCHANGE_IDS.includes(row.exchange as ExchangeId) ? row.exchange : "binance") as ExchangeId,
@@ -371,6 +390,8 @@ function replaySessionFromRow(row: typeof replaySessions.$inferSelect): ReplaySe
       startAt: row.startAt,
       cursor: row.cursor,
       bars,
+      ...(candleSource ? { candleSource } : {}),
+      ...(candleCache ? { candleCache } : {}),
       status: row.status as ReplaySession["status"],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -389,6 +410,8 @@ export function createReplaySession(session: ReplaySession): void {
     startAt: session.startAt,
     cursor: session.cursor,
     bars: JSON.stringify(session.bars),
+    candleSource: session.candleSource ?? null,
+    candleCache: session.candleCache ? JSON.stringify(session.candleCache) : null,
     status: session.status,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
@@ -400,7 +423,13 @@ export function getReplaySession(id: string): ReplaySession | undefined {
   return row ? replaySessionFromRow(row) : undefined;
 }
 
-export function advanceReplaySession(id: string, expectedCursor: number, candle: Candle): { session: ReplaySession; deduplicated: boolean } {
+export function advanceReplaySession(
+  id: string,
+  expectedCursor: number,
+  candle: Candle,
+  provenance?: { source: "live" | "local-cache"; cache: { fallback: boolean; cachedAt: string | null } },
+  expectedRevision?: number,
+): { session: ReplaySession; deduplicated: boolean } {
   const db = getDatabase();
   return db.transaction((tx) => {
     const row = tx.select().from(replaySessions).where(eq(replaySessions.id, id)).get();
@@ -408,18 +437,119 @@ export function advanceReplaySession(id: string, expectedCursor: number, candle:
     if (!current) throw new Error("Replay session not found or invalid.");
     if (current.status !== "active" || current.cursor !== expectedCursor) return { session: current, deduplicated: true };
     if (candle.timestamp <= current.cursor) throw new Error("Replay candle must move strictly forward.");
+    const execution = getReplayExecution(id);
+    if (execution) {
+      if (expectedRevision !== undefined && execution.revision !== expectedRevision) throw new Error("Replay revision conflict; reload before retrying.");
+      const intervals: Record<Timeframe, number> = { "1m": 60000, "5m": 300000, "15m": 900000, "30m": 1800000, "1h": 3600000, "4h": 14400000, "1d": 86400000 };
+      if (candle.timestamp !== current.cursor + intervals[current.timeframe]) throw new Error("Replay requires the next contiguous bar.");
+      matchReplayBar(execution, candle);
+      execution.revision++;
+      tx.update(replayExecutions).set({ payload: JSON.stringify(execution) }).where(eq(replayExecutions.sessionId, id)).run();
+    }
     const bars = [...current.bars, candle].slice(-1000);
-    const updated: ReplaySession = { ...current, cursor: candle.timestamp, bars, updatedAt: new Date().toISOString() };
-    tx.update(replaySessions).set({ cursor: updated.cursor, bars: JSON.stringify(updated.bars), updatedAt: updated.updatedAt })
+    const candleSource = current.candleSource === "local-cache" || provenance?.source === "local-cache"
+      ? "local-cache"
+      : provenance?.source ?? current.candleSource;
+    const candleCache = provenance?.source === "local-cache" ? provenance.cache : current.candleCache;
+    const updated: ReplaySession = {
+      ...current,
+      cursor: candle.timestamp,
+      bars,
+      ...(candleSource ? { candleSource } : {}),
+      ...(candleCache ? { candleCache } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    tx.update(replaySessions).set({
+      cursor: updated.cursor,
+      bars: JSON.stringify(updated.bars),
+      candleSource: updated.candleSource ?? null,
+      candleCache: updated.candleCache ? JSON.stringify(updated.candleCache) : null,
+      updatedAt: updated.updatedAt,
+    })
       .where(and(eq(replaySessions.id, id), eq(replaySessions.cursor, expectedCursor), eq(replaySessions.status, "active"))).run();
     const savedRow = tx.select().from(replaySessions).where(eq(replaySessions.id, id)).get();
     const saved = savedRow ? replaySessionFromRow(savedRow) : undefined;
     if (!saved) throw new Error("Replay session update failed.");
-    return { session: saved, deduplicated: saved.cursor !== candle.timestamp };
-  });
+    return { session: saved, deduplicated: false };
+  }, { behavior: "immediate" });
+}
+
+export function createConfiguredReplaySession(session: ReplaySession, instrument: InstrumentIdentity, config: ReplayConfig): ReplayExecution {
+  validateReplayConfig(config);
+  if (instrument.venue !== session.exchange || instrument.symbol !== session.symbol || instrument.id !== `${instrument.venue}:spot:${encodeURIComponent(instrument.nativeId)}` || !instrument.nativeId || instrument.marketType !== "spot" || `${instrument.base}/${instrument.quote}` !== session.symbol) throw new Error("Replay instrument does not match session.");
+  return getDatabase().transaction((tx) => {
+    createReplaySession(session);
+    const state: ReplayExecution = {
+      version: 1, revision: 0,
+      account: { id: replayAccountId(session.id, session.symbol, session.exchange), venue: session.exchange, mode: "replay", quote: instrument.quote },
+      instrument, config,
+      portfolio: { quoteBalance: config.initialCapital, baseBalance: 0, averageEntryPrice: null, realizedPnl: 0, feeRate: config.feeRate },
+      orders: [], fills: [], brackets: [], equity: [{ timestamp: session.cursor, equity: config.initialCapital }], notes: "", tags: [],
+    };
+    tx.insert(replayExecutions).values({ sessionId: session.id, payload: JSON.stringify(state) }).run();
+    return state;
+  }, { behavior: "immediate" });
+}
+
+export function getReplayExecution(id: string): ReplayExecution | undefined {
+  const row = getDatabase().select().from(replayExecutions).where(eq(replayExecutions.sessionId, id)).get();
+  return row ? JSON.parse(row.payload) as ReplayExecution : undefined;
+}
+
+export type ReplayCommand =
+  | { action: "order"; order: ReplayOrderInput }
+  | { action: "cancel"; clientOrderId: string }
+  | { action: "journal"; notes: string; tags: string[] }
+  | { action: "finish" };
+
+/** Legacy history has no compatible fill ledger. Start a new session explicitly. */
+export function upgradeLegacyReplay(session: ReplaySession, instrument: InstrumentIdentity): ReplayExecution {
+  const existing = getReplayExecution(session.id);
+  if (existing) return existing;
+  if (instrument.venue !== session.exchange || instrument.symbol !== session.symbol) throw new Error("Replay instrument mismatch.");
+  throw new Error("Legacy Replay cannot acquire new execution semantics. Start a new configured session; legacy wallet and history remain available.");
+}
+
+export function commandReplay(id: string, expectedRevision: number, command: ReplayCommand): ReplayExecution {
+  return getDatabase().transaction((tx) => {
+    const session = getReplaySession(id);
+    const state = getReplayExecution(id);
+    if (!session || !state) throw new Error("Replay execution not found.");
+    // Exact retries of an order remain safe even after the cursor/revision has moved.
+    if (command.action === "order" && state.orders.some((order) => order.clientOrderId === command.order.clientOrderId)) {
+      submitReplayOrder(state, command.order, session.cursor);
+      return state;
+    }
+    if (state.revision !== expectedRevision) throw new Error("Replay revision conflict; reload before retrying.");
+    if (command.action !== "journal" && session.status !== "active") throw new Error("Replay session has finished.");
+    if (command.action === "order") submitReplayOrder(state, command.order, session.cursor);
+    if (command.action === "cancel") {
+      const order = state.orders.find((item) => item.clientOrderId === command.clientOrderId);
+      if (!order) throw new Error("Replay order not found.");
+      if (order.status === "submitted") order.status = "cancelled";
+      else if (order.status !== "cancelled") throw new Error("Only pending Replay orders can be cancelled.");
+    }
+    if (command.action === "journal") {
+      if (command.notes.length > 20_000 || command.tags.length > 20 || command.tags.some((tag) => !tag.trim() || tag.length > 80)) throw new Error("Invalid Replay journal.");
+      state.notes = command.notes;
+      state.tags = [...new Set(command.tags.map((tag) => tag.trim()))];
+    }
+    if (command.action === "finish") {
+      state.orders.forEach((order) => { if (order.status === "submitted") order.status = "cancelled"; });
+      tx.update(replaySessions).set({ status: "finished", updatedAt: new Date().toISOString() }).where(eq(replaySessions.id, id)).run();
+    }
+    state.revision++;
+    tx.update(replayExecutions).set({ payload: JSON.stringify(state) }).where(eq(replayExecutions.sessionId, id)).run();
+    return state;
+  }, { behavior: "immediate" });
 }
 
 export function finishReplaySession(id: string): ReplaySession | undefined {
+  const execution = getReplayExecution(id);
+  if (execution) {
+    commandReplay(id, execution.revision, { action: "finish" });
+    return getReplaySession(id);
+  }
   const db = getDatabase();
   db.update(replaySessions).set({ status: "finished", updatedAt: new Date().toISOString() })
     .where(and(eq(replaySessions.id, id), eq(replaySessions.status, "active"))).run();

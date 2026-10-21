@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
-import { EXCHANGE_TIMEFRAMES, type BacktestResult, type Candle, type PaperOrder, type PaperPortfolio, type ReplaySession, type Timeframe, type WorkspaceState } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES, type ReplayConfig, type ReplayExecution, type ReplayOrderInput, type BacktestResult, type Candle, type PaperOrder, type PaperPortfolio, type ReplaySession, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import type { MarketSummary, MarketSymbol } from "@newbeing/market-data/types";
 
 const TIMEFRAMES: readonly Timeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
@@ -59,6 +59,7 @@ function localDateTime(timestamp: number): string {
 }
 
 interface ReplayEnvelope {
+  execution?: ReplayExecution | null;
   session: ReplaySession;
   portfolio?: PaperPortfolio;
   orders?: PaperOrder[];
@@ -355,6 +356,7 @@ export function Terminal(): React.JSX.Element {
   const [backtestError, setBacktestError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
   const result = useWorkspaceStore((state) => state.backtest);
+  const [replayExecution, setReplayExecution] = useState<ReplayExecution | null>(null);
   const [replaySession, setReplaySession] = useState<ReplaySession | null>(null);
   const [replayPortfolio, setReplayPortfolio] = useState<PaperPortfolio | null>(null);
   const [replayOrders, setReplayOrders] = useState<PaperOrder[]>([]);
@@ -422,7 +424,7 @@ export function Terminal(): React.JSX.Element {
     } finally {
       setRunning(false);
     }
-  }, [symbol, timeframe, strategyId, parameters, config, setBacktest, setWorkspace, setDockTab]);
+  }, [exchange, symbol, timeframe, strategyId, parameters, config, setBacktest, setWorkspace, setDockTab]);
 
   const handleVisibleRange = useCallback((range: { from: number | null; to: number | null }): void => {
     setVisibleRange(range);
@@ -438,6 +440,7 @@ export function Terminal(): React.JSX.Element {
     const parsed = parseReplayEnvelope(payload);
     if (!parsed) throw new Error("Replay session response was malformed.");
     setReplaySession(parsed.session);
+      setReplayExecution(parsed.execution ?? null);
     setReplayPortfolio(parsed.portfolio ?? null);
     setReplayOrders(parsed.orders ?? []);
     const currentWorkspace = useWorkspaceStore.getState();
@@ -473,6 +476,7 @@ export function Terminal(): React.JSX.Element {
       const parsed = parseReplayEnvelope(payload);
       if (!parsed) throw new Error("Replay start response was malformed.");
       setReplaySession(parsed.session);
+      setReplayExecution(parsed.execution ?? null);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders([]);
       const store = useWorkspaceStore.getState();
@@ -487,7 +491,7 @@ export function Terminal(): React.JSX.Element {
       setReplayBusy(false);
     }
   };
-  const startReplay = async (): Promise<void> => {
+  const startReplay = async (replayConfig?: ReplayConfig): Promise<void> => {
     setReplayBusy(true);
     setReplayError(null);
     setReplayPlaying(false);
@@ -495,7 +499,7 @@ export function Terminal(): React.JSX.Element {
       const response = await fetch("/api/replay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exchange, symbol, timeframe, endAt: new Date(replayStartAt).getTime(), limit: replayLimit }),
+        body: JSON.stringify({ exchange, symbol, timeframe, endAt: new Date(replayStartAt).getTime(), limit: replayLimit, ...replayConfig }),
       });
       const payload: unknown = await response.json();
       if (!response.ok) {
@@ -505,6 +509,7 @@ export function Terminal(): React.JSX.Element {
       const parsed = parseReplayEnvelope(payload);
       if (!parsed) throw new Error("Replay start response was malformed.");
       setReplaySession(parsed.session);
+      setReplayExecution(parsed.execution ?? null);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders([]);
       setActiveReplayId(parsed.session.id);
@@ -525,16 +530,20 @@ export function Terminal(): React.JSX.Element {
       const response = await fetch(`/api/replay/${encodeURIComponent(replaySession.id)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "step" }),
+        body: JSON.stringify({ action: "step", expectedCursor: replaySession.cursor, expectedRevision: replayExecution?.revision }),
       });
       const payload: unknown = await response.json();
       if (!response.ok) {
+        if (response.status === 409) await refreshReplay(replaySession.id);
         const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Replay step failed.";
         throw new Error(message);
       }
       const parsed = parseReplayEnvelope(payload);
       if (!parsed) throw new Error("Replay step response was malformed.");
       setReplaySession(parsed.session);
+      setReplayExecution(parsed.execution ?? null);
+      setReplayPortfolio(parsed.portfolio ?? null);
+      setReplayOrders(parsed.orders ?? []);
       if (typeof payload === "object" && payload !== null && "hasNext" in payload && payload.hasNext === false) {
         setReplayPlaying(false);
         setReplayError("No next completed bar is available yet. The replay cursor did not move.");
@@ -546,7 +555,7 @@ export function Terminal(): React.JSX.Element {
       replayBusyRef.current = false;
       setReplayBusy(false);
     }
-  }, [replaySession]);
+  }, [replaySession, replayExecution, refreshReplay]);
 
   useEffect(() => {
     replayStepRef.current = stepReplay;
@@ -559,59 +568,69 @@ export function Terminal(): React.JSX.Element {
   }, [replayPlaying, replaySpeed]);
 
   const finishReplay = async (): Promise<void> => {
-    if (!replaySession) return;
+    if (!replaySession || replayBusyRef.current) return;
+    replayBusyRef.current = true;
     setReplayBusy(true);
     setReplayPlaying(false);
     try {
       const response = await fetch(`/api/replay/${encodeURIComponent(replaySession.id)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "finish" }),
+        body: JSON.stringify({ action: "finish", expectedRevision: replayExecution?.revision }),
       });
       const payload: unknown = await response.json();
-      if (!response.ok) throw new Error("Could not finish replay session.");
+      if (!response.ok) {
+        if (response.status === 409) await refreshReplay(replaySession.id);
+        throw new Error(typeof payload === "object" && payload !== null && "error" in payload ? String(payload.error) : "Could not finish replay session.");
+      }
       const parsed = parseReplayEnvelope(payload);
-      if (parsed) setReplaySession(parsed.session);
+      if (parsed) {
+        setReplaySession(parsed.session);
+        setReplayExecution(parsed.execution ?? null);
+        setReplayPortfolio(parsed.portfolio ?? null);
+        setReplayOrders(parsed.orders ?? []);
+      }
     } catch (error) {
       setReplayError(error instanceof Error ? error.message : "Could not finish replay session.");
     } finally {
+      replayBusyRef.current = false;
       setReplayBusy(false);
     }
   };
 
-  const placeReplayOrder = async (side: "buy" | "sell", quantity: number): Promise<void> => {
-    if (!replaySession) return;
+  const replayCommand = async (command: Record<string, unknown>): Promise<void> => {
+    if (!replaySession || replayBusyRef.current) return;
+    replayBusyRef.current = true;
     setReplayBusy(true);
+    setReplayPlaying(false);
     setReplayError(null);
     try {
       const response = await fetch(`/api/replay/${encodeURIComponent(replaySession.id)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "order", requestId: globalThis.crypto.randomUUID(), side, quantity }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...command, expectedRevision: replayExecution?.revision }),
       });
       const payload: unknown = await response.json();
       if (!response.ok) {
-        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Replay order failed.";
-        throw new Error(message);
+        if (response.status === 409) await refreshReplay(replaySession.id);
+        throw new Error(typeof payload === "object" && payload !== null && "error" in payload ? String(payload.error) : "Replay action failed.");
       }
-      if (typeof payload === "object" && payload !== null && "order" in payload && "portfolio" in payload) {
-        const order = (payload as { order?: unknown }).order;
-        const portfolio = (payload as { portfolio?: unknown }).portfolio;
-        if (typeof order === "object" && order !== null && "clientOrderId" in order) {
-          setReplayOrders((current) => [...current.filter((item) => item.clientOrderId !== (order as PaperOrder).clientOrderId), order as PaperOrder]);
-        }
-        if (typeof portfolio === "object" && portfolio !== null && "quoteBalance" in portfolio) setReplayPortfolio(portfolio as PaperPortfolio);
-      }
+      await refreshReplay(replaySession.id);
     } catch (error) {
-      setReplayError(error instanceof Error ? error.message : "Replay order failed. Refresh the session before retrying.");
+      setReplayError(error instanceof Error ? error.message : "Replay action failed. Reload before retrying.");
+      throw error;
     } finally {
+      replayBusyRef.current = false;
       setReplayBusy(false);
     }
+  };
+  const placeReplayOrder = async (side: "buy" | "sell", quantity: number, options?: Partial<ReplayOrderInput>): Promise<void> => {
+    await replayCommand({ action: "order", requestId: globalThis.crypto.randomUUID(), ...options, side, quantity });
   };
 
   const resetReplay = (): void => {
     setReplayPlaying(false);
     setReplaySession(null);
+    setReplayExecution(null);
     setReplayPortfolio(null);
     setReplayOrders([]);
     setReplayError(null);
@@ -748,7 +767,7 @@ export function Terminal(): React.JSX.Element {
           onStartAtChange={setReplayStartAt}
           onLimitChange={setReplayLimit}
           onSpeedChange={setReplaySpeed}
-          onStart={() => void startReplay()}
+          onStart={(replayConfig) => void startReplay(replayConfig)}
           onTogglePlay={() => { setReplayError(null); setReplayPlaying((playing) => !playing); }}
           onStep={() => void stepReplay()}
           onFinish={() => void finishReplay()}
@@ -764,6 +783,8 @@ export function Terminal(): React.JSX.Element {
         running={running}
         replayMode={workspace === "replay"}
         replaySession={replaySession}
+        replayExecution={replayExecution}
+        onReplayCommand={replayCommand}
         replayPortfolio={replayPortfolio}
         replayOrders={replayOrders}
         replayBusy={replayBusy}

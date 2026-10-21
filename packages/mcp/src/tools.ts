@@ -6,6 +6,7 @@ import { findCandleGaps, getExchangeAdapter, removeFormingCandles } from "@newbe
 import {
   getExperiment,
   getReplaySession,
+  getReplayExecution,
   getPaperPortfolio,
   getStoredStrategy,
   getWorkspaceState,
@@ -97,7 +98,7 @@ export function createNewBeingMcpServer(): McpServer {
       const workspace = getWorkspaceState().state;
       if (workspace.activeWorkspace === "replay") {
         const session = workspace.activeReplayId ? getReplaySession(workspace.activeReplayId) : undefined;
-        if (!session || session.symbol !== symbol || session.timeframe !== tf) {
+        if (!session || session.exchange !== workspace.exchange || session.symbol !== symbol || session.timeframe !== tf) {
           return errorResult(new Error("Market data is limited to the active Replay session's revealed bars. Exit Replay to query other market history."));
         }
         return textResult({ symbol, timeframe: tf, source: "Local Replay session; future bars withheld", candles: session.bars, gaps: findCandleGaps(session.bars, tf as Timeframe), futureBarsLoaded: 0 });
@@ -120,10 +121,10 @@ export function createNewBeingMcpServer(): McpServer {
       const workspace = getWorkspaceState().state;
       if (workspace.activeWorkspace === "replay") {
         const session = workspace.activeReplayId ? getReplaySession(workspace.activeReplayId) : undefined;
-        if (!session || session.symbol !== symbol) return errorResult(new Error("Replay portfolio is available only for the active replay symbol."));
-        return textResult({ mode: "replay", source: "isolated local replay simulator", symbol, sessionId: session.id, portfolio: getPaperPortfolio(replayAccountId(session.id, symbol)) });
+        if (!session || session.exchange !== workspace.exchange || session.symbol !== symbol) return errorResult(new Error("Replay portfolio is available only for the active replay symbol."));
+        return textResult({ mode: "replay", source: "isolated local replay simulator", symbol, sessionId: session.id, portfolio: getReplayExecution(session.id)?.portfolio ?? getPaperPortfolio(replayAccountId(session.id, symbol, session.exchange)) });
       }
-      return textResult({ mode: "paper", source: "local simulator", symbol, portfolio: getPaperPortfolio(paperAccountId(symbol)) });
+      return textResult({ mode: "paper", source: "local simulator", symbol, portfolio: getPaperPortfolio(paperAccountId(symbol, workspace.exchange)) });
     } catch (error) { return errorResult(error); }
   });
 
@@ -311,7 +312,7 @@ export function createNewBeingMcpServer(): McpServer {
     try {
       const workspace = getWorkspaceState().state;
       if (workspace.exchange !== "binance") return errorResult(new Error("Paper order previews currently support Binance Spot only."));
-      if (workspace.activeWorkspace === "replay") return errorResult(new Error("Normal Paper order previews are disabled during Replay. Use the replay UI ticket, which fills only at the revealed cursor close."));
+      if (workspace.activeWorkspace === "replay") return errorResult(new Error("Normal Paper order previews are disabled during Replay. Use the replay UI ticket, which queues orders for later bars."));
       const summary = await getExchangeAdapter(workspace.exchange).fetchSummary(orderSymbol);
       const price = side === "buy" ? (summary.ask ?? summary.last) : (summary.bid ?? summary.last);
       if (price === null || price <= 0) return errorResult(new Error("No usable public quote is available for a preview."));

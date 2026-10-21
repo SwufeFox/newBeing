@@ -68,7 +68,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       parameters: parsed.data.parameters,
       config,
       ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
-    }, { marketAdapter: cachedAdapter.adapter, candleProvenance: cachedAdapter.getLastResult });
+    }, { marketAdapter: cachedAdapter.adapter, candleProvenance: () => { const result = cachedAdapter.getLastResult(); return result ? { source: result.source, cachedAt: result.cache.cachedAt, fallback: result.cache.fallback } : null; } });
     return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Backtest failed.";

@@ -236,7 +236,6 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
   useEffect(() => {
     const controller = new AbortController();
     if (replayMode) {
-      setCacheInfo({ fallback: false, cachedAt: null });
       const bars = replayBars ?? [];
       barsRef.current = [...bars];
       candleSeriesRef.current?.setData(bars.map((bar) => ({
@@ -400,7 +399,7 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
         {replayMode && replayBars.length === 0 && <div className="chart-overlay"><Clock3 size={16} /><span>Seed a historical session to load past bars only.</span></div>}
       </div>
       <div className="chart-footer">
-        <span>{cacheInfo.fallback
+        <span>{!replayMode && cacheInfo.fallback
           ? <><AlertTriangle size={11} /> LOCAL CACHE · last fetched {cacheInfo.cachedAt ? new Date(cacheInfo.cachedAt).toLocaleString() : "time unavailable"}</>
           : gapCount > 0 ? <><AlertTriangle size={11} /> {gapCount} gap{gapCount === 1 ? "" : "s"} detected</> : replayMode ? "Future candles are not loaded · UTC" : `UTC · ${exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase()} public spot data`}</span>
         <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noreferrer">Charts by TradingView · Lightweight Charts™</a>

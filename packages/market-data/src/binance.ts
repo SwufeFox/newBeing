@@ -1,6 +1,6 @@
 import ccxt, { type MarketInterface, type OHLCV, type OrderBook as CcxtOrderBook, type Trade as CcxtTrade } from "ccxt";
 import type { Candle, ExchangeId, Timeframe } from "@newbeing/core";
-import { EXCHANGE_TIMEFRAMES } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES, instrumentId } from "@newbeing/core";
 import { coalesceRequest } from "./coalesce.js";
 import { findCandleGaps, mergeCandles, reconnectDelayMs, removeFormingCandles, timeframeMilliseconds } from "./utils.js";
 import type { ExchangeAdapter, MarketSummary, MarketSymbol, OrderBookSnapshot, RecentTrade } from "./types.js";
@@ -26,6 +26,25 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
     this.id = id;
     const Exchange = ccxt[id] as typeof ccxt.binance;
     this.exchange = new Exchange({ enableRateLimit: true, options: { defaultType: "spot", adjustForTimeDifference: true }, timeout: 12_000 });
+  }
+
+  getConnectorMetadata() {
+    const capabilities: Record<string, boolean | "emulated"> = {};
+    for (const name of ["fetchOHLCV", "fetchTicker", "fetchTickers", "fetchOrderBook", "fetchTrades"]) {
+      const supported = this.exchange.has[name];
+      capabilities[name] = supported === "emulated" ? "emulated" : supported === true;
+    }
+    return { id: this.id, name: this.exchange.name ?? this.id, timeframes: Object.keys(this.exchange.timeframes ?? {}).filter((value) => EXCHANGE_TIMEFRAMES[this.id].includes(value as Timeframe)), capabilities, realExecution: false as const,
+      untrustedJavaScript: { enabled: false as const, blocker: "Secure OS process isolation and resource limits are not configured. Only built-in strategies can execute." } };
+  }
+
+  async getInstrument(symbol: string) {
+    await this.exchange.loadMarkets();
+    const market = this.exchange.market(validSymbol(symbol));
+    if (!market.spot || !market.id) throw new Error("A native spot instrument is required.");
+    return { id: instrumentId(this.id, market.id), venue: this.id, nativeId: market.id, symbol: market.symbol, base: market.base, quote: market.quote, marketType: "spot" as const, active: market.active !== false,
+      precision: { amount: finiteOrNull(market.precision.amount), price: finiteOrNull(market.precision.price), mode: finiteOrNull(this.exchange.precisionMode) },
+      limits: { amount: { min: finiteOrNull(market.limits.amount?.min), max: finiteOrNull(market.limits.amount?.max) }, cost: { min: finiteOrNull(market.limits.cost?.min), max: finiteOrNull(market.limits.cost?.max) } } };
   }
 
   async searchSymbols(query: string, limit = 60): Promise<MarketSymbol[]> {

@@ -1,5 +1,6 @@
 import type { Candle, ExchangeId, Timeframe } from "@newbeing/core";
-import { timeframeMilliseconds, type ExchangeAdapter } from "@newbeing/market-data";
+import { timeframeMilliseconds } from "@newbeing/market-data/utils";
+import type { ExchangeAdapter } from "@newbeing/market-data";
 import { getCachedCandles, saveCachedCandles } from "@newbeing/storage";
 
 export interface CandleCacheMetadata {
@@ -28,9 +29,9 @@ export function createCandleCacheAdapter(exchange: ExchangeId, adapter: Exchange
   ): Promise<Candle[]> {
     let candles: Candle[];
     try {
-      candles = await fetchOnline();
+      candles = (await fetchOnline()).filter((candle) => candle.timestamp >= since && (through === Number.MAX_SAFE_INTEGER || candle.timestamp + timeframeMilliseconds(timeframe) <= Math.min(through, Date.now()))).slice(0, limit);
     } catch (error) {
-      const cached = getCachedCandles(exchange, symbol, timeframe, since, limit, through);
+      const cached = getCachedCandles(exchange, symbol, timeframe, since, limit, Math.min(through, Date.now()) - timeframeMilliseconds(timeframe));
       if (cached.candles.length === 0) throw error;
       lastResult = {
         candles: cached.candles,
@@ -41,7 +42,7 @@ export function createCandleCacheAdapter(exchange: ExchangeId, adapter: Exchange
     }
     let cachedSuccessfully = true;
     try {
-      saveCachedCandles(exchange, symbol, timeframe, candles.filter((candle) => candle.timestamp <= through));
+      saveCachedCandles(exchange, symbol, timeframe, candles.filter((candle) => candle.timestamp + timeframeMilliseconds(timeframe) <= Math.min(through, Date.now())));
     } catch {
       cachedSuccessfully = false;
     }
@@ -51,7 +52,15 @@ export function createCandleCacheAdapter(exchange: ExchangeId, adapter: Exchange
 
   return {
     adapter: {
-      ...adapter,
+      getInstrument: adapter.getInstrument?.bind(adapter),
+      getConnectorMetadata: adapter.getConnectorMetadata?.bind(adapter),
+      id: adapter.id,
+      searchSymbols: adapter.searchSymbols.bind(adapter),
+      fetchSummary: adapter.fetchSummary.bind(adapter),
+      fetchSummaries: adapter.fetchSummaries.bind(adapter),
+      fetchOrderBook: adapter.fetchOrderBook.bind(adapter),
+      fetchRecentTrades: adapter.fetchRecentTrades.bind(adapter),
+      close: adapter.close.bind(adapter),
       fetchOHLCV(symbol: string, timeframe: Timeframe, limit = 500) {
         const since = Date.now() - timeframeMilliseconds(timeframe) * limit;
         return fetch(symbol, timeframe, since, limit, () => adapter.fetchOHLCV(symbol, timeframe, limit));

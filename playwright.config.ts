@@ -1,4 +1,3 @@
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
@@ -36,7 +35,7 @@ export default defineConfig({
       PORT: "3100",
       NEWBEING_NEXT_DIST_DIR: ".next-e2e",
       NEWBEING_E2E_FIXTURES: "1",
-      NEWBEING_DATA_DIR: join(tmpdir(), `newbeing-e2e-${process.pid}-${Date.now()}`),
+      NEWBEING_DATA_DIR: process.env.NEWBEING_E2E_DATA_DIR ?? join(process.cwd(), ".newbeing", `e2e-${process.pid}-${Date.now()}`),
     },
   },
 });

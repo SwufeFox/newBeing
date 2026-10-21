@@ -1,3 +1,4 @@
+import type { InstrumentIdentity } from "@newbeing/core";
 import type { ExchangeId } from "@newbeing/core";
 import type { Candle, Timeframe } from "@newbeing/core";
 
@@ -40,7 +41,23 @@ export interface MarketSymbol {
   active: boolean;
 }
 
+export interface InstrumentMetadata extends InstrumentIdentity {
+  active: boolean;
+  precision: { amount: number | null; price: number | null; mode: number | null };
+  limits: { amount: { min: number | null; max: number | null }; cost: { min: number | null; max: number | null } };
+}
+export interface ConnectorMetadata {
+  id: ExchangeId;
+  name: string;
+  timeframes: string[];
+  capabilities: Record<string, boolean | "emulated">;
+  realExecution: false;
+  untrustedJavaScript: { enabled: false; blocker: string };
+}
+
 export interface ExchangeAdapter {
+  getInstrument?(symbol: string): Promise<InstrumentMetadata>;
+  getConnectorMetadata?(): ConnectorMetadata;
   readonly id: ExchangeId;
   searchSymbols(query: string, limit?: number): Promise<MarketSymbol[]>;
   fetchOHLCV(symbol: string, timeframe: Timeframe, limit?: number): Promise<Candle[]>;

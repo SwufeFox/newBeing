@@ -2013,6 +2013,11 @@ button, input, select { font: inherit; color: inherit; }
   color: var(--c-fg-4);
   font-size: var(--t-meta);
 }
+.replay-start-group {
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
 .replay-start-group input,
 .replay-start-group select,
 .replay-speed select {

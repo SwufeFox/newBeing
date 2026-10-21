@@ -1,3 +1,4 @@
+export * from "./replay.js";
 export * from "./backtest.js";
 export * from "./paper.js";
 export * from "./strategies.js";

@@ -13,7 +13,11 @@ const config = [
     },
     settings: { next: { rootDir: "apps/web/" } },
   },
-  { ignores: ["**/.next/**", "**/node_modules/**", "**/dist/**", "**/public/monaco/**"] },
+  {
+    files: ["**/*.mjs"],
+    languageOptions: { parser: tsParser },
+  },
+  { ignores: ["**/.next*/**", "**/node_modules/**", "**/dist/**", "**/public/monaco/**", "**/playwright-report/**", "**/test-results/**"] },
 ];
 
 export default config;

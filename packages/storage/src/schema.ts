@@ -82,6 +82,11 @@ export const orderPreviews = sqliteTable("order_previews", {
   orderId: text("order_id"),
 });
 
+export const replayExecutions = sqliteTable("replay_executions", {
+  sessionId: text("session_id").primaryKey().references(() => replaySessions.id),
+  payload: text("payload").notNull(),
+});
+
 export const replaySessions = sqliteTable("replay_sessions", {
   id: text("id").primaryKey(),
   /* Which venue the session's bars came from. Rows written before this column
@@ -93,6 +98,8 @@ export const replaySessions = sqliteTable("replay_sessions", {
   startAt: integer("start_at").notNull(),
   cursor: integer("cursor").notNull(),
   bars: text("bars").notNull(),
+  candleSource: text("candle_source"),
+  candleCache: text("candle_cache"),
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),

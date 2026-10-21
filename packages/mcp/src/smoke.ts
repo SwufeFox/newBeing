@@ -1,4 +1,6 @@
 import { Client } from "@modelcontextprotocol/client";
+import { DEFAULT_WORKSPACE_STATE, type ReplaySession } from "@newbeing/core";
+import { advanceReplaySession, closeDatabaseForTests, commandReplay, createConfiguredReplaySession, saveWorkspaceState } from "@newbeing/storage";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,6 +11,8 @@ const client = new Client({ name: "newbeing-mcp-smoke", version: "0.1.0" });
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const serverPath = fileURLToPath(new URL("./server.ts", import.meta.url));
 const dataDirectory = mkdtempSync(path.join(tmpdir(), "newbeing-mcp-smoke-"));
+const previousDataDirectory = process.env.NEWBEING_DATA_DIR;
+process.env.NEWBEING_DATA_DIR = dataDirectory;
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: ["--import", "tsx", serverPath],
@@ -47,14 +51,48 @@ try {
   if (created.executable !== false) throw new Error("MCP create_strategy incorrectly marked a source draft executable.");
   const fetched = readPayload(await client.callTool({ name: "get_strategy", arguments: { strategy_id: strategyId } }));
   if (fetched.executable !== false) throw new Error("MCP get_strategy did not return the saved draft as non-executable.");
+  const seedBar = { timestamp: 60_000, open: 100, high: 105, low: 95, close: 100, volume: 10 };
+  const session: ReplaySession = { id: "mcp-smoke-replay", exchange: "binance", symbol: "BTC/USDT", timeframe: "1m", startAt: 120_000, cursor: 60_000, bars: [seedBar], status: "active", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString() };
+  createConfiguredReplaySession(session, { id: "binance:spot:BTCUSDT", venue: "binance", nativeId: "BTCUSDT", symbol: session.symbol, base: "BTC", quote: "USDT", marketType: "spot" }, { initialCapital: 25_000, feeRate: 0.002, slippageRate: 0.001 });
+  const queued = commandReplay(session.id, 0, { action: "order", order: { clientOrderId: "mcp-smoke-entry", side: "buy", type: "market", quantity: 1 } });
+  const advanced = advanceReplaySession(session.id, session.cursor, { ...seedBar, timestamp: 120_000 }, undefined, queued.revision);
+  saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "replay", activeReplayId: session.id, timeframe: "1m" });
+  const portfolio = readPayload(await client.callTool({ name: "get_portfolio", arguments: { symbol: session.symbol } }));
+  const wallet = portfolio.portfolio as { quoteBalance: number; baseBalance: number; feeRate: number };
+  if (portfolio.mode !== "replay" || wallet.baseBalance !== 1 || Math.abs(wallet.quoteBalance - (25_000 - 100.1 * 1.002)) > 1e-8 || wallet.feeRate !== 0.002) throw new Error("MCP Replay portfolio diverges from the configured fill ledger.");
+  const market = readPayload(await client.callTool({ name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1m" } }));
+  if (JSON.stringify(market.candles) !== JSON.stringify(advanced.session.bars) || market.futureBarsLoaded !== 0) throw new Error("MCP returned data beyond the revealed Replay prefix.");
+  const blocked = [
+    { name: "get_market_data", arguments: { symbol: "ETH/USDT", timeframe: "1m" } },
+    { name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1d" } },
+    { name: "get_portfolio", arguments: { symbol: "ETH/USDT" } },
+    { name: "list_experiments", arguments: {} },
+    { name: "get_backtest_result", arguments: { result_id: "hidden" } },
+    { name: "prepare_order", arguments: { symbol: session.symbol, side: "buy", quantity: 1 } },
+    { name: "prepare_order", arguments: { symbol: session.symbol, side: "buy", quantity: 1, mode: "live" } },
+  ];
+  for (const call of blocked) {
+    if (!(await client.callTool(call)).isError) throw new Error(`MCP Replay/live boundary failed for ${call.name}.`);
+  }
+  saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, exchange: "kraken", activeWorkspace: "replay", activeReplayId: session.id, timeframe: "1m" });
+  for (const call of [
+    { name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1m" } },
+    { name: "get_portfolio", arguments: { symbol: session.symbol } },
+  ]) {
+    if (!(await client.callTool(call)).isError) throw new Error(`MCP accepted a mismatched Replay venue for ${call.name}.`);
+  }
   console.error(JSON.stringify({
     status: "ok",
     transport: "official SDK stdio client",
     toolCount: names.length,
-    invocations: ["get_workspace_context", "list_strategies", "create_strategy", "get_strategy"],
+    invocations: ["get_workspace_context", "list_strategies", "create_strategy", "get_strategy", "get_portfolio", "get_market_data", "list_experiments", "get_backtest_result", "prepare_order"],
+    replayBoundaries: true,
     isolatedDatabase: true,
   }));
 } finally {
   await client.close();
+  closeDatabaseForTests();
+  if (previousDataDirectory === undefined) delete process.env.NEWBEING_DATA_DIR;
+  else process.env.NEWBEING_DATA_DIR = previousDataDirectory;
   rmSync(dataDirectory, { recursive: true, force: true });
 }

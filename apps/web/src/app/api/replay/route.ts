@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { EXCHANGE_TIMEFRAMES, logEvent, type ExchangeId, type ReplaySession, type Timeframe } from "@newbeing/core";
 import { completedBarsThrough, findCandleGaps, timeframeMilliseconds } from "@newbeing/market-data";
-import { createReplaySession, getPaperPortfolio, getWorkspaceState, replayAccountId, saveWorkspaceState } from "@newbeing/storage";
+import { createConfiguredReplaySession, getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
 import { getWebMarketAdapter, marketDataSourceLabel } from "@/lib/market-adapter";
 
 import { createCandleCacheAdapter } from "@/lib/candle-cache-adapter";
@@ -20,6 +20,9 @@ const requestSchema = z.object({
   endAt: z.number().int().positive(),
   limit: z.number().int().min(50).max(500).default(200),
   /* Optional: defaults to the workspace's active venue. */
+  initialCapital: z.number().positive().max(1e12).default(10_000),
+  feeRate: z.number().min(0).max(0.05).default(0.001),
+  slippageRate: z.number().min(0).max(0.05).default(0.0005),
   exchange: z.enum(["binance", "coinbaseexchange", "okx", "kraken"]).optional(),
 });
 
@@ -38,7 +41,11 @@ export async function POST(request: Request): Promise<NextResponse> {
     const timeframe = parsed.data.timeframe as Timeframe;
     const interval = timeframeMilliseconds(timeframe);
     const since = Math.max(0, parsed.data.endAt - interval * (parsed.data.limit + 4));
-    const cachedAdapter = createCandleCacheAdapter(exchange, getWebMarketAdapter(exchange));
+    const adapter = getWebMarketAdapter(exchange);
+    if (!adapter.getInstrument) throw new Error("Native instrument metadata is unavailable for this connector.");
+    const instrument = await adapter.getInstrument(parsed.data.symbol);
+    if (!instrument.active) throw new Error("Instrument is inactive.");
+    const cachedAdapter = createCandleCacheAdapter(exchange, adapter);
     const fetched = await cachedAdapter.adapter.fetchOHLCVSinceThrough(parsed.data.symbol, timeframe, since, parsed.data.limit + 4, parsed.data.endAt);
     const candles = completedBarsThrough(fetched, timeframe, parsed.data.endAt).slice(-parsed.data.limit);
     const provenance = cachedAdapter.getLastResult();
@@ -50,13 +57,16 @@ export async function POST(request: Request): Promise<NextResponse> {
     const now = new Date().toISOString();
     const session: ReplaySession = {
       id: randomUUID(), exchange, symbol: parsed.data.symbol, timeframe, startAt: parsed.data.endAt,
-      cursor: last.timestamp, bars: candles, status: "active", createdAt: now, updatedAt: now,
+      cursor: last.timestamp, bars: candles,
+      candleSource: provenance?.source ?? "live",
+      ...(provenance?.cache ? { candleCache: { fallback: provenance.cache.fallback, cachedAt: provenance.cache.cachedAt } } : {}),
+      status: "active", createdAt: now, updatedAt: now,
     };
-    createReplaySession(session);
-    const portfolio = getPaperPortfolio(replayAccountId(session.id, session.symbol));
+    const execution = createConfiguredReplaySession(session, instrument, { initialCapital: parsed.data.initialCapital, feeRate: parsed.data.feeRate, slippageRate: parsed.data.slippageRate });
+    const portfolio = execution.portfolio;
     const current = getWorkspaceState().state;
     saveWorkspaceState({ ...current, activeWorkspace: "replay", activeReplayId: session.id });
-    return NextResponse.json({ session, portfolio, source: provenance?.source === "local-cache" ? "Local persistent candle cache fallback" : `${marketDataSourceLabel(exchange)} historical bars`, cache: provenance?.cache ?? { cached: false, cachedAt: null, fallback: false }, futureBarsLoaded: 0 }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ session, portfolio, execution, source: provenance?.source === "local-cache" ? "Local persistent candle cache fallback" : `${marketDataSourceLabel(exchange)} historical bars`, cache: provenance?.cache ?? { cached: false, cachedAt: null, fallback: false }, futureBarsLoaded: 0 }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Replay could not be initialized.";
     logEvent("warn", "replay.start_failed", { message });

@@ -1,5 +1,6 @@
 "use client";
 
+import { replayReport, type ReplayExecution, type ReplayOrderInput } from "@newbeing/core";
 import { useEffect, useMemo, useState } from "react";
 import { BookOpen, Braces, Check, Clock3, Copy, History, Layers3, Radio, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import type { BacktestResult, ExchangeId, OrderPreview, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
@@ -31,7 +32,9 @@ interface InspectorProps {
   replayOrders: PaperOrder[];
   replayBusy: boolean;
   onRun: () => void;
-  onReplayOrder: (side: "buy" | "sell", quantity: number) => Promise<void>;
+  replayExecution: ReplayExecution | null;
+  onReplayCommand: (command: Record<string, unknown>) => Promise<void>;
+  onReplayOrder: (side: "buy" | "sell", quantity: number, options?: Partial<ReplayOrderInput>) => Promise<void>;
 }
 
 interface PaperPayload {
@@ -323,15 +326,32 @@ function ReplayTicket({
   orders,
   busy,
   onOrder,
+  execution,
+  onCommand,
 }: {
+  execution: ReplayExecution | null;
+  onCommand: (command: Record<string, unknown>) => Promise<void>;
   symbol: string;
   session: ReplaySession | null;
   portfolio: PaperPortfolio | null;
   orders: PaperOrder[];
   busy: boolean;
-  onOrder: (side: "buy" | "sell", quantity: number) => Promise<void>;
+  onOrder: (side: "buy" | "sell", quantity: number, options?: Partial<ReplayOrderInput>) => Promise<void>;
 }): React.JSX.Element {
   const [quantity, setQuantity] = useState("0.001");
+  const [orderType, setOrderType] = useState<ReplayOrderInput["type"]>("market");
+  const [trigger, setTrigger] = useState("");
+  const [stopLoss, setStopLoss] = useState("");
+  const [takeProfit, setTakeProfit] = useState("");
+  const [notes, setNotes] = useState(execution?.notes ?? "");
+  const [tags, setTags] = useState(execution?.tags.join(", ") ?? "");
+  const submit = (side: "buy" | "sell"): void => {
+    void onOrder(side, Number(quantity), { type: orderType,
+      ...(orderType !== "market" ? { price: Number(trigger) } : {}),
+      ...(side === "buy" && stopLoss ? { stopLoss: Number(stopLoss) } : {}),
+      ...(side === "buy" && takeProfit ? { takeProfit: Number(takeProfit) } : {}),
+    }).catch(() => undefined);
+  };
   const size = Number(quantity);
   const current = session?.bars.at(-1);
   const unrealized = portfolio && current && portfolio.averageEntryPrice !== null
@@ -342,22 +362,41 @@ function ReplayTicket({
   if (!session || !portfolio || !current) {
     return <div className="paper-ticket replay-ticket"><div className="ticket-heading"><div><Clock3 size={13} /><span>REPLAY ACCOUNT</span></div><span className="paper-chip">ISOLATED</span></div><span className="ticket-disclaimer">Start a historical session to create its isolated Paper wallet. No live market quotes are used.</span></div>;
   }
+  const report = execution ? replayReport(execution, current.close) : null;
+  const exportJournal = (): void => {
+    if (!execution || !report) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ session, execution, report }, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `replay-${session.id}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
   return <div className="paper-ticket replay-ticket">
     <div className="ticket-heading"><div><Clock3 size={13} /><span>REPLAY SIMULATOR</span></div><span className="paper-chip">{session.status.toUpperCase()}</span></div>
     <div className="account-summary"><span>{quote} AVAILABLE</span><strong>${portfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
     <div className="account-summary position"><span>{symbol.split("/")[0]} POSITION</span><strong>{portfolio.baseBalance.toFixed(6)} {symbol.split("/")[0]}</strong><small className={unrealized >= 0 ? "positive" : "negative"}>uPnL {unrealized >= 0 ? "+" : ""}{unrealized.toFixed(2)} {quote}</small></div>
     <div className="ticket-estimate"><span>Current replay close</span><strong>{price(current.close)} {quote}</strong></div>
+    <label className="ticket-field"><span>ORDER TYPE</span><select aria-label="Replay order type" value={orderType} onChange={(event) => setOrderType(event.target.value as ReplayOrderInput["type"])}><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option></select></label>
+    {orderType !== "market" && <label className="ticket-field"><span>LIMIT / STOP PRICE · {quote}</span><input type="number" min="0" step="any" value={trigger} onChange={(event) => setTrigger(event.target.value)} /></label>}
+    <label className="ticket-field"><span>ENTRY STOP LOSS · OPTIONAL</span><input type="number" min="0" step="any" value={stopLoss} onChange={(event) => setStopLoss(event.target.value)} /></label>
+    <label className="ticket-field"><span>ENTRY TAKE PROFIT · OPTIONAL</span><input type="number" min="0" step="any" value={takeProfit} onChange={(event) => setTakeProfit(event.target.value)} /></label>
     <label className="ticket-field"><span>QUANTITY · {symbol.split("/")[0]}</span><input type="number" min="0" step="0.0001" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
     <div className="ticket-actions">
-      <Button variant="primary" size="sm" disabled={busy || session.status !== "active" || !Number.isFinite(size) || size <= 0} onClick={() => void onOrder("buy", size)}><TrendingUp size={13} />Buy at close</Button>
-      <Button variant="danger" size="sm" disabled={busy || session.status !== "active" || !Number.isFinite(size) || size <= 0 || size > portfolio.baseBalance} onClick={() => void onOrder("sell", size)}><TrendingDown size={13} />Sell at close</Button>
+      <Button variant="primary" size="sm" disabled={busy || session.status !== "active" || !Number.isFinite(size) || size <= 0} onClick={() => submit("buy")}><TrendingUp size={13} />Queue buy</Button>
+      <Button variant="danger" size="sm" disabled={busy || session.status !== "active" || !Number.isFinite(size) || size <= 0 || size > portfolio.baseBalance} onClick={() => submit("sell")}><TrendingDown size={13} />Queue sell / partial close</Button>
     </div>
-    {orders.slice(0, 2).map((order) => <div className="success-inline" key={order.clientOrderId}>{order.side.toUpperCase()} {order.quantity} · {order.status} @ {order.fillPrice === null ? "—" : price(order.fillPrice)}</div>)}
-    <div className="ticket-disclaimer">Fill uses the current replay bar close; 0.1% fee applies. No current quote, WebSocket, or live order endpoint is used.</div>
+    {orders.slice().reverse().map((order) => <div className="success-inline" key={order.clientOrderId}>{order.side.toUpperCase()} {order.quantity} · {order.status} @ {order.fillPrice === null ? "—" : price(order.fillPrice)}{order.status === "submitted" && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void onCommand({ action: "cancel", clientOrderId: order.clientOrderId }).catch(() => undefined)}>Cancel</Button>}</div>)}
+    <label className="ticket-field"><span>SESSION NOTES</span><textarea value={notes} maxLength={20_000} onChange={(event) => setNotes(event.target.value)} /></label>
+    <label className="ticket-field"><span>TAGS · COMMA SEPARATED</span><input value={tags} onChange={(event) => setTags(event.target.value)} /></label>
+    <Button size="sm" disabled={busy} onClick={() => void onCommand({ action: "journal", notes, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean) }).catch(() => undefined)}>Save notes / tags</Button>
+    <Button size="sm" variant="outline" disabled={busy || !execution} onClick={exportJournal}>Export journal JSON</Button>
+    {report && <div className="ticket-disclaimer">Equity {price(report.equity)} {quote} · net PnL {price(report.netPnl)} · fees {price(report.fees)} · {report.fillCount} fills · max drawdown {(report.maxDrawdown * 100).toFixed(2)}%</div>}
+    <div className="ticket-disclaimer">Pending orders first become eligible on the next bar. Stop-first SL/TP; fees and adverse slippage apply. Long spot only. Finish marks open inventory and cancels pending orders.</div>
   </div>;
 }
 
-export function Inspector({ workspace = "terminal", summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
+export function Inspector({ workspace = "terminal", summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayExecution, onReplayCommand, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
   const [symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
   /* Each workspace offers the readouts it is actually about — Arknights does
      the same: a system's panel only carries that system's data.
@@ -388,7 +427,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
       <TabsContent value="context"><WorkspaceContext /></TabsContent>
     </Tabs>
     {replayMode
-      ? <ReplayTicket symbol={symbol} session={replaySession} portfolio={replayPortfolio} orders={replayOrders} busy={replayBusy} onOrder={onReplayOrder} />
+      ? <ReplayTicket key={replaySession?.id ?? "empty"} execution={replayExecution} onCommand={onReplayCommand} symbol={symbol} session={replaySession} portfolio={replayPortfolio} orders={replayOrders} busy={replayBusy} onOrder={onReplayOrder} />
       : selectedTab !== "strategy" && <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} />}
   </aside>;
 }

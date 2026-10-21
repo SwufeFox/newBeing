@@ -71,7 +71,10 @@ export function getDatabase(): NewBeingDatabase {
     CREATE TABLE IF NOT EXISTS replay_sessions (
       id TEXT PRIMARY KEY, exchange TEXT NOT NULL DEFAULT 'binance', symbol TEXT NOT NULL,
       timeframe TEXT NOT NULL, start_at INTEGER NOT NULL, cursor INTEGER NOT NULL,
-      bars TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      bars TEXT NOT NULL, candle_source TEXT, candle_cache TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS replay_executions (
+      session_id TEXT PRIMARY KEY REFERENCES replay_sessions(id), payload TEXT NOT NULL
     );
   `);
   /* Migration: databases created before replay sessions recorded their venue
@@ -82,6 +85,12 @@ export function getDatabase(): NewBeingDatabase {
   const replayColumns = sqlite.pragma("table_info(replay_sessions)") as Array<{ name: string }>;
   if (!replayColumns.some((column) => column.name === "exchange")) {
     sqlite.exec("ALTER TABLE replay_sessions ADD COLUMN exchange TEXT NOT NULL DEFAULT 'binance'");
+  }
+  if (!replayColumns.some((column) => column.name === "candle_source")) {
+    sqlite.exec("ALTER TABLE replay_sessions ADD COLUMN candle_source TEXT");
+  }
+  if (!replayColumns.some((column) => column.name === "candle_cache")) {
+    sqlite.exec("ALTER TABLE replay_sessions ADD COLUMN candle_cache TEXT");
   }
   const drizzleDb = drizzle(sqlite, { schema });
   globalWithDb[globalKey] = { sqlite, drizzle: drizzleDb };

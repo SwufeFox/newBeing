@@ -17,6 +17,10 @@ const SYMBOLS: MarketSymbol[] = [
   { symbol: "XRP/USDT", base: "XRP", quote: "USDT", active: true },
 ];
 
+const FIXTURE_NATIVE_IDS: Record<string, string> = {
+  "BTC/USDT": "BTCUSDT", "ETH/USDT": "ETHUSDT", "BNB/USDT": "BNBUSDT", "SOL/USDT": "SOLUSDT", "XRP/USDT": "XRPUSDT",
+};
+
 const prices: Record<string, number> = {
   "BTC/USDT": 85_000,
   "ETH/USDT": 3_100,
@@ -60,12 +64,21 @@ function summary(symbol: string, bars: readonly Candle[]): MarketSummary {
     quoteVolume24h: recent.reduce((total, bar) => total + bar.volume * bar.close, 0),
     bid: last?.close ? last.close * 0.9999 : null,
     ask: last?.close ? last.close * 1.0001 : null,
-    timestamp: last?.timestamp ?? null,
+    timestamp: Date.now(),
   };
 }
 
 const fixtureAdapter: ExchangeAdapter = {
   id: "binance",
+  async getInstrument(symbol) {
+    const market = SYMBOLS.find((item) => item.symbol === symbol);
+    const nativeId = FIXTURE_NATIVE_IDS[symbol];
+    if (!market || !nativeId) throw new Error("Unknown deterministic fixture instrument.");
+    return { ...market, id: `binance:spot:${nativeId}`, venue: "binance", nativeId, marketType: "spot", precision: { amount: 0.00001, price: 0.01, mode: 4 }, limits: { amount: { min: 0.00001, max: 1000 }, cost: { min: 5, max: null } } };
+  },
+  getConnectorMetadata() {
+    return { id: "binance", name: "Deterministic Binance Spot fixture", timeframes: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"], capabilities: { fetchOHLCV: true, fetchTicker: true, fetchOrderBook: true, fetchTrades: true }, realExecution: false, untrustedJavaScript: { enabled: false, blocker: "Fixture connector does not execute strategies." } };
+  },
   async searchSymbols(query, limit = 60) {
     const normalized = query.trim().toUpperCase();
     return SYMBOLS.filter((item) => !normalized || item.symbol.includes(normalized) || item.base.includes(normalized)).slice(0, limit);
