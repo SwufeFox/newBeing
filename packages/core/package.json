@@ -33,6 +33,7 @@
     "bench": "pnpm build && node --expose-gc bench/backtest.mjs"
   },
   "dependencies": {
+    "decimal.js": "^10.6.0",
     "zod": "^4.2.4"
   },
   "devDependencies": {

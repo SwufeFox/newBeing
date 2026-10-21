@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_WORKSPACE_STATE, logEvent, STRATEGIES, type Timeframe, type WorkspaceState } from "@newbeing/core";
+import { estimatePaperAmounts, fillPaperOrder, SIMULATION_PRECISION, DEFAULT_WORKSPACE_STATE, logEvent, STRATEGIES, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import { findCandleGaps, getExchangeAdapter, removeFormingCandles } from "@newbeing/market-data";
 import {
   getExperiment,
@@ -11,6 +11,8 @@ import {
   getStoredStrategy,
   getWorkspaceState,
   listExperiments,
+  listPendingPaperOrders,
+  listPaperRecoveries,
   listStoredStrategies,
   paperAccountId,
   replayAccountId,
@@ -80,7 +82,9 @@ export function createNewBeingMcpServer(): McpServer {
     try {
       const result = getWorkspaceState();
       const state = { ...DEFAULT_WORKSPACE_STATE, ...result.state, mode: "paper" as const };
-      return textResult({ ...result, state: state.activeWorkspace === "replay" ? { ...state, activeBacktestId: null } : state });
+      return textResult({ ...result, state: state.activeWorkspace === "replay" ? { ...state, activeBacktestId: null } : state,
+        paperRecovery: { pending: listPendingPaperOrders(), recoveries: listPaperRecoveries(), policy: "Read only. Interrupted local Paper can only be cancelled with an audit reason in the UI; never re-quoted or filled by MCP." },
+      });
     } catch (error) { return errorResult(error); }
   });
 
@@ -311,19 +315,20 @@ export function createNewBeingMcpServer(): McpServer {
     if (mode === "live") return errorResult(new Error("Live trading is disabled; a real order preview cannot be prepared."));
     try {
       const workspace = getWorkspaceState().state;
-      if (workspace.exchange !== "binance") return errorResult(new Error("Paper order previews currently support Binance Spot only."));
       if (workspace.activeWorkspace === "replay") return errorResult(new Error("Normal Paper order previews are disabled during Replay. Use the replay UI ticket, which queues orders for later bars."));
       const summary = await getExchangeAdapter(workspace.exchange).fetchSummary(orderSymbol);
       const price = side === "buy" ? (summary.ask ?? summary.last) : (summary.bid ?? summary.last);
       if (price === null || price <= 0) return errorResult(new Error("No usable public quote is available for a preview."));
-      const portfolio = getPaperPortfolio(paperAccountId(orderSymbol));
-      const notional = price * quantity;
-      const estimatedFee = notional * portfolio.feeRate;
-      if (side === "buy" && notional + estimatedFee > portfolio.quoteBalance) return errorResult(new Error("Insufficient Paper quote balance for this preview."));
-      if (side === "sell" && quantity > portfolio.baseBalance) return errorResult(new Error("Insufficient Paper base balance for this preview."));
+      const accountId = paperAccountId(orderSymbol, workspace.exchange);
+      const portfolio = getPaperPortfolio(accountId);
+      const { notional, fee: estimatedFee } = estimatePaperAmounts(price, quantity, portfolio.feeRate);
+      // Validate with the same accounting policy as confirmation, without saving a fill.
+      fillPaperOrder({ clientOrderId: "preview-estimate", symbol: orderSymbol, side, quantity, status: "submitted", fillPrice: null, fee: 0, createdAt: new Date().toISOString() }, portfolio, price);
       const now = new Date();
       const preview = {
         id: randomUUID(),
+        exchange: workspace.exchange,
+        accountId,
         symbol: orderSymbol,
         side,
         quantity,
@@ -339,6 +344,7 @@ export function createNewBeingMcpServer(): McpServer {
       saveOrderPreview(preview);
       return textResult({
         preview,
+        simulationPrecision: SIMULATION_PRECISION,
         note: "Preview is stored in the local workspace. No order was created or transmitted. Confirm separately in the UI before expiry; the quote may change.",
       });
     } catch (error) { return errorResult(error); }

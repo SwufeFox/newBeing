@@ -7,7 +7,7 @@ import * as schema from "./schema.js";
 
 export type NewBeingDatabase = BetterSQLite3Database<typeof schema>;
 
-function projectRoot(): string {
+export function storageDirectory(): string {
   const configured = process.env.NEWBEING_DATA_DIR;
   if (configured) return path.resolve(configured);
   let current = process.cwd();
@@ -26,12 +26,29 @@ export function getDatabase(): NewBeingDatabase {
   const globalWithDb = globalThis as DbGlobal;
   const cached = globalWithDb[globalKey];
   if (cached) return cached.drizzle;
-  const directory = projectRoot();
+  const directory = storageDirectory();
   mkdirSync(directory, { recursive: true });
   const sqlite = new Database(path.join(directory, "newbeing.sqlite"));
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("busy_timeout = 5000");
+  try {
+    migrateDatabase(sqlite);
+    const drizzleDb = drizzle(sqlite, { schema });
+    globalWithDb[globalKey] = { sqlite, drizzle: drizzleDb };
+    return drizzleDb;
+  } catch (error) {
+    sqlite.close();
+    throw error;
+  }
+}
+
+/** All schema changes commit together. Unknown legacy ownership stays NULL. */
+export function migrateDatabase(sqlite: Database.Database): void {
+  sqlite.transaction(() => migrateSchema(sqlite)).immediate();
+}
+
+function migrateSchema(sqlite: Database.Database): void {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS candle_cache (
       exchange TEXT NOT NULL, symbol TEXT NOT NULL, timeframe TEXT NOT NULL, timestamp INTEGER NOT NULL,
@@ -47,6 +64,12 @@ export function getDatabase(): NewBeingDatabase {
       id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL,
       description TEXT NOT NULL, parameters TEXT NOT NULL, source TEXT NOT NULL, updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS dataset_snapshots (
+      dataset_id TEXT PRIMARY KEY, byte_length INTEGER NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS saved_sweeps (
+      sweep_id TEXT PRIMARY KEY, result TEXT NOT NULL, created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS experiments (
       result_id TEXT PRIMARY KEY, dataset_id TEXT NOT NULL, symbol TEXT NOT NULL,
       timeframe TEXT NOT NULL, strategy_id TEXT NOT NULL, strategy_version TEXT NOT NULL,
@@ -60,6 +83,11 @@ export function getDatabase(): NewBeingDatabase {
     CREATE TABLE IF NOT EXISTS paper_orders (
       client_order_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, side TEXT NOT NULL,
       quantity REAL NOT NULL, status TEXT NOT NULL, fill_price REAL, fee REAL NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS paper_recoveries (
+      client_order_id TEXT PRIMARY KEY REFERENCES paper_orders(client_order_id), action_id TEXT NOT NULL UNIQUE,
+      account_id TEXT, previous_status TEXT NOT NULL, outcome TEXT NOT NULL, reason TEXT NOT NULL,
+      requires_review INTEGER NOT NULL, created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS order_previews (
       id TEXT PRIMARY KEY, symbol TEXT NOT NULL, side TEXT NOT NULL, quantity REAL NOT NULL,
@@ -92,9 +120,17 @@ export function getDatabase(): NewBeingDatabase {
   if (!replayColumns.some((column) => column.name === "candle_cache")) {
     sqlite.exec("ALTER TABLE replay_sessions ADD COLUMN candle_cache TEXT");
   }
-  const drizzleDb = drizzle(sqlite, { schema });
-  globalWithDb[globalKey] = { sqlite, drizzle: drizzleDb };
-  return drizzleDb;
+  for (const [table, columns] of Object.entries({
+    paper_accounts: { cost_basis: "REAL" },
+    paper_orders: { account_id: "TEXT" },
+    order_previews: { account_id: "TEXT", exchange: "TEXT" },
+  })) {
+    const existing = sqlite.pragma(`table_info(${table})`) as Array<{ name: string }>;
+    for (const [column, type] of Object.entries(columns)) {
+      if (!existing.some((entry) => entry.name === column)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    }
+  }
+  sqlite.exec("CREATE INDEX IF NOT EXISTS paper_orders_account_idx ON paper_orders(account_id, created_at DESC); CREATE INDEX IF NOT EXISTS order_previews_account_idx ON order_previews(account_id, created_at DESC)");
 }
 
 export function closeDatabaseForTests(): void {

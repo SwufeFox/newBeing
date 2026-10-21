@@ -34,6 +34,18 @@ export const strategies = sqliteTable("strategies", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+export const datasetSnapshots = sqliteTable("dataset_snapshots", {
+  datasetId: text("dataset_id").primaryKey(),
+  byteLength: integer("byte_length").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const savedSweeps = sqliteTable("saved_sweeps", {
+  sweepId: text("sweep_id").primaryKey(),
+  result: text("result").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 export const experiments = sqliteTable("experiments", {
   resultId: text("result_id").primaryKey(),
   datasetId: text("dataset_id").notNull(),
@@ -51,6 +63,7 @@ export const paperAccounts = sqliteTable("paper_accounts", {
   quoteBalance: real("quote_balance").notNull(),
   baseBalance: real("base_balance").notNull(),
   averageEntryPrice: real("average_entry_price"),
+  costBasis: real("cost_basis"),
   realizedPnl: real("realized_pnl").notNull(),
   feeRate: real("fee_rate").notNull(),
   updatedAt: integer("updated_at").notNull(),
@@ -58,6 +71,7 @@ export const paperAccounts = sqliteTable("paper_accounts", {
 
 export const paperOrders = sqliteTable("paper_orders", {
   clientOrderId: text("client_order_id").primaryKey(),
+  accountId: text("account_id"),
   symbol: text("symbol").notNull(),
   side: text("side").notNull(),
   quantity: real("quantity").notNull(),
@@ -67,8 +81,21 @@ export const paperOrders = sqliteTable("paper_orders", {
   createdAt: text("created_at").notNull(),
 });
 
+export const paperRecoveries = sqliteTable("paper_recoveries", {
+  clientOrderId: text("client_order_id").primaryKey(),
+  actionId: text("action_id").notNull().unique(),
+  accountId: text("account_id"),
+  previousStatus: text("previous_status").notNull(),
+  outcome: text("outcome").notNull(),
+  reason: text("reason").notNull(),
+  requiresReview: integer("requires_review", { mode: "boolean" }).notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 export const orderPreviews = sqliteTable("order_previews", {
   id: text("id").primaryKey(),
+  accountId: text("account_id"),
+  exchange: text("exchange"),
   symbol: text("symbol").notNull(),
   side: text("side").notNull(),
   quantity: real("quantity").notNull(),

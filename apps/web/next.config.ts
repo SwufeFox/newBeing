@@ -3,12 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   distDir: process.env.NEWBEING_NEXT_DIST_DIR ?? ".next",
   transpilePackages: ["@newbeing/core", "@newbeing/market-data"],
-  serverExternalPackages: ["@newbeing/storage", "better-sqlite3", "ccxt"],
+  serverExternalPackages: ["@newbeing/application", "@newbeing/storage", "better-sqlite3", "ccxt"],
+  outputFileTracingIncludes: { "/api/**": ["../../packages/core/dist/**/*.js"] },
   turbopack: {},
   webpack(config, { isServer }) {
     if (isServer) {
       config.externals.push(({ request }, callback) => {
-        if (["@newbeing/storage", "better-sqlite3", "bindings"].includes(request ?? "")) {
+        if (["@newbeing/application", "@newbeing/storage", "better-sqlite3", "bindings"].includes(request ?? "")) {
           callback(null, `commonjs ${request}`);
           return;
         }

@@ -7,6 +7,7 @@ import type { BacktestResult, ExchangeId, OrderPreview, PaperOrder, PaperPortfol
 import type { MarketSummary, OrderBookSnapshot, RecentTrade } from "@newbeing/market-data/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PaperRecoveryPanel } from "@/components/paper-recovery";
 import { StrategyLab } from "@/components/strategy-lab";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
@@ -220,7 +221,7 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
         const payload: unknown = await response.json();
         const parsed = parsePaper(payload);
         if (response.ok && parsed && !disposed) setPortfolio(parsed.portfolio);
-        const previewResponse = await fetch(`/api/order-previews?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+        const previewResponse = await fetch(`/api/order-previews?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
         const previewPayload: unknown = await previewResponse.json();
         if (previewResponse.ok && !disposed) setPreviews(parsePreviews(previewPayload).filter((preview) => preview.status === "prepared"));
       } catch {
@@ -246,7 +247,7 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
         const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Preview action failed.";
         throw new Error(message);
       }
-      setNotice(action === "confirm" ? "Paper preview confirmed · simulated order recorded" : "Preview dismissed · no order created");
+      setNotice(response.status === 202 ? "Confirmation saved · execution pending or unknown; not retried" : action === "confirm" ? "Paper preview confirmed · simulated order recorded" : "Preview dismissed · no order created");
       const refresh = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
       const account = parsePaper(await refresh.json());
       if (refresh.ok && account) setPortfolio(account.portfolio);
@@ -277,8 +278,10 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
         const portfolio = (payload as { portfolio?: unknown }).portfolio;
         if (typeof portfolio === "object" && portfolio !== null && "quoteBalance" in portfolio) setPortfolio(portfolio as PaperPortfolio);
       }
-      if (response.status === 202) setNotice("State unknown · not retried");
-      else setNotice(`${side.toUpperCase()} filled in Paper at a public quote`);
+      const savedOrder = typeof payload === "object" && payload !== null && "order" in payload ? payload.order as PaperOrder : null;
+      if (savedOrder?.status === "filled") setNotice(`${side.toUpperCase()} filled in Paper at a public quote`);
+      else if (savedOrder?.status === "cancelled") setNotice("Paper order cancelled · no fill was booked by this request");
+      else setNotice(`Saved Paper status: ${savedOrder?.status ?? "unavailable"} · not retried`);
       window.setTimeout(() => setNotice(null), 3_500);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not submit paper order.");
@@ -306,6 +309,7 @@ function PaperTicket({ symbol, summary }: { symbol: string; summary: MarketSumma
       <Button data-testid="paper-buy" variant="primary" size="sm" disabled={busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"} onClick={() => void submit("buy")}><TrendingUp size={13} />Buy</Button>
       <Button variant="danger" size="sm" disabled={busy || !Number.isFinite(number) || number <= 0 || !activePortfolio || number > activePortfolio.baseBalance || mode !== "paper"} onClick={() => void submit("sell")}><TrendingDown size={13} />Sell</Button>
     </div>
+    <PaperRecoveryPanel />
     {activePreviews.map((preview) => <div className="order-preview-card" key={preview.id}>
       <div className="preview-topline"><span>AI ORDER PREVIEW</span><span className="paper-chip">{preview.status.toUpperCase()}</span></div>
       <strong className={preview.side === "buy" ? "positive" : "negative"}>{preview.side.toUpperCase()} {preview.quantity} {symbol.split("/")[0]}</strong>

@@ -43,8 +43,8 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
     const market = this.exchange.market(validSymbol(symbol));
     if (!market.spot || !market.id) throw new Error("A native spot instrument is required.");
     return { id: instrumentId(this.id, market.id), venue: this.id, nativeId: market.id, symbol: market.symbol, base: market.base, quote: market.quote, marketType: "spot" as const, active: market.active !== false,
-      precision: { amount: finiteOrNull(market.precision.amount), price: finiteOrNull(market.precision.price), mode: finiteOrNull(this.exchange.precisionMode) },
-      limits: { amount: { min: finiteOrNull(market.limits.amount?.min), max: finiteOrNull(market.limits.amount?.max) }, cost: { min: finiteOrNull(market.limits.cost?.min), max: finiteOrNull(market.limits.cost?.max) } } };
+      precision: { amount: finiteOrNull(market.precision?.amount), price: finiteOrNull(market.precision?.price), mode: finiteOrNull(this.exchange.precisionMode) },
+      limits: { amount: { min: finiteOrNull(market.limits?.amount?.min), max: finiteOrNull(market.limits?.amount?.max) }, cost: { min: finiteOrNull(market.limits?.cost?.min), max: finiteOrNull(market.limits?.cost?.max) } } };
   }
 
   async searchSymbols(query: string, limit = 60): Promise<MarketSymbol[]> {

@@ -97,6 +97,19 @@ describe("Replay execution policy", () => {
     expect(s.portfolio.baseBalance).toBe(0);
   });
 
+  it("keeps the smallest representable protected lot and stops it without dust", () => {
+    const s = state();
+    s.config.slippageRate = 0;
+    s.portfolio.feeRate = 0;
+    submitReplayOrder(s, { clientOrderId: "tiny", type: "market", side: "buy", quantity: 1e-12, stopLoss: 9000 }, 0);
+    matchReplayBar(s, bar(60_000, 10000, 11000, 9500, 10000));
+    expect(s.brackets[0]?.quantity).toBe(1e-12);
+    matchReplayBar(s, bar(120_000, 10000, 11000, 8500, 10000));
+    expect(s.portfolio.baseBalance).toBe(0);
+    expect(s.brackets).toEqual([]);
+    expect(s.fills.at(-1)).toMatchObject({ quantity: 1e-12, reason: "stop-loss" });
+  });
+
   it("rejects unaffordable orders without changing inventory", () => {
     const s = state();
     submitReplayOrder(s, { clientOrderId: "too-large", type: "market", side: "buy", quantity: 100 }, 0);

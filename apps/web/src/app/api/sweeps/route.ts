@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runBacktestSweep, SWEEP_MAX_RUNS } from "@newbeing/application";
-import { getWorkspaceState } from "@newbeing/storage";
+import { getWorkspaceState, listSavedSweeps } from "@newbeing/storage";
+import { researchFailure, researchReadGuard } from "@/lib/research-route";
 import { EXCHANGE_TIMEFRAMES, logEvent, type ExchangeId } from "@newbeing/core";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
@@ -30,7 +31,17 @@ const requestSchema = z.object({
   limit: z.number().int().min(50).max(1000).optional(),
 });
 
+export async function GET(request: Request): Promise<NextResponse> {
+  const guard = researchReadGuard();
+  if (guard) return guard;
+  const limit = z.coerce.number().int().min(1).max(100).safeParse(new URL(request.url).searchParams.get("limit") ?? 20);
+  if (!limit.success) return NextResponse.json({ error: "Invalid sweep limit." }, { status: 400 });
+  return NextResponse.json({ items: listSavedSweeps(limit.data) }, { headers: { "Cache-Control": "no-store" } });
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
+  const guard = researchReadGuard();
+  if (guard) return guard;
   try {
     const body: unknown = await request.json();
     const parsed = requestSchema.safeParse(body);
@@ -74,6 +85,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     /* 422: the request was understood but the range or dataset cannot be swept.
        A range over the run ceiling is the common case and the message says how
        to fix it. */
+    const failure = researchFailure(error);
+    if (failure.status !== 422) return failure;
     return NextResponse.json({ error: message, maxRuns: SWEEP_MAX_RUNS }, { status: 422 });
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ precisionMode: undefined as number | undefined }));
+const fixture = vi.hoisted(() => ({ precisionMode: undefined as number | undefined, omitMetadata: false }));
 vi.mock("ccxt", () => {
   class FixtureExchange {
     name = undefined;
@@ -9,7 +9,7 @@ vi.mock("ccxt", () => {
     get precisionMode() { return fixture.precisionMode; }
     async loadMarkets() { return {}; }
     market() {
-      return { id: "XXBTZUSD", symbol: "BTC/USD", base: "BTC", quote: "USD", spot: true, active: true, precision: {}, limits: {} };
+      return { id: "XXBTZUSD", symbol: "BTC/USD", base: "BTC", quote: "USD", spot: true, active: true, ...(fixture.omitMetadata ? {} : { precision: {}, limits: {} }) };
     }
   }
   return { default: { kraken: FixtureExchange } };
@@ -17,6 +17,17 @@ vi.mock("ccxt", () => {
 import { CcxtSpotAdapter } from "../src/binance.js";
 
 describe("native connector metadata", () => {
+  it("does not invent precision or minimum notional when metadata objects are absent", async () => {
+    fixture.omitMetadata = true;
+    try {
+      const instrument = await new CcxtSpotAdapter("kraken").getInstrument("BTC/USD");
+      expect(instrument.precision.amount).toBeNull();
+      expect(instrument.precision.price).toBeNull();
+      expect(instrument.limits.cost.min).toBeNull();
+      expect(instrument.limits.amount.min).toBeNull();
+    } finally { fixture.omitMetadata = false; }
+  });
+
   it("preserves native venue identity and represents missing precision as unknown", async () => {
     fixture.precisionMode = undefined;
     const adapter = new CcxtSpotAdapter("kraken");

@@ -123,32 +123,56 @@ export async function stepTraining(request: APIRequestContext, snapshot: ReplayS
   return stepped;
 }
 
+// Independent integer reference for the documented 8-place money policy.
+// Fixture notionals stay below Number.MAX_SAFE_INTEGER in these units.
+export function trainingAmounts(price: number, quantity: number, feeRate: number) {
+  const notionalUnits = Math.round(price * quantity * 1e8);
+  const feeUnits = Math.round(notionalUnits * feeRate);
+  return { notionalUnits, feeUnits, cost: (notionalUnits + feeUnits) / 1e8 };
+}
+
 export function assertTrainingLedger(snapshot: ReplaySnapshot): void {
   const { execution, portfolio, report } = snapshot;
   expect(portfolio).toEqual(execution.portfolio);
   expect(snapshot.orders).toEqual(execution.orders);
-  let quote = execution.config.initialCapital;
-  let base = 0;
-  let fees = 0;
+  let quoteUnits = execution.config.initialCapital * 1e8;
+  let baseUnits = 0;
+  let costUnits = 0;
+  let realizedUnits = 0;
+  let feesUnits = 0;
   for (const fill of execution.fills) {
     expect(fill.accountId).toBe(execution.account.id);
     expect(fill.instrumentId).toBe(execution.instrument.id);
     expect(fill.timestamp).toBeLessThanOrEqual(snapshot.session.cursor);
-    expect(fill.fee).toBeCloseTo(fill.quantity * fill.price * execution.config.feeRate, 8);
-    quote += (fill.side === "buy" ? -1 : 1) * fill.quantity * fill.price - fill.fee;
-    base += (fill.side === "buy" ? 1 : -1) * fill.quantity;
-    fees += fill.fee;
+    const { notionalUnits, feeUnits } = trainingAmounts(fill.price, fill.quantity, execution.config.feeRate);
+    const quantityUnits = Math.round(fill.quantity * 1e12);
+    expect(fill.fee).toBe(feeUnits / 1e8);
+    if (fill.side === "buy") {
+      quoteUnits -= notionalUnits + feeUnits;
+      baseUnits += quantityUnits;
+      costUnits += notionalUnits + feeUnits;
+    } else {
+      const allocated = quantityUnits === baseUnits ? costUnits : Math.round(costUnits * (quantityUnits / baseUnits));
+      quoteUnits += notionalUnits - feeUnits;
+      baseUnits -= quantityUnits;
+      costUnits -= allocated;
+      realizedUnits += notionalUnits - feeUnits - allocated;
+    }
+    feesUnits += feeUnits;
   }
-  expect(portfolio.quoteBalance).toBeCloseTo(quote, 8);
-  expect(portfolio.baseBalance).toBeCloseTo(base, 10);
+  expect(portfolio.quoteBalance).toBe(quoteUnits / 1e8);
+  expect(portfolio.baseBalance).toBe(baseUnits / 1e12);
+  expect(portfolio.costBasis ?? 0).toBe(costUnits / 1e8);
+  expect(portfolio.realizedPnl).toBe(realizedUnits / 1e8);
   expect(portfolio.baseBalance).toBeGreaterThanOrEqual(0);
   const mark = snapshot.session.bars.at(-1)!.close;
+  const markedUnits = Math.round((baseUnits / 1e12) * mark * 1e8);
   expect(report.initialCapital).toBe(execution.config.initialCapital);
-  expect(report.equity).toBeCloseTo(quote + base * mark, 8);
-  expect(report.netPnl).toBeCloseTo(report.equity - execution.config.initialCapital, 8);
+  expect(report.equity).toBe((quoteUnits + markedUnits) / 1e8);
+  expect(report.netPnl).toBe((quoteUnits + markedUnits - execution.config.initialCapital * 1e8) / 1e8);
   expect(report.realizedPnl).toBe(portfolio.realizedPnl);
-  expect(report.unrealizedPnl).toBeCloseTo(base * (mark - (portfolio.averageEntryPrice ?? mark)), 8);
-  expect(report.fees).toBeCloseTo(fees, 8);
+  expect(report.unrealizedPnl).toBe((markedUnits - costUnits) / 1e8);
+  expect(report.fees).toBe(feesUnits / 1e8);
   expect(report.fillCount).toBe(execution.fills.length);
   expect(report.notes).toBe(execution.notes);
   expect(report.tags).toEqual(execution.tags);

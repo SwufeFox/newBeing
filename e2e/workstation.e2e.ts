@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 import { installApiMocks } from "./api-mocks.js";
 import {
   assertTrainingLedger, commandTraining, queueTraining, readJson, reloadTraining,
   REPLAY_INTERVAL, REPLAY_MARKET, seedTraining, setTrainingWorkspace, stepTraining,
-  trainingCandles, TRAINING_CONFIG, type ReplaySeed, type ReplaySnapshot,
+  trainingCandles, trainingAmounts, TRAINING_CONFIG, type ReplaySeed, type ReplaySnapshot,
 } from "./replay-api.js";
 
 async function activate(locator: import("@playwright/test").Locator, keyboard: boolean): Promise<void> {
@@ -16,7 +19,21 @@ async function activate(locator: import("@playwright/test").Locator, keyboard: b
   }
 }
 
+test.beforeAll(async ({ request }) => {
+  if (process.env.PLAYWRIGHT_API_STUBS === "1") return;
+  // Compile the dev routes before browser actions; a cold route can trigger a
+  // Fast Refresh reload that interrupts an in-flight UI request.
+  test.setTimeout(180_000);
+  for (const path of ["/", "/api/strategies", "/api/backtests", "/api/paper", "/api/replay", "/api/replay/e2e-warmup"]) {
+    const response = await request.get(path);
+    expect(response.status(), `Warm-up ${path}`).toBeLessThan(500);
+    await response.dispose();
+  }
+});
+
 test("chart, backtest, source draft, Paper order, Replay and workspace sync use local fixtures", async ({ page }) => {
+  // This case includes cold route compilation and several complete UI workflows.
+  test.setTimeout(180_000);
   const apiMock = process.env.PLAYWRIGHT_API_STUBS === "1" ? await installApiMocks(page) : null;
   const useKeyboard = apiMock !== null;
   if (!apiMock) await setTrainingWorkspace(page.request);
@@ -163,7 +180,8 @@ test.describe("manual Replay training against the real API", () => {
     expect(state.execution.fills).toHaveLength(1);
     expect(state.execution.fills[0]).toMatchObject({ orderId: entry.orderId, timestamp: entryBar.timestamp, side: "buy", reason: "order", quantity: 0.02 });
     expect(state.execution.fills.some((fill) => fill.orderId === cancelled.orderId)).toBe(false);
-    expect(state.portfolio.averageEntryPrice).toBeCloseTo(entryPrice * (1 + TRAINING_CONFIG.feeRate), 8);
+    const entryCost = trainingAmounts(entryPrice, 0.02, TRAINING_CONFIG.feeRate).cost;
+    expect(state.portfolio.averageEntryPrice).toBeCloseTo(entryCost / 0.02, 8);
     assertTrainingLedger(state);
 
     await test.step("lost step and order response retries cannot duplicate fills or advance the cursor", async () => {
@@ -181,7 +199,9 @@ test.describe("manual Replay training against the real API", () => {
     const exitPrice = state.session.bars.at(-1)!.open * (1 - TRAINING_CONFIG.slippageRate);
     expect(state.orders.find((order) => order.clientOrderId === close.orderId)?.fillPrice).toBeCloseTo(exitPrice, 8);
     expect(state.portfolio.baseBalance).toBeCloseTo(0.015, 12);
-    expect(state.portfolio.realizedPnl).toBeCloseTo(0.005 * (exitPrice - entryPrice * (1 + TRAINING_CONFIG.feeRate)) - 0.005 * exitPrice * TRAINING_CONFIG.feeRate, 8);
+    const exitAmounts = trainingAmounts(exitPrice, 0.005, TRAINING_CONFIG.feeRate);
+    const allocatedEntryUnits = Math.round(entryCost * 1e8 * 0.25);
+    expect(state.portfolio.realizedPnl).toBe((exitAmounts.notionalUnits - exitAmounts.feeUnits - allocatedEntryUnits) / 1e8);
     assertTrainingLedger(state);
     const afterPartialClose = state.portfolio;
 
@@ -384,4 +404,44 @@ test.describe("manual Replay training against the real API", () => {
     expect(exported).toEqual({ session: state.session, execution: state.execution, report: state.report });
     expect(exported.session.bars.every((bar) => bar.timestamp <= state.session.cursor)).toBe(true);
   });
+});
+
+test("Paper shows an interrupted intent from its original account and persists manual cancellation", async ({ page }, info) => {
+  // playwright.config pins one directory for both the server and every worker,
+  // so this is the database the API actually reads. Assert equality rather than
+  // silently falling back to a directory the server never opened.
+  const directory = process.env.NEWBEING_E2E_DATA_DIR;
+  const serverDirectory = info.config.webServer?.env?.NEWBEING_DATA_DIR;
+  expect(directory, "Recovery E2E needs the isolated fixture database directory.").toBeTruthy();
+  expect(serverDirectory, "The dev server must use the same fixture database as this test.").toBe(directory);
+  const clientOrderId = `interrupted-${randomUUID()}`;
+  const moduleUrl = pathToFileURL(resolve("packages/storage/dist/index.js")).href;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as s from ${JSON.stringify(moduleUrl)};
+    s.beginPaperIntent({ clientOrderId: ${JSON.stringify(clientOrderId)}, symbol: 'BTC/USD', side: 'buy', quantity: 0.1 }, s.paperAccountId('BTC/USD', 'kraken'));
+    s.markPaperIntentSubmitted(${JSON.stringify(clientOrderId)});
+    process.exit(73);
+  `], { env: { ...process.env, NEWBEING_DATA_DIR: directory }, encoding: "utf8", timeout: 15000 });
+  expect(child.stderr).toBe("");
+  expect(child.status).toBe(73);
+  await setTrainingWorkspace(page.request);
+  const before = await readJson<{ portfolio: unknown }>(await page.request.get("/api/paper?symbol=BTC/USD&exchange=kraken"));
+  await page.goto("/");
+  const panel = page.getByTestId("paper-recovery");
+  const card = panel.locator(".order-preview-card").filter({ hasText: clientOrderId });
+  await expect(card).toContainText("paper:kraken-spot:BTC:USD");
+  await expect(card).toContainText("submitted");
+  const cancel = card.getByRole("button", { name: "Cancel pending Paper", exact: true });
+  await expect(cancel).toBeDisabled();
+  await card.getByRole("textbox").fill("Operator cancels interrupted fixture before any local fill.");
+  const persisted = page.waitForResponse((response) => response.url().endsWith("/api/paper/recovery") && response.request().method() === "POST");
+  await cancel.click();
+  expect((await persisted).status()).toBe(200);
+  await expect(card).toContainText("submitted → cancelled");
+  await page.reload();
+  await expect(panel.locator(".order-preview-card").filter({ hasText: clientOrderId })).toContainText("Operator cancels interrupted fixture");
+  const after = await readJson<{ portfolio: unknown }>(await page.request.get("/api/paper?symbol=BTC/USD&exchange=kraken"));
+  expect(after.portfolio).toEqual(before.portfolio);
+  const state = await readJson<{ pending: { clientOrderId: string }[] }>(await page.request.get("/api/paper/recovery"));
+  expect(state.pending.some((order) => order.clientOrderId === clientOrderId)).toBe(false);
 });

@@ -1,3 +1,4 @@
+import { LedgerValidationError, quantityUnits, subtractQuantity, validateMoney, decimal, money } from "./ledger.js";
 import type { Candle, ExchangeId } from "./types.js";
 import { fillPaperOrder, type PaperPortfolio } from "./paper.js";
 
@@ -58,6 +59,7 @@ export interface ReplayFill {
 }
 export interface ReplayExecution {
   version: 1;
+  simulationPrecision?: typeof import("./ledger.js").SIMULATION_PRECISION;
   revision: number;
   account: AccountIdentity;
   instrument: InstrumentIdentity;
@@ -72,6 +74,7 @@ export interface ReplayExecution {
 }
 export const REPLAY_FILL_POLICY = "Orders become eligible on the next bar only. Market fills at open; limits require a touch and receive no better than the limit; stop gaps fill at the adverse open. Adverse slippage and quote fees apply, with limit prices capped. FIFO, full fills or balance rejection; no volume/liquidity model. Long spot only. Brackets use stop-first and adverse gap opens. Gaps that place SL at/above or TP at/below the actual entry fill reject the entry without a fill. New entries can stop out on their entry bar; targets activate on the following bar. Finish cancels pending orders and marks open inventory, without forced liquidation.";
 export function validateReplayConfig(config: ReplayConfig): void {
+  validateMoney(config.initialCapital);
   if (!Number.isFinite(config.initialCapital) || config.initialCapital <= 0 || config.initialCapital > 1e12
     || !Number.isFinite(config.feeRate) || config.feeRate < 0 || config.feeRate > 0.05
     || !Number.isFinite(config.slippageRate) || config.slippageRate < 0 || config.slippageRate > 0.05) throw new Error("Invalid Replay configuration.");
@@ -90,15 +93,16 @@ export function submitReplayOrder(state: ReplayExecution, input: ReplayOrderInpu
   if (input.type === "market" && input.price !== undefined) throw new Error("Market orders cannot specify a price.");
   if (input.side === "sell" && (input.stopLoss !== undefined || input.takeProfit !== undefined)) throw new Error("SL/TP are supported on long entries only.");
   if (input.stopLoss !== undefined && input.takeProfit !== undefined && input.stopLoss >= input.takeProfit) throw new Error("SL must be below TP.");
+  quantityUnits(input.quantity);
   state.orders.push({ ...input, accountId: state.account.id, instrumentId: state.instrument.id, submittedAt: cursor, status: "submitted", fillPrice: null, fee: 0, createdAt: new Date(cursor).toISOString() });
 }
 function reduceBrackets(state: ReplayExecution, quantity: number): void {
   for (const bracket of state.brackets) {
     const used = Math.min(quantity, bracket.quantity);
-    bracket.quantity -= used;
-    quantity -= used;
+    bracket.quantity = subtractQuantity(bracket.quantity, used);
+    quantity = subtractQuantity(quantity, used);
   }
-  state.brackets = state.brackets.filter((bracket) => bracket.quantity > 1e-12);
+  state.brackets = state.brackets.filter((bracket) => bracket.quantity > 0);
 }
 function fillPrice(state: ReplayExecution, side: "buy" | "sell", rawPrice: number, limit?: number): number {
   const price = rawPrice * (1 + (side === "buy" ? 1 : -1) * state.config.slippageRate);
@@ -120,7 +124,7 @@ function runBrackets(state: ReplayExecution, bar: Candle): void {
     applyFill(state, bracket.orderId, "sell", bracket.quantity, price, bar, stop ? "stop-loss" : "take-profit");
     bracket.quantity = 0;
   }
-  state.brackets = state.brackets.filter((bracket) => bracket.quantity > 1e-12);
+  state.brackets = state.brackets.filter((bracket) => bracket.quantity > 0);
 }
 export function matchReplayBar(state: ReplayExecution, bar: Candle): void {
   if (![bar.timestamp, bar.open, bar.high, bar.low, bar.close, bar.volume].every(Number.isFinite) || bar.low <= 0 || bar.low > Math.min(bar.open, bar.close) || bar.high < Math.max(bar.open, bar.close) || bar.volume < 0) throw new Error("Invalid Replay OHLCV bar.");
@@ -138,28 +142,30 @@ export function matchReplayBar(state: ReplayExecution, bar: Candle): void {
       order.error = "Bracket prices must surround the actual entry fill; gaps can invalidate an entry.";
       continue;
     }
+    let fill: { price: number; fee: number };
     try {
-      const fill = applyFill(state, order.clientOrderId, order.side, order.quantity, raw, bar, "order", order.type === "limit" ? order.price : undefined);
-      order.status = "filled";
-      order.fillPrice = fill.price;
-      order.fee = fill.fee;
-      if (buy) {
-        // Track all inventory lots so manual partial closes reduce protected lots correctly.
-        state.brackets.push({ orderId: order.clientOrderId, quantity: order.quantity, openedAt: bar.timestamp, ...(order.stopLoss !== undefined ? { stopLoss: order.stopLoss } : {}), ...(order.takeProfit !== undefined ? { takeProfit: order.takeProfit } : {}) });
-        runBrackets(state, bar);
-      } else reduceBrackets(state, order.quantity);
+      fill = applyFill(state, order.clientOrderId, order.side, order.quantity, raw, bar, "order", order.type === "limit" ? order.price : undefined);
     } catch (error) {
-      if (!(error instanceof Error) || !error.message.startsWith("Insufficient paper")) throw error;
+      if (!(error instanceof LedgerValidationError) && (!(error instanceof Error) || !error.message.startsWith("Insufficient paper"))) throw error;
       order.status = "rejected";
       order.error = error.message;
+      continue;
     }
+    order.status = "filled";
+    order.fillPrice = fill.price;
+    order.fee = fill.fee;
+    if (buy) {
+      // Track all inventory lots so manual partial closes reduce protected lots correctly.
+      state.brackets.push({ orderId: order.clientOrderId, quantity: order.quantity, openedAt: bar.timestamp, ...(order.stopLoss !== undefined ? { stopLoss: order.stopLoss } : {}), ...(order.takeProfit !== undefined ? { takeProfit: order.takeProfit } : {}) });
+      runBrackets(state, bar);
+    } else reduceBrackets(state, order.quantity);
   }
-  state.equity.push({ timestamp: bar.timestamp, equity: state.portfolio.quoteBalance + state.portfolio.baseBalance * bar.close });
+  state.equity.push({ timestamp: bar.timestamp, equity: money(decimal(state.portfolio.quoteBalance).plus(decimal(state.portfolio.baseBalance).times(bar.close))) });
 }
 export function replayReport(state: ReplayExecution, mark: number) {
-  const equity = state.portfolio.quoteBalance + state.portfolio.baseBalance * mark;
+  const equity = money(decimal(state.portfolio.quoteBalance).plus(decimal(state.portfolio.baseBalance).times(mark)));
   let peak = state.config.initialCapital;
   let maxDrawdown = 0;
   for (const point of state.equity) { peak = Math.max(peak, point.equity); maxDrawdown = Math.max(maxDrawdown, (peak - point.equity) / peak); }
-  return { initialCapital: state.config.initialCapital, equity, netPnl: equity - state.config.initialCapital, realizedPnl: state.portfolio.realizedPnl, unrealizedPnl: state.portfolio.baseBalance * (mark - (state.portfolio.averageEntryPrice ?? mark)), fees: state.fills.reduce((sum, fill) => sum + fill.fee, 0), fillCount: state.fills.length, maxDrawdown, notes: state.notes, tags: state.tags, policy: REPLAY_FILL_POLICY };
+  return { initialCapital: state.config.initialCapital, equity, netPnl: money(decimal(equity).minus(state.config.initialCapital)), realizedPnl: state.portfolio.realizedPnl, unrealizedPnl: money(decimal(state.portfolio.baseBalance).times(mark).minus(state.portfolio.costBasis ?? decimal(state.portfolio.baseBalance).times(state.portfolio.averageEntryPrice ?? mark))), fees: money(state.fills.reduce((sum, fill) => sum.plus(fill.fee), decimal(0))), fillCount: state.fills.length, maxDrawdown, notes: state.notes, tags: state.tags, policy: REPLAY_FILL_POLICY };
 }

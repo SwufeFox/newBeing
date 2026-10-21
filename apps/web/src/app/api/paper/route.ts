@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { SIMULATION_PRECISION } from "@newbeing/core";
 import { executePaperOrder } from "@newbeing/application";
 import { getPaperPortfolio, listPaperOrders, paperAccountId, getWorkspaceState } from "@newbeing/storage";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
@@ -17,7 +18,7 @@ const orderSchema = z.object({
   mode: z.literal("paper"),
   /* Optional: defaults to the workspace's active venue. */
   exchange: exchangeSchema.optional(),
-});
+}).strict();
 
 /* Replay isolation is the only blanket rule left; which venue fills an order
    is now a per-request choice rather than a capability the app lacks. */
@@ -38,7 +39,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     if (!parsedExchange.success) return NextResponse.json({ error: "Unknown exchange." }, { status: 400 });
     const accountId = paperAccountId(symbol, parsedExchange.data);
     return NextResponse.json({
-      portfolio: getPaperPortfolio(accountId), orders: listPaperOrders(30), mode: "paper", exchange: parsedExchange.data,
+      portfolio: getPaperPortfolio(accountId), orders: listPaperOrders(30, accountId), mode: "paper", exchange: parsedExchange.data, accountId, simulationPrecision: SIMULATION_PRECISION,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Paper account read failed." }, { status: 500 });
@@ -56,7 +57,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     /* The adapter that prices the fill is the account's own venue. */
     const result = await executePaperOrder({ ...parsed.data, exchange }, getWebMarketAdapter(exchange));
     const status = result.deduplicated ? 200 : result.order.status === "filled" ? 201 : result.order.status === "unknown" ? 202 : 422;
-    return NextResponse.json({ ...result, reference: "public bid/ask, falling back to last; simulation only" }, { status });
+    return NextResponse.json({ ...result, simulationPrecision: SIMULATION_PRECISION, reference: "public bid/ask, falling back to last; simulation only" }, { status });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Paper order failed." }, { status: 422 });
   }

@@ -9,6 +9,14 @@ export function timeframeMilliseconds(timeframe: Timeframe): number {
   return amount * multiplier;
 }
 
+/** Latest N completed fixed-duration UTC bars: [floor(now / d) * d - N*d, floor(now / d) * d). */
+export function recentCompletedWindow(timeframe: Timeframe, limit: number, now = Date.now()): { since: number; through: number } {
+  if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(now) || now < 0) throw new Error("Invalid candle window.");
+  const interval = timeframeMilliseconds(timeframe);
+  const through = Math.floor(now / interval) * interval;
+  return { since: Math.max(0, through - limit * interval), through };
+}
+
 export function removeFormingCandles(candles: readonly Candle[], timeframe: Timeframe, now = Date.now()): Candle[] {
   const interval = timeframeMilliseconds(timeframe);
   return candles.filter((candle) => candle.timestamp + interval <= now);

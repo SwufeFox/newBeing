@@ -6,6 +6,7 @@ import { EXCHANGE_TIMEFRAMES, logEvent, type ExchangeId } from "@newbeing/core";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
 import { createCandleCacheAdapter } from "@/lib/candle-cache-adapter";
+import { researchFailure, researchReadGuard } from "@/lib/research-route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,8 @@ export async function GET(request: Request): Promise<NextResponse> {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const guard = researchReadGuard();
+  if (guard) return guard;
   try {
     const body: unknown = await request.json();
     const parsed = requestSchema.safeParse(body);
@@ -73,6 +76,6 @@ export async function POST(request: Request): Promise<NextResponse> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Backtest failed.";
     logEvent("warn", "backtest.failed", { message });
-    return NextResponse.json({ error: message }, { status: 422 });
+    return researchFailure(error);
   }
 }

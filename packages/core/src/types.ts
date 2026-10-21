@@ -95,7 +95,37 @@ export interface BacktestExecutionAssumptions {
   sharpeMethod: string;
 }
 
+export interface ResearchReproduction {
+  format: 1;
+  snapshotId: string;
+  /** Hash of the executable core artifact, including strategy and engine dependencies. */
+  implementationHash: string;
+}
+
+export interface BacktestSweepResult {
+  sweepId: string;
+  exchange: ExchangeId;
+  symbol: string;
+  timeframe: Timeframe;
+  strategyId: string;
+  strategyVersion: string;
+  engineVersion: string;
+  parameter: string;
+  values: number[];
+  runs: Array<{ value: number; resultId: string; outcomeId: string; metrics: BacktestMetrics }>;
+  parameters: StrategyParameters;
+  config: BacktestConfig;
+  datasetId: string;
+  bars: number;
+  createdAt: string;
+  reproduction: ResearchReproduction;
+  rerunOf?: string;
+}
+
 export interface BacktestResult {
+  /** Absent on legacy records: those inputs are not reproducible. */
+  reproduction?: ResearchReproduction;
+  rerunOf?: string;
   resultId: string;
   datasetId: string;
   /** Which venue the dataset came from. Without this a result cannot be
@@ -160,6 +190,8 @@ export interface ReplaySession {
 
 export interface OrderPreview {
   id: string;
+  exchange?: ExchangeId | null;
+  accountId?: string | null;
   symbol: string;
   side: "buy" | "sell";
   quantity: number;

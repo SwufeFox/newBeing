@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/client";
 import { DEFAULT_WORKSPACE_STATE, type ReplaySession } from "@newbeing/core";
-import { advanceReplaySession, closeDatabaseForTests, commandReplay, createConfiguredReplaySession, saveWorkspaceState } from "@newbeing/storage";
+import { beginPaperIntent, listPaperRecoveries, paperAccountId, advanceReplaySession, closeDatabaseForTests, commandReplay, createConfiguredReplaySession, saveWorkspaceState } from "@newbeing/storage";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,8 +39,14 @@ try {
   const required = ["get_workspace_context", "get_market_data", "run_backtest", "prepare_order"];
   const missing = required.filter((name) => !names.includes(name));
   if (missing.length > 0) throw new Error(`MCP tool registration missing: ${missing.join(", ")}`);
+  const expected = ["get_workspace_context", "get_market_data", "list_strategies", "get_strategy", "create_strategy", "run_backtest", "list_experiments", "get_backtest_result", "update_strategy", "open_workspace_view", "get_portfolio", "prepare_order"];
+  if (names.length !== expected.length || expected.some((name) => !names.includes(name))) throw new Error("MCP execution surface changed; only the approved tools may be registered.");
+  const pendingOwner = paperAccountId("BTC/USD", "kraken");
+  beginPaperIntent({ clientOrderId: "mcp-interrupted-order", symbol: "BTC/USD", side: "buy", quantity: 0.1 }, pendingOwner);
   const context = readPayload(await client.callTool({ name: "get_workspace_context", arguments: {} }));
   if (!context.state) throw new Error("MCP workspace context tool returned no workspace state.");
+  const recovery = context.paperRecovery as { pending: { clientOrderId: string; accountId: string }[] };
+  if (!recovery?.pending.some((order) => order.clientOrderId === "mcp-interrupted-order" && order.accountId === pendingOwner) || listPaperRecoveries().length !== 0) throw new Error("MCP must expose pending ownership without resolving it.");
   const strategies = readPayload(await client.callTool({ name: "list_strategies", arguments: {} }));
   if (!Array.isArray(strategies.strategies) || strategies.strategies.length === 0) throw new Error("MCP list_strategies tool returned no strategies.");
   const strategyId = `custom-mcp-smoke-${Date.now().toString(36)}`;

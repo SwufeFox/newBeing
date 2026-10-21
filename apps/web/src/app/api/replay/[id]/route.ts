@@ -18,7 +18,7 @@ const actionSchema = z.discriminatedUnion("action", [
 ]);
 function snapshot(session: ReplaySession) {
   const execution = getReplayExecution(session.id);
-  const legacyOrders = listPaperOrders(100).filter((order) => order.clientOrderId.startsWith(`replay-${session.id}-`));
+  const legacyOrders = listPaperOrders(100, replayAccountId(session.id, session.symbol, session.exchange));
   return { session, execution: execution ?? null, portfolio: execution?.portfolio ?? getPaperPortfolio(replayAccountId(session.id, session.symbol, session.exchange)), orders: execution?.orders ?? legacyOrders, legacyOrders,
     report: execution ? replayReport(execution, session.bars.at(-1)?.close ?? 0) : null, futureBarsLoaded: 0 };
 }

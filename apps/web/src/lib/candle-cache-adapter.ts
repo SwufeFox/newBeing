@@ -1,5 +1,5 @@
 import type { Candle, ExchangeId, Timeframe } from "@newbeing/core";
-import { timeframeMilliseconds } from "@newbeing/market-data/utils";
+import { recentCompletedWindow, timeframeMilliseconds } from "@newbeing/market-data/utils";
 import type { ExchangeAdapter } from "@newbeing/market-data";
 import { getCachedCandles, saveCachedCandles } from "@newbeing/storage";
 
@@ -62,7 +62,7 @@ export function createCandleCacheAdapter(exchange: ExchangeId, adapter: Exchange
       fetchRecentTrades: adapter.fetchRecentTrades.bind(adapter),
       close: adapter.close.bind(adapter),
       fetchOHLCV(symbol: string, timeframe: Timeframe, limit = 500) {
-        const since = Date.now() - timeframeMilliseconds(timeframe) * limit;
+        const { since } = recentCompletedWindow(timeframe, limit);
         return fetch(symbol, timeframe, since, limit, () => adapter.fetchOHLCV(symbol, timeframe, limit));
       },
       fetchOHLCVSince(symbol: string, timeframe: Timeframe, since: number, limit = 500) {

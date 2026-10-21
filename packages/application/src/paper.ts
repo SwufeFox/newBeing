@@ -1,13 +1,15 @@
 import { getExchangeAdapter, type ExchangeAdapter } from "@newbeing/market-data";
 import {
   beginPaperIntent,
+  claimOrderPreview,
+  getPaperOrder,
   finalizePaperFill,
   getPaperPortfolio,
   markPaperIntentSubmitted,
   markPaperIntentUnknown,
   paperAccountId,
 } from "@newbeing/storage";
-import type { ExchangeId, PaperOrder, PaperOrderSide, PaperPortfolio } from "@newbeing/core";
+import { SIMULATION_PRECISION, type ExchangeId, type PaperOrder, type PaperOrderSide, type PaperPortfolio } from "@newbeing/core";
 
 export interface ExecutePaperOrderRequest {
   clientOrderId: string;
@@ -60,6 +62,10 @@ export async function executePaperOrderWithDependencies(
     return { order: submitted, portfolio: dependencies.readPortfolio(request.symbol), deduplicated: true };
   }
 
+  return settlePaperOrder(request, dependencies);
+}
+
+async function settlePaperOrder(request: ExecutePaperOrderRequest, dependencies: PaperExecutionDependencies): Promise<ExecutePaperOrderResult> {
   try {
     const quote = await dependencies.fetchReferencePrice(request.symbol, request.side);
     const ageMs = dependencies.now() - (quote.timestamp ?? Number.NaN);
@@ -79,11 +85,16 @@ export async function executePaperOrder(
   request: ExecutePaperOrderRequest,
   marketAdapter: ExchangeAdapter = getExchangeAdapter(request.exchange ?? "binance"),
 ): Promise<ExecutePaperOrderResult> {
+  if (marketAdapter.id !== (request.exchange ?? "binance")) throw new Error("Paper adapter venue mismatch.");
+  return executePaperOrderWithDependencies(request, paperDependencies(request, marketAdapter));
+}
+
+function paperDependencies(request: ExecutePaperOrderRequest, marketAdapter: ExchangeAdapter): PaperExecutionDependencies {
   /* Price source and account namespace must name the same venue: filling a
      Kraken order at Binance's price and booking it to Binance's account would
      make the paper book meaningless. */
   const exchange = request.exchange ?? "binance";
-  return executePaperOrderWithDependencies(request, {
+  return {
     beginIntent: (order) => beginPaperIntent(order, paperAccountId(order.symbol, exchange)),
     markSubmitted: markPaperIntentSubmitted,
     fetchReferencePrice: async (symbol, side) => {
@@ -104,5 +115,27 @@ export async function executePaperOrder(
       portfolio: getPaperPortfolio(paperAccountId(request.symbol, exchange)),
     }),
     readPortfolio: (symbol) => getPaperPortfolio(paperAccountId(symbol, exchange)),
-  });
+  };
+}
+
+export async function resolvePaperPreview(id: string, action: "confirm" | "dismiss", adapterFor: (exchange: ExchangeId) => ExchangeAdapter = getExchangeAdapter) {
+  const claim = claimOrderPreview(id, action);
+  const preview = claim.preview;
+  if (!claim.claimed) {
+    const order = preview.orderId ? getPaperOrder(preview.orderId) : undefined;
+    const ambiguous = order && ["created", "submitted", "unknown"].includes(order.status);
+    return { preview, order: order ?? null, deduplicated: true, simulationPrecision: SIMULATION_PRECISION,
+      ...(ambiguous ? { error: "Saved confirmation is pending or unknown; no second execution was attempted.", retrySafe: false as const } : {}) };
+  }
+  const request: ExecutePaperOrderRequest = { clientOrderId: preview.orderId!, symbol: preview.symbol, side: preview.side, quantity: preview.quantity, exchange: preview.exchange! };
+  try {
+    const adapter = adapterFor(preview.exchange!);
+    if (adapter.id !== preview.exchange) throw new Error("Paper adapter venue mismatch.");
+    const result = await settlePaperOrder(request, paperDependencies(request, adapter));
+    return { preview, ...result, simulationPrecision: SIMULATION_PRECISION };
+  } catch (error) {
+    // The claim is durable even if adapter construction fails. Never reopen it.
+    const order = markPaperIntentUnknown(request.clientOrderId);
+    return { preview, order, deduplicated: false, error: error instanceof Error ? error.message : "Paper confirmation failed.", retrySafe: false as const, simulationPrecision: SIMULATION_PRECISION };
+  }
 }
