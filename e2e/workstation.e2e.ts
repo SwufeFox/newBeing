@@ -424,6 +424,11 @@ test("Paper shows an interrupted intent from its original account and persists m
   `], { env: { ...process.env, NEWBEING_DATA_DIR: directory }, encoding: "utf8", timeout: 15000 });
   expect(child.stderr).toBe("");
   expect(child.status).toBe(73);
+  // Prove the server is reading the file this test just wrote, so a split
+  // database surfaces here instead of as a confusing "card not found".
+  const seeded = await readJson<{ pending: { clientOrderId: string }[] }>(await page.request.get("/api/paper/recovery"));
+  expect(seeded.pending.some((order) => order.clientOrderId === clientOrderId),
+    `Server did not see the seeded intent in ${directory}. The dev server and this test must share NEWBEING_DATA_DIR.`).toBe(true);
   await setTrainingWorkspace(page.request);
   const before = await readJson<{ portfolio: unknown }>(await page.request.get("/api/paper?symbol=BTC/USD&exchange=kraken"));
   await page.goto("/");

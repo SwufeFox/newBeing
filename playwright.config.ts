@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
@@ -9,16 +9,15 @@ const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL;
 // value for the dev server than for the tests that seed state out-of-process --
 // the fixture lands in one SQLite file and the API reads an empty other one.
 // A stable path derived only from cwd keeps both sides on the same database.
+// The run id is generated once, in the runner, and inherited by the dev server
+// and every worker (Playwright forks workers with the runner's environment). That
+// keeps both sides on one fresh database. Deriving it from pid/Date.now() on each
+// evaluation instead splits the server and the tests across two SQLite files.
+const runId = process.env.NEWBEING_E2E_RUN_ID ?? `${process.pid}-${Date.now()}`;
+process.env.NEWBEING_E2E_RUN_ID = runId;
 const dataDirectory = process.env.NEWBEING_E2E_DATA_DIR
-  ?? join(process.cwd(), ".newbeing", "e2e-run");
+  ?? join(process.cwd(), ".newbeing", `e2e-${runId}`);
 process.env.NEWBEING_E2E_DATA_DIR = dataDirectory;
-// Only reset when this process owns the run (the runner sets the marker); workers
-// must never wipe the database the server is already using.
-const ownsDatabase = process.env.NEWBEING_E2E_OWNER !== "1";
-process.env.NEWBEING_E2E_OWNER = "1";
-if (ownsDatabase && !externalBaseURL) {
-  rmSync(dataDirectory, { recursive: true, force: true });
-}
 mkdirSync(dataDirectory, { recursive: true });
 if (externalBaseURL) {
   const hostname = new URL(externalBaseURL).hostname;
