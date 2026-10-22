@@ -76,6 +76,9 @@ function migrateSchema(sqlite: Database.Database): void {
       assumptions TEXT NOT NULL, result TEXT NOT NULL, created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS experiments_created_at_idx ON experiments(created_at DESC);
+    CREATE TABLE IF NOT EXISTS spot_accounts (
+      id TEXT PRIMARY KEY, payload TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS paper_accounts (
       id TEXT PRIMARY KEY, quote_balance REAL NOT NULL, base_balance REAL NOT NULL,
       average_entry_price REAL, realized_pnl REAL NOT NULL, fee_rate REAL NOT NULL, updated_at INTEGER NOT NULL

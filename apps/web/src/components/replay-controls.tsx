@@ -1,9 +1,9 @@
 "use client";
 
-import { Clock3, FastForward, LoaderCircle, Pause, Play, SkipForward, Square } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Clock3, FastForward, LoaderCircle, Pause, Play, SkipForward, Square, RotateCcw } from "lucide-react";
 import type { ReplayConfig, ReplaySession, Timeframe } from "@newbeing/core";
-import { Button } from "@/components/ui/button";
+import { AkButton, AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum } from "@swufefox/ak-ui-react";
 
 interface ReplayControlsProps {
   symbol: string;
@@ -34,34 +34,225 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
   const [feeRate, setFeeRate] = useState("0.001");
   const [slippageRate, setSlippageRate] = useState("0.0005");
   const cursor = session?.bars.at(-1);
-  return <div className="replay-controls">
-    <div className="replay-title"><Clock3 size={14} /><strong>REPLAY</strong><span>FUTURE BARS HIDDEN</span></div>
-    {!session ? <>
-      <div className="replay-start-group">
-        <label><span>START AT · LOCAL TIME</span><input type="datetime-local" value={startAt} onChange={(event) => onStartAtChange(event.target.value)} /></label>
-        <label><span>PAST BARS</span><select value={limit} onChange={(event) => onLimitChange(Number(event.target.value))}><option value={120}>120</option><option value={200}>200</option><option value={400}>400</option></select></label>
-        <label><span>INITIAL CAPITAL · QUOTE</span><input type="number" min="0.01" value={initialCapital} onChange={(event) => setInitialCapital(event.target.value)} /></label>
-        <label><span>FEE RATE</span><input type="number" min="0" max="0.05" step="0.0001" value={feeRate} onChange={(event) => setFeeRate(event.target.value)} /></label>
-        <label><span>SLIPPAGE RATE</span><input type="number" min="0" max="0.05" step="0.0001" value={slippageRate} onChange={(event) => setSlippageRate(event.target.value)} /></label>
-        <Button data-testid="replay-seed" variant="primary" size="sm" disabled={busy} onClick={() => onStart({ initialCapital: Number(initialCapital), feeRate: Number(feeRate), slippageRate: Number(slippageRate) })}>{busy ? <LoaderCircle className="spin" size={13} /> : <Play size={13} />}Seed {symbol} · {timeframe}</Button>
-      </div>
-      <span className="replay-help">Only completed bars at or before the selected time are loaded. Each step requests exactly one next bar from the local server.</span>
-    </> : <>
 
-      <div className="replay-session-summary">
-        <strong>{symbol} · {timeframe}</strong>
-        <span>{cursor ? new Date(cursor.timestamp).toLocaleString() : "No cursor"}</span>
-        <small>{session.bars.length} visible bars · cursor {cursor ? new Date(cursor.timestamp).toISOString() : "—"}</small>
-        {session.candleSource === "local-cache" && <small className="replay-cache-note">LOCAL CACHE{session.candleCache?.cachedAt ? ` · ${new Date(session.candleCache.cachedAt).toLocaleString()}` : ""}</small>}
+  // Global hotkeys for supreme tactile feel: Space = Play/Pause, ArrowRight/N = Step
+  useEffect(() => {
+    if (!session || session.status !== "active") return;
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        onTogglePlay();
+      } else if (event.code === "ArrowRight" || event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        if (!busy && !playing) onStep();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [session, playing, busy, onTogglePlay, onStep]);
+
+  return (
+    <div className="replay-controls bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] p-3 shadow-md relative">
+      <div className="replay-title flex items-center justify-between pb-2 mb-2 border-b border-[var(--ak-border-subtle)]">
+        <div className="flex items-center gap-2">
+          <Clock3 size={15} className="text-[var(--ak-signal-info)]" />
+          <strong className="tracking-wider text-sm">REPLAY SIMULATION</strong>
+          <AkTag variant="advanced" className="text-[10px]">TIME TRAVEL</AkTag>
+        </div>
+        <span className="text-[11px] font-mono text-[var(--ak-text-secondary)] opacity-80 uppercase tracking-widest">
+          FUTURE BARS HIDDEN · STEP DETERMINISTIC
+        </span>
       </div>
-      <div className="replay-actions">
-        <Button variant="subtle" size="sm" disabled={busy || session.status !== "active"} onClick={onTogglePlay}>{busy ? <LoaderCircle className="spin" size={13} /> : playing ? <Pause size={13} /> : <Play size={13} />}{playing ? "Pause" : "Play"}</Button>
-        <Button data-testid="replay-step" variant="outline" size="sm" disabled={busy || playing || session.status !== "active"} onClick={onStep}><SkipForward size={13} />Step</Button>
-        <label className="replay-speed"><FastForward size={12} /><select aria-label="Replay speed" value={speed} onChange={(event) => onSpeedChange(Number(event.target.value))}><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={5}>5×</option></select></label>
-        <Button variant="ghost" size="sm" disabled={busy || session.status !== "active"} onClick={onFinish}><Square size={12} />Finish</Button>
-        <Button variant="ghost" size="sm" disabled={busy || playing} onClick={onNewSession}>New session</Button>
-      </div>
-    </>}
-    {error && <div className="replay-error">{error}</div>}
-  </div>;
+
+      {!session ? (
+        <div className="space-y-3">
+          <div className="replay-start-group grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 items-end">
+            <AkField hint="PAST BOUNDARY">
+              <label className="flex flex-col gap-1 w-full">
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">START AT · LOCAL TIME</AkFieldLabel>
+                <AkInput
+                  type="datetime-local"
+                  aria-label="START AT · LOCAL TIME"
+                  value={startAt}
+                  onChange={(event) => onStartAtChange(event.target.value)}
+                  className="text-xs h-8"
+                />
+              </label>
+            </AkField>
+
+            <AkField hint="SEED WINDOW">
+              <label className="flex flex-col gap-1 w-full">
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">PAST BARS</AkFieldLabel>
+                <AkSelect
+                  aria-label="PAST BARS"
+                  value={limit}
+                  onChange={(event) => onLimitChange(Number(event.target.value))}
+                  className="text-xs h-8"
+                >
+                  <option value={120}>120 bars</option>
+                  <option value={200}>200 bars</option>
+                  <option value={400}>400 bars</option>
+                </AkSelect>
+              </label>
+            </AkField>
+
+            <AkField hint="BASE CAPITAL">
+              <label className="flex flex-col gap-1 w-full">
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">INITIAL CAPITAL · QUOTE</AkFieldLabel>
+                <AkInput
+                  type="number"
+                  aria-label="INITIAL CAPITAL · QUOTE"
+                  min="0.01"
+                  value={initialCapital}
+                  onChange={(event) => setInitialCapital(event.target.value)}
+                  className="text-xs h-8 font-mono"
+                />
+              </label>
+            </AkField>
+
+            <AkField hint="PER FILL">
+              <label className="flex flex-col gap-1 w-full">
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">FEE RATE</AkFieldLabel>
+                <AkInput
+                  type="number"
+                  aria-label="FEE RATE"
+                  min="0"
+                  max="0.05"
+                  step="0.0001"
+                  value={feeRate}
+                  onChange={(event) => setFeeRate(event.target.value)}
+                  className="text-xs h-8 font-mono"
+                />
+              </label>
+            </AkField>
+
+            <AkField hint="ADVERSE">
+              <label className="flex flex-col gap-1 w-full">
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">SLIPPAGE RATE</AkFieldLabel>
+                <AkInput
+                  type="number"
+                  aria-label="SLIPPAGE RATE"
+                  min="0"
+                  max="0.05"
+                  step="0.0001"
+                  value={slippageRate}
+                  onChange={(event) => setSlippageRate(event.target.value)}
+                  className="text-xs h-8 font-mono"
+                />
+              </label>
+            </AkField>
+
+            <div className="flex flex-col justify-end">
+              <AkButton
+                data-testid="replay-seed"
+                variant="action"
+                disabled={busy}
+                onClick={() => onStart({ initialCapital: Number(initialCapital), feeRate: Number(feeRate), slippageRate: Number(slippageRate) })}
+                icon={busy ? <LoaderCircle className="spin" size={13} /> : <Play size={13} />}
+                className="h-8 text-xs font-bold"
+              >
+                Seed {symbol} · {timeframe}
+              </AkButton>
+            </div>
+          </div>
+          <p className="text-[11px] text-[var(--ak-text-secondary)] flex items-center gap-1.5 opacity-80">
+            <span>ℹ️</span> Only completed bars at or before the selected boundary are loaded. Future candles remain strictly hidden until advanced.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
+                <strong className="font-mono text-xs">{symbol} · {timeframe}</strong>
+              </div>
+              <span className="text-xs text-[var(--ak-text-secondary)] font-mono">
+                Cursor: <AkNum as="span" className="text-[var(--ak-text-primary)]">{cursor ? new Date(cursor.timestamp).toLocaleString() : "—"}</AkNum>
+              </span>
+              <AkTag variant="neutral" className="text-[10px] font-mono">
+                {session.bars.length} BARS REVEALED
+              </AkTag>
+              {session.candleSource === "local-cache" && (
+                <AkTag variant="advanced" className="text-[10px]">
+                  LOCAL CACHE
+                </AkTag>
+              )}
+            </div>
+
+            <div className="replay-actions flex items-center gap-2">
+              <AkButton
+                variant={playing ? "default" : "action"}
+                disabled={busy || session.status !== "active"}
+                onClick={onTogglePlay}
+                icon={busy ? <LoaderCircle className="spin" size={13} /> : playing ? <Pause size={13} /> : <Play size={13} />}
+                className="h-7 text-xs font-bold"
+                title="Shortcut: Space"
+              >
+                {playing ? "Pause" : "Play"} <span className="opacity-60 text-[10px] ml-1">[Space]</span>
+              </AkButton>
+
+              <AkButton
+                data-testid="replay-step"
+                variant="outline"
+                disabled={busy || playing || session.status !== "active"}
+                onClick={onStep}
+                icon={<SkipForward size={13} />}
+                className="h-7 text-xs font-bold"
+                title="Shortcut: Right Arrow or N"
+              >
+                Step <span className="opacity-60 text-[10px] ml-1">[→]</span>
+              </AkButton>
+
+              <div className="flex items-center gap-1 bg-[var(--ak-surface-canvas)] px-2 py-0.5 border border-[var(--ak-border)] text-xs">
+                <FastForward size={12} className="text-[var(--ak-signal-info)]" />
+                <select
+                  aria-label="Replay speed"
+                  value={speed}
+                  onChange={(event) => onSpeedChange(Number(event.target.value))}
+                  className="bg-transparent text-xs font-mono outline-none cursor-pointer"
+                >
+                  <option value={0.5}>0.5×</option>
+                  <option value={1}>1×</option>
+                  <option value={2}>2×</option>
+                  <option value={5}>5×</option>
+                </select>
+              </div>
+
+              <AkButton
+                variant="outline"
+                disabled={busy || session.status !== "active"}
+                onClick={onFinish}
+                icon={<Square size={12} />}
+                className="h-7 text-xs"
+              >
+                Finish
+              </AkButton>
+
+              <AkButton
+                variant="default"
+                disabled={busy || playing}
+                onClick={onNewSession}
+                icon={<RotateCcw size={12} />}
+                className="h-7 text-xs"
+              >
+                New session
+              </AkButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-2">
+          <AkNotice variant="danger" code="REPLAY.ERR" title="Transport Alert">
+            {error}
+          </AkNotice>
+        </div>
+      )}
+    </div>
+  );
 }

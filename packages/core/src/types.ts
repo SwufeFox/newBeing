@@ -1,4 +1,4 @@
-export const ENGINE_VERSION = "newbeing-backtest/0.1.0";
+export const ENGINE_VERSION = "newbeing-backtest/0.2.0";
 
 export type Timeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 export type ExchangeId = "binance" | "coinbaseexchange" | "okx" | "kraken";
@@ -43,6 +43,8 @@ export interface StrategyDefinition {
 }
 
 export interface BacktestConfig {
+  /** New runs use spot. Historical synthetic shorts require explicit legacy-margin selection. */
+  accountMode?: "spot" | "legacy-margin";
   initialCapital: number;
   positionFraction: number;
   feeRate: number;
@@ -112,6 +114,8 @@ export interface BacktestSweepResult {
   engineVersion: string;
   parameter: string;
   values: number[];
+  /** Absent means legacy input-only IDs; reruns compare the full saved outputs. */
+  outcomeVersion?: 2;
   runs: Array<{ value: number; resultId: string; outcomeId: string; metrics: BacktestMetrics }>;
   parameters: StrategyParameters;
   config: BacktestConfig;
@@ -137,6 +141,8 @@ export interface BacktestResult {
   strategyVersion: string;
   parameters: StrategyParameters;
   assumptions: BacktestConfig;
+  /** Absent on historical records; never infer a current policy for those outputs. */
+  executionPolicy?: typeof import("./policy.js").SPOT_EXECUTION_POLICY | typeof import("./policy.js").LEGACY_MARGIN_EXECUTION_POLICY;
   execution: BacktestExecutionAssumptions;
   engineVersion: string;
   createdAt: string;
@@ -221,7 +227,7 @@ export const DEFAULT_WORKSPACE_STATE: WorkspaceState = {
 export const BACKTEST_EXECUTION_ASSUMPTIONS: BacktestExecutionAssumptions = {
   signalTiming: "Evaluated after each completed bar close using only the prefix through that bar.",
   fillTiming: "Signals fill at the next bar open with adverse side-aware slippage; no same-close fills.",
-  intrabarStops: "OHLC barrier checks use stop-first when stop and target both hit; gaps through a barrier fill at the bar open, then slippage and fee apply.",
+  intrabarStops: "Opening gaps execute before opening signals; intrabar protection follows opening orders. Stop wins ambiguous ranges. Entry-bar targets are deferred; entry-bar stops remain active. Adverse slippage and quote fees apply.",
   endOfData: "Any open position is closed at the final bar close with adverse slippage and fee.",
   sharpeMethod: "Sample standard deviation of bar-to-bar marked-equity returns; annualized by square root of 365.25 days divided by the median observed bar duration; no risk-free rate.",
 };

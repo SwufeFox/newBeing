@@ -1,4 +1,5 @@
-import { LedgerValidationError, quantityUnits, SIMULATION_PRECISION, matchReplayBar, submitReplayOrder, validateReplayConfig, type InstrumentIdentity, type ReplayConfig, type ReplayExecution, type ReplayOrderInput } from "@newbeing/core";
+import { canonicalJson, loadDatasetSnapshot } from "./snapshots.js";
+import { SPOT_EXECUTION_POLICY, LedgerValidationError, quantityUnits, SIMULATION_PRECISION, matchReplayBar, submitReplayOrder, validateReplayConfig, type InstrumentIdentity, type ReplayConfig, type ReplayExecution, type ReplayOrderInput } from "@newbeing/core";
 import { paperRecoveries, replayExecutions } from "./schema.js";
 import { and, asc, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { DEFAULT_WORKSPACE_STATE, fillPaperOrder, type BacktestResult, type Candle, type ExchangeId, type OrderPreview, type PaperOrder, type PaperPortfolio, type ReplaySession, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
@@ -76,7 +77,7 @@ export function getWorkspaceState(): { state: WorkspaceState; updatedAt: number 
 }
 
 export function saveWorkspaceState(state: WorkspaceState): number {
-  const updatedAt = Date.now();
+  const updatedAt = Math.max(Date.now(), getWorkspaceState().updatedAt + 1);
   getDatabase().insert(workspaceStates).values({ id: 1, payload: JSON.stringify(state), updatedAt })
     .onConflictDoUpdate({ target: workspaceStates.id, set: { payload: JSON.stringify(state), updatedAt } }).run();
   return updatedAt;
@@ -525,6 +526,11 @@ export function advanceReplaySession(
     if (candle.timestamp <= current.cursor) throw new Error("Replay candle must move strictly forward.");
     const execution = getReplayExecution(id);
     if (execution) {
+      if (execution.policyVersion !== 2) throw new Error("Legacy Replay execution is read-only; start a new session to select the current policy.");
+      if (execution.datasetId) {
+        const next = nextFrozenReplayBar(id);
+        if (!next || canonicalJson(next) !== canonicalJson(candle)) throw new Error("Replay candle does not match its frozen dataset.");
+      }
       if (expectedRevision !== undefined && execution.revision !== expectedRevision) throw new Error("Replay revision conflict; reload before retrying.");
       const intervals: Record<Timeframe, number> = { "1m": 60000, "5m": 300000, "15m": 900000, "30m": 1800000, "1h": 3600000, "4h": 14400000, "1d": 86400000 };
       if (candle.timestamp !== current.cursor + intervals[current.timeframe]) throw new Error("Replay requires the next contiguous bar.");
@@ -560,13 +566,19 @@ export function advanceReplaySession(
   }, { behavior: "immediate" });
 }
 
-export function createConfiguredReplaySession(session: ReplaySession, instrument: InstrumentIdentity, config: ReplayConfig): ReplayExecution {
+export function createConfiguredReplaySession(session: ReplaySession, instrument: InstrumentIdentity, config: ReplayConfig, datasetId?: string): ReplayExecution {
   validateReplayConfig(config);
+  if (datasetId) {
+    const snapshot = loadDatasetSnapshot(datasetId);
+    if (snapshot.exchange !== session.exchange || snapshot.symbol !== session.symbol || snapshot.timeframe !== session.timeframe) throw new Error("Frozen Replay dataset instrument mismatch.");
+    const seed = snapshot.candles.filter((bar) => bar.timestamp <= session.cursor).slice(-session.bars.length);
+    if (!seed.length || seed.at(-1)?.timestamp !== session.cursor || canonicalJson(seed) !== canonicalJson(session.bars)) throw new Error("Replay seed must match its frozen dataset.");
+  }
   if (instrument.venue !== session.exchange || instrument.symbol !== session.symbol || instrument.id !== `${instrument.venue}:spot:${encodeURIComponent(instrument.nativeId)}` || !instrument.nativeId || instrument.marketType !== "spot" || `${instrument.base}/${instrument.quote}` !== session.symbol) throw new Error("Replay instrument does not match session.");
   return getDatabase().transaction((tx) => {
     createReplaySession(session);
     const state: ReplayExecution = {
-      version: 1, revision: 0, simulationPrecision: SIMULATION_PRECISION,
+      version: 1, policyVersion: 2, executionPolicy: { ...SPOT_EXECUTION_POLICY }, ...(datasetId ? { datasetId } : {}), revision: 0, simulationPrecision: SIMULATION_PRECISION,
       account: { id: replayAccountId(session.id, session.symbol, session.exchange), venue: session.exchange, mode: "replay", quote: instrument.quote },
       instrument, config,
       portfolio: { quoteBalance: config.initialCapital, baseBalance: 0, averageEntryPrice: null, realizedPnl: 0, feeRate: config.feeRate },
@@ -580,6 +592,14 @@ export function createConfiguredReplaySession(session: ReplaySession, instrument
 export function getReplayExecution(id: string): ReplayExecution | undefined {
   const row = getDatabase().select().from(replayExecutions).where(eq(replayExecutions.sessionId, id)).get();
   return row ? JSON.parse(row.payload) as ReplayExecution : undefined;
+}
+
+export function nextFrozenReplayBar(id: string): Candle | undefined {
+  const session = getReplaySession(id);
+  const execution = getReplayExecution(id);
+  if (!session || !execution?.datasetId) throw new Error("A frozen Replay dataset is required.");
+  const snapshot = loadDatasetSnapshot(execution.datasetId);
+  return snapshot.candles.find((bar) => bar.timestamp > session.cursor);
 }
 
 export type ReplayCommand =
@@ -601,6 +621,7 @@ export function commandReplay(id: string, expectedRevision: number, command: Rep
     const session = getReplaySession(id);
     const state = getReplayExecution(id);
     if (!session || !state) throw new Error("Replay execution not found.");
+    if (state.policyVersion !== 2) throw new Error("Legacy Replay execution is read-only; start a new session to select the current policy.");
     // Exact retries of an order remain safe even after the cursor/revision has moved.
     if (command.action === "order" && state.orders.some((order) => order.clientOrderId === command.order.clientOrderId)) {
       submitReplayOrder(state, command.order, session.cursor);

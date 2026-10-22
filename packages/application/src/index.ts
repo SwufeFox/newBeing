@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { getStrategy, runBacktest, type BacktestConfig, type BacktestResult, type StrategyParameters } from "@newbeing/core";
-import { findCandleGaps, getExchangeAdapter, removeFormingCandles, type ExchangeAdapter } from "@newbeing/market-data";
+import { fetchLatestCompletedCandles, findCandleGaps, getExchangeAdapter, type ExchangeAdapter } from "@newbeing/market-data";
 import type { ExchangeId, Timeframe } from "@newbeing/core";
-import { getExperiment, getWorkspaceState, identifyDataset, saveDatasetSnapshot, saveResearchResults, saveWorkspaceState } from "@newbeing/storage";
-import { assertResearchAvailable, originalResearchInput, reproductionFor, ResearchError, resolveResearchStrategy } from "./research-inputs.js";
+import { getExperiment, getWorkspaceState, identifyDataset, saveDatasetSnapshot, saveResearchResults } from "@newbeing/storage";
+import { assertResearchAvailable, assertSameOutcome, originalResearchInput, reproductionFor, ResearchError, resolveResearchStrategy } from "./research-inputs.js";
 export { ResearchError } from "./research-inputs.js";
+export * from "./spot.js";
 export * from "./paper.js";
 export * from "./replay.js";
 export * from "./sweep.js";
+export * from "./train-holdout.js";
+export * from "./evaluations.js";
 
 export interface ResearchBacktestRequest {
   /** Venue to source candles from. Optional for backwards compatibility;
@@ -25,16 +28,17 @@ export interface ResearchBacktestRequest {
 
 export async function runResearchBacktest(
   request: ResearchBacktestRequest,
-  dependencies: { marketAdapter?: ExchangeAdapter; candleProvenance?: () => { source: "live" | "local-cache"; cachedAt: string | null; fallback: boolean } | null } = {},
+  dependencies: { now?: () => number; marketAdapter?: ExchangeAdapter; candleProvenance?: () => { source: "live" | "local-cache"; cachedAt: string | null; fallback: boolean } | null } = {},
 ): Promise<BacktestResult> {
   assertResearchAvailable();
   const { strategy, parameters } = resolveResearchStrategy(request.strategyId, request.parameters);
   /* One venue for the whole run: sourcing candles from one place and labelling
      the result with another would make the result untraceable. */
-  const exchange = request.exchange ?? getWorkspaceState().state.exchange;
+  const workspace = getWorkspaceState();
+  const exchange = request.exchange ?? workspace.state.exchange;
   const adapter = dependencies.marketAdapter ?? getExchangeAdapter(exchange);
-  const rawCandles = await adapter.fetchOHLCV(request.symbol, request.timeframe, request.limit ?? 600);
-  const candles = removeFormingCandles(rawCandles, request.timeframe);
+  const candles = await fetchLatestCompletedCandles(adapter, request.symbol, request.timeframe, request.limit ?? 600, dependencies.now?.() ?? Date.now());
+  assertResearchAvailable();
   if (candles.length < 2) throw new Error(`${exchange} returned fewer than two completed bars; no backtest was saved.`);
   const gaps = findCandleGaps(candles, request.timeframe);
   if (gaps.length > 0) {
@@ -58,13 +62,10 @@ export async function runResearchBacktest(
   }
   saveDatasetSnapshot({ exchange, symbol: request.symbol, timeframe: request.timeframe, candles });
   result.reproduction = reproductionFor(result.datasetId);
-  saveResearchResults([result]);
-  if (request.openInWorkspace ?? true) {
-    const current = getWorkspaceState().state;
-    /* Research is the workspace that studies strategies now, so a fresh run
-       lands there with its result selected rather than in a retired mode. */
-    saveWorkspaceState({ ...current, activeWorkspace: "research", selectedStrategyId: strategy.id, activeBacktestId: result.resultId });
-  }
+  saveResearchResults([result], undefined, (request.openInWorkspace ?? true) ? {
+    expected: workspace,
+    state: { ...workspace.state, activeWorkspace: "research", selectedStrategyId: strategy.id, activeBacktestId: result.resultId },
+  } : undefined);
 
   return result;
 }
@@ -78,6 +79,7 @@ export function rerunResearchBacktest(id: string): BacktestResult {
   const result = runBacktest({ candles: snapshot.candles, exchange: snapshot.exchange, symbol: snapshot.symbol, timeframe: snapshot.timeframe, datasetId: saved.datasetId, strategy, parameters: saved.parameters, config: saved.assumptions, resultId: randomUUID() });
   result.reproduction = reproduction;
   result.rerunOf = id;
+  assertSameOutcome(saved, result);
   saveResearchResults([result]);
   return result;
 }

@@ -1,3 +1,4 @@
+export * from "./spot.js";
 export * from "./db.js";
 export * from "./repositories.js";
 export * from "./schema.js";

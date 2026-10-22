@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { EXCHANGE_TIMEFRAMES, logEvent, type ExchangeId, type ReplaySession, type Timeframe } from "@newbeing/core";
 import { completedBarsThrough, findCandleGaps, timeframeMilliseconds } from "@newbeing/market-data";
-import { createConfiguredReplaySession, getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
+import { createConfiguredReplaySession, loadDatasetSnapshot, getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
 import { getWebMarketAdapter, marketDataSourceLabel } from "@/lib/market-adapter";
 
 import { createCandleCacheAdapter } from "@/lib/candle-cache-adapter";
@@ -17,6 +17,7 @@ const requestSchema = z.object({
      only ruled out valid markets. */
   symbol: z.string().regex(/^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/),
   timeframe: z.enum(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]),
+  datasetId: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
   endAt: z.number().int().positive(),
   limit: z.number().int().min(50).max(500).default(200),
   /* Optional: defaults to the workspace's active venue. */
@@ -45,10 +46,12 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (!adapter.getInstrument) throw new Error("Native instrument metadata is unavailable for this connector.");
     const instrument = await adapter.getInstrument(parsed.data.symbol);
     if (!instrument.active) throw new Error("Instrument is inactive.");
-    const cachedAdapter = createCandleCacheAdapter(exchange, adapter);
-    const fetched = await cachedAdapter.adapter.fetchOHLCVSinceThrough(parsed.data.symbol, timeframe, since, parsed.data.limit + 4, parsed.data.endAt);
+    const frozen = parsed.data.datasetId ? loadDatasetSnapshot(parsed.data.datasetId) : undefined;
+    if (frozen && (frozen.exchange !== exchange || frozen.symbol !== parsed.data.symbol || frozen.timeframe !== timeframe)) throw new Error("Frozen Replay dataset instrument mismatch.");
+    const cachedAdapter = frozen ? undefined : createCandleCacheAdapter(exchange, adapter);
+    const fetched = frozen ? frozen.candles : await cachedAdapter!.adapter.fetchOHLCVSinceThrough(parsed.data.symbol, timeframe, since, parsed.data.limit + 4, parsed.data.endAt);
     const candles = completedBarsThrough(fetched, timeframe, parsed.data.endAt).slice(-parsed.data.limit);
-    const provenance = cachedAdapter.getLastResult();
+    const provenance = cachedAdapter?.getLastResult();
     if (candles.length < 2) return NextResponse.json({ error: "Not enough completed historical bars at this time." }, { status: 422 });
     const gaps = findCandleGaps(candles, timeframe);
     if (gaps.length > 0) return NextResponse.json({ error: `Replay seed contains ${gaps.length} missing interval(s); choose a continuous dataset.` }, { status: 422 });
@@ -58,15 +61,15 @@ export async function POST(request: Request): Promise<NextResponse> {
     const session: ReplaySession = {
       id: randomUUID(), exchange, symbol: parsed.data.symbol, timeframe, startAt: parsed.data.endAt,
       cursor: last.timestamp, bars: candles,
-      candleSource: provenance?.source ?? "live",
+      ...(!frozen ? { candleSource: provenance?.source ?? "live" } : {}),
       ...(provenance?.cache ? { candleCache: { fallback: provenance.cache.fallback, cachedAt: provenance.cache.cachedAt } } : {}),
       status: "active", createdAt: now, updatedAt: now,
     };
-    const execution = createConfiguredReplaySession(session, instrument, { initialCapital: parsed.data.initialCapital, feeRate: parsed.data.feeRate, slippageRate: parsed.data.slippageRate });
+    const execution = createConfiguredReplaySession(session, instrument, { initialCapital: parsed.data.initialCapital, feeRate: parsed.data.feeRate, slippageRate: parsed.data.slippageRate }, parsed.data.datasetId);
     const portfolio = execution.portfolio;
     const current = getWorkspaceState().state;
     saveWorkspaceState({ ...current, activeWorkspace: "replay", activeReplayId: session.id });
-    return NextResponse.json({ session, portfolio, execution, source: provenance?.source === "local-cache" ? "Local persistent candle cache fallback" : `${marketDataSourceLabel(exchange)} historical bars`, cache: provenance?.cache ?? { cached: false, cachedAt: null, fallback: false }, futureBarsLoaded: 0 }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ session, portfolio, execution, source: frozen ? "Frozen research dataset snapshot" : provenance?.source === "local-cache" ? "Local persistent candle cache fallback" : `${marketDataSourceLabel(exchange)} historical bars`, cache: provenance?.cache ?? { cached: false, cachedAt: null, fallback: false }, futureBarsLoaded: 0 }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Replay could not be initialized.";
     logEvent("warn", "replay.start_failed", { message });

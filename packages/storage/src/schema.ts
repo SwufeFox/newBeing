@@ -58,6 +58,11 @@ export const experiments = sqliteTable("experiments", {
   createdAt: integer("created_at").notNull(),
 });
 
+export const spotAccounts = sqliteTable("spot_accounts", {
+  id: text("id").primaryKey(),
+  payload: text("payload").notNull(),
+});
+
 export const paperAccounts = sqliteTable("paper_accounts", {
   id: text("id").primaryKey(),
   quoteBalance: real("quote_balance").notNull(),

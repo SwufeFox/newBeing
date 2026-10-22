@@ -50,7 +50,12 @@ export async function POST(request: Request): Promise<NextResponse> {
   try {
     const blocked = unsupported();
     if (blocked) return blocked;
-    const body: unknown = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body." }, { status: 400 });
+    }
     const parsed = orderSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid paper order." }, { status: 400 });
     const exchange = parsed.data.exchange ?? getWorkspaceState().state.exchange;

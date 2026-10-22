@@ -40,7 +40,7 @@ describe("backtest metric and protective-level validation", () => {
   it("rejects non-positive short take-profit targets", () => {
     expect(() => runBacktest({
       ...baseInput,
-      config: { ...baseInput.config, allowShorts: true, takeProfitPct: 1 },
+      config: { ...baseInput.config, accountMode: "legacy-margin", allowShorts: true, takeProfitPct: 1 },
     })).toThrow("Short take-profit percentage must be less than 1");
   });
 });

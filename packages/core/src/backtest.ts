@@ -1,3 +1,6 @@
+import { LEGACY_MARGIN_EXECUTION_POLICY, SPOT_EXECUTION_POLICY, longProtectionFill, spotBuyQuantity } from "./policy.js";
+import { decimal, money, validateMoney } from "./ledger.js";
+import { fillPaperOrder, type PaperPortfolio } from "./paper.js";
 import { BACKTEST_EXECUTION_ASSUMPTIONS, ENGINE_VERSION } from "./types.js";
 import type {
   BacktestConfig,
@@ -38,6 +41,12 @@ export interface RunBacktestInput {
 }
 
 function validateInput(input: RunBacktestInput): void {
+  if (input.config.accountMode !== undefined && !["spot", "legacy-margin"].includes(input.config.accountMode)) throw new Error("Unsupported account mode.");
+  if (input.config.accountMode !== "legacy-margin") {
+    validateMoney(input.config.initialCapital);
+    if (input.config.allowShorts) throw new Error("Spot does not support shorts. Select explicit legacy-margin simulation for historical synthetic strategies.");
+    if (!/^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/.test(input.symbol)) throw new Error("Spot requires a BASE/QUOTE instrument; derivatives are unsupported.");
+  }
   if (input.candles.length < 2) throw new Error("At least two OHLCV bars are required.");
   if (!(input.config.initialCapital > 0) || !Number.isFinite(input.config.initialCapital)) {
     throw new Error("Initial capital must be a finite positive number.");
@@ -143,6 +152,14 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
   const trades: BacktestTrade[] = [];
   const equityCurve: EquityPoint[] = [];
   let cash = config.initialCapital;
+  const spot = config.accountMode !== "legacy-margin";
+  let portfolio: PaperPortfolio = { quoteBalance: cash, baseBalance: 0, costBasis: 0, averageEntryPrice: null, realizedPnl: 0, feeRate: config.feeRate };
+  const settle = (side: "buy" | "sell", quantity: number, price: number, time: number) => {
+    const fill = fillPaperOrder({ clientOrderId: `backtest-${tradeCounter}-${side}`, symbol: input.symbol, side, quantity, status: "submitted", fillPrice: null, fee: 0, createdAt: new Date(time).toISOString() }, portfolio, price);
+    portfolio = fill.portfolio;
+    cash = portfolio.quoteBalance;
+    return fill.order.fee;
+  };
   const positionState: { current: OpenPosition | null } = { current: null };
   let totalFees = 0;
   let tradeCounter = 0;
@@ -155,8 +172,10 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
     const exitPrice = withSlippage(rawPrice, orderSide, config.slippageRate);
     const direction = closing.side === "long" ? 1 : -1;
     const grossPnl = direction * (exitPrice - closing.entryPrice) * closing.quantity;
-    const exitFee = Math.abs(exitPrice * closing.quantity) * config.feeRate;
-    cash += grossPnl - exitFee;
+    const realizedBefore = portfolio.realizedPnl;
+    const exitFee = spot ? settle("sell", closing.quantity, exitPrice, time) : Math.abs(exitPrice * closing.quantity) * config.feeRate;
+    if (!spot) cash += grossPnl - exitFee;
+    const netPnl = spot ? money(decimal(portfolio.realizedPnl).minus(realizedBefore)) : grossPnl - closing.entryFee - exitFee;
     totalFees += exitFee;
     tradeCounter += 1;
     trades.push({
@@ -169,8 +188,8 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
       quantity: closing.quantity,
       grossPnl,
       fees: closing.entryFee + exitFee,
-      netPnl: grossPnl - closing.entryFee - exitFee,
-      returnPct: closing.entryNotional > 0 ? (grossPnl - closing.entryFee - exitFee) / closing.entryNotional : 0,
+      netPnl,
+      returnPct: closing.entryNotional > 0 ? netPnl / closing.entryNotional : 0,
       exitReason: reason,
     });
     positionState.current = null;
@@ -182,14 +201,16 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
     if (notional <= 0) return;
     const orderSide = side === "long" ? "buy" : "sell";
     const entryPrice = withSlippage(rawPrice, orderSide, config.slippageRate);
-    const quantity = notional / entryPrice;
-    const entryFee = notional * config.feeRate;
-    cash -= entryFee;
+    const quantity = spot ? spotBuyQuantity(money(notional), entryPrice, config.feeRate) : notional / entryPrice;
+    if (quantity <= 0) return;
+    const entryFee = spot ? settle("buy", quantity, entryPrice, time) : notional * config.feeRate;
+    if (!spot) cash -= entryFee;
     totalFees += entryFee;
-    positionState.current = { side, entryTime: time, entryPrice, quantity, entryFee, entryNotional: notional };
+    positionState.current = { side, entryTime: time, entryPrice, quantity, entryFee, entryNotional: spot ? money(decimal(entryPrice).times(quantity)) : notional };
   };
 
-  const evaluateProtection = (candle: Candle): void => {
+  const evaluateProtection = (candle: Candle, phase: "open" | "range"): void => {
+    if (!spot && phase === "open") return;
     const current = positionState.current;
     if (!current) return;
     const isLong = current.side === "long";
@@ -199,8 +220,15 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
     const target = config.takeProfitPct === undefined
       ? null
       : current.entryPrice * (isLong ? 1 + config.takeProfitPct : 1 - config.takeProfitPct);
-    const stopHit = stop !== null && (isLong ? candle.low <= stop : candle.high >= stop);
-    const targetHit = target !== null && (isLong ? candle.high >= target : candle.low <= target);
+    if (isLong && spot) {
+      const protection = longProtectionFill(candle, stop ?? undefined, target ?? undefined, phase, current.entryTime < candle.timestamp);
+      if (protection) closePosition(protection.price, candle.timestamp, protection.reason, "sell");
+      return;
+    }
+    const low = phase === "open" ? candle.open : candle.low;
+    const high = phase === "open" ? candle.open : candle.high;
+    const stopHit = stop !== null && (isLong ? low <= stop : high >= stop);
+    const targetHit = target !== null && (isLong ? high >= target : low <= target);
     // Conservative OHLC assumption: if both levels print in one candle, stop wins.
     if (stopHit && stop !== null) {
       const gappedThroughStop = isLong ? candle.open <= stop : candle.open >= stop;
@@ -216,19 +244,21 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
   for (let index = 0; index < candles.length; index += 1) {
     const candle = candles[index];
     if (!candle) continue;
+    const hadPositionAtOpen = positionState.current !== null;
+    evaluateProtection(candle, "open");
     if (index > 0) {
       const desired = pending === "short" && !config.allowShorts ? "flat" : pending;
       const openAtStart = positionState.current;
       if (openAtStart && desired !== openAtStart.side) {
         closePosition(candle.open, candle.timestamp, "signal", openAtStart.side === "long" ? "sell" : "buy");
       }
-      if (!positionState.current && desired !== "flat") openPosition(desired, candle.open, candle.timestamp);
+      if (!positionState.current && desired !== "flat" && (!hadPositionAtOpen || openAtStart !== null)) openPosition(desired, candle.open, candle.timestamp);
     }
 
-    evaluateProtection(candle);
+    evaluateProtection(candle, "range");
     const markedPosition = positionState.current;
     const markedEquity = markedPosition
-      ? cash + (markedPosition.side === "long" ? 1 : -1) * (candle.close - markedPosition.entryPrice) * markedPosition.quantity
+      ? spot ? money(decimal(cash).plus(decimal(candle.close).times(markedPosition.quantity))) : cash + (markedPosition.side === "long" ? 1 : -1) * (candle.close - markedPosition.entryPrice) * markedPosition.quantity
       : cash;
     const previousPoint = equityCurve.at(-1);
     const peak = Math.max(config.initialCapital, previousPoint?.equity ?? config.initialCapital);
@@ -262,7 +292,8 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
     strategyVersion: strategy.version,
     parameters: { ...input.parameters },
     assumptions: { ...config },
-    execution: { ...BACKTEST_EXECUTION_ASSUMPTIONS },
+    executionPolicy: { ...(spot ? SPOT_EXECUTION_POLICY : LEGACY_MARGIN_EXECUTION_POLICY) },
+    execution: { ...BACKTEST_EXECUTION_ASSUMPTIONS, ...(!spot ? { intrabarStops: LEGACY_MARGIN_EXECUTION_POLICY.protection } : {}) },
     engineVersion: ENGINE_VERSION,
     createdAt: input.createdAt ?? new Date().toISOString(),
     metrics: buildMetrics(equityCurve, trades, config.initialCapital, totalFees, candles),

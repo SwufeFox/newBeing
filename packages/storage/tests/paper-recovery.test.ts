@@ -63,7 +63,7 @@ describe("explicit local Paper recovery after process failure", () => {
     expect(listPaperRecoveries()).toHaveLength(1);
     expect(listPendingPaperOrders()).toEqual([]);
     expect(() => recoverPaperIntent({ ...action, reason: "changed" })).toThrow(/already recovered/);
-  });
+  }, 30_000); // The child itself has a 15s deadline; allow startup and verification too.
 
   it("recognizes a committed fill after response loss without reapplying or cancelling it", () => {
     crashAt("committed");
@@ -75,7 +75,7 @@ describe("explicit local Paper recovery after process failure", () => {
     expect(finalizePaperFill(input.clientOrderId, 200, accountId).deduplicated).toBe(true);
     expect(getPaperPortfolio(accountId)).toEqual(before);
     expect(listPaperRecoveries()).toEqual([]);
-  });
+  }, 30_000);
 
   it("preserves unknown legacy ownership and flags manual review, without creating a wallet", () => {
     getDatabase().insert(paperOrders).values({ ...input, accountId: null, status: "unknown", fillPrice: null, fee: 0, createdAt: new Date(0).toISOString() }).run();

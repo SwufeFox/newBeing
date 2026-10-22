@@ -57,6 +57,9 @@ try {
   if (created.executable !== false) throw new Error("MCP create_strategy incorrectly marked a source draft executable.");
   const fetched = readPayload(await client.callTool({ name: "get_strategy", arguments: { strategy_id: strategyId } }));
   if (fetched.executable !== false) throw new Error("MCP get_strategy did not return the saved draft as non-executable.");
+  const shared = readPayload(await client.callTool({ name: "get_portfolio", arguments: { symbol: "BTC/USDT", account_mode: "shared-spot" } }));
+  if (shared.accountMode !== "shared-spot" || shared.account !== null) throw new Error("MCP shared-wallet reads must not seed or return a legacy wallet.");
+  if (!(await client.callTool({ name: "prepare_order", arguments: { symbol: "BTC/USDT", side: "buy", quantity: 1, account_mode: "shared-spot" } })).isError) throw new Error("MCP silently routed a shared preview to the legacy wallet.");
   const seedBar = { timestamp: 60_000, open: 100, high: 105, low: 95, close: 100, volume: 10 };
   const session: ReplaySession = { id: "mcp-smoke-replay", exchange: "binance", symbol: "BTC/USDT", timeframe: "1m", startAt: 120_000, cursor: 60_000, bars: [seedBar], status: "active", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString() };
   createConfiguredReplaySession(session, { id: "binance:spot:BTCUSDT", venue: "binance", nativeId: "BTCUSDT", symbol: session.symbol, base: "BTC", quote: "USDT", marketType: "spot" }, { initialCapital: 25_000, feeRate: 0.002, slippageRate: 0.001 });
@@ -72,6 +75,7 @@ try {
     { name: "get_market_data", arguments: { symbol: "ETH/USDT", timeframe: "1m" } },
     { name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1d" } },
     { name: "get_portfolio", arguments: { symbol: "ETH/USDT" } },
+    { name: "get_portfolio", arguments: { symbol: session.symbol, account_mode: "shared-spot" } },
     { name: "list_experiments", arguments: {} },
     { name: "get_backtest_result", arguments: { result_id: "hidden" } },
     { name: "prepare_order", arguments: { symbol: session.symbol, side: "buy", quantity: 1 } },

@@ -5,6 +5,8 @@ import { Check, LoaderCircle, Plus, Star, Trash2, WifiOff, X } from "lucide-reac
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
 import type { MarketSummary } from "@newbeing/market-data/types";
+import { AkTag, AkCorner, AkInput } from "@swufefox/ak-ui-react";
+import { Decoded } from "@/components/decoded";
 
 /** Data-transfer key used when a search result is dropped into the watchlist. */
 export const WATCHLIST_DRAG_TYPE = "application/x-newbeing-symbol";
@@ -45,15 +47,6 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // ── reorder ──────────────────────────────────────────────────────────────
-  /*
-   * Pointer-based, not HTML5 drag-and-drop. Two reasons:
-   *   1. the row's main control is a <button>, and a button swallows dragstart
-   *      on some engines, so native DnD never fired on the target row;
-   *   2. pointer events also give us touch support for free.
-   * The grip handles reordering; a symbol dragged in from the search popover
-   * still arrives as a native drop on the panel (that path works, and is the
-   * only part that needs cross-component dragging).
-   */
   const listRef = useRef<HTMLDivElement | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
@@ -176,12 +169,12 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
       onDrop={onPanelDrop}
     >
       <div className="panel-heading">
-        <div><Star size={13} /><span>WATCHLIST</span></div>
+        <div className="flex items-center gap-1.5"><Star size={13} className="text-[var(--ak-signal-action)]" /><span className="font-bold tracking-wider">WATCHLIST</span></div>
         <div className="watchlist-head-actions">
           <span className="count-label">{watchlist.length}</span>
           <button
             type="button"
-            className="watchlist-add-toggle"
+            className="watchlist-add-toggle transition-transform active:scale-95"
             aria-label={adding ? "Cancel adding a symbol" : "Add a symbol"}
             aria-expanded={adding}
             disabled={disabled}
@@ -207,6 +200,8 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
         >
           <input
             ref={inputRef}
+            className="ak-input"
+            data-slot="ak-input"
             value={draft}
             onChange={(event) => { setDraft(event.target.value); setAddError(null); }}
             placeholder="SOL or SOL/USDT"
@@ -214,9 +209,10 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
             spellCheck={false}
             autoComplete="off"
             disabled={disabled}
+            autoFocus
           />
-          <button type="submit" aria-label="Add symbol" disabled={disabled || draft.trim().length === 0}>
-            {addOk ? <Check size={12} /> : <Plus size={12} />}
+          <button type="submit" aria-label="Add symbol" disabled={disabled || draft.trim().length === 0} className="transition-transform active:scale-90">
+            {addOk ? <Check size={12} className="text-[var(--ak-signal-success)]" /> : <Plus size={12} />}
           </button>
         </form>
       )}
@@ -231,22 +227,27 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
           const quote = symbol.split("/")[1] ?? "";
           const change = summary?.changePct24h;
           const isDragging = dragFrom === index;
+          const isSelected = symbol === selected;
           const dropAbove = dragOver === index && dragFrom !== null && dragFrom > index;
           const dropBelow = dragOver === index && dragFrom !== null && dragFrom < index;
+          const changeFormatted = typeof change === "number" ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "—";
+          const isPositive = typeof change === "number" && change >= 0;
+
           return (
             <div
               key={symbol}
               className={[
-                "watch-row",
-                symbol === selected ? "selected" : "",
+                "watch-row relative transition-all duration-150",
+                isSelected ? "selected shadow-[0_0_12px_rgba(24,209,255,0.15)]" : "",
                 error && summary ? "stale" : "",
-                isDragging ? "is-dragging" : "",
+                isDragging ? "is-dragging opacity-60 scale-[0.98]" : "",
                 dropAbove ? "drop-before" : "",
                 dropBelow ? "drop-after" : "",
               ].filter(Boolean).join(" ")}
             >
+              {isSelected && <AkCorner position="tl" tone="info" />}
               <span
-                className="watch-grip"
+                className="watch-grip cursor-grab active:cursor-grabbing"
                 role="button"
                 tabIndex={-1}
                 aria-label={`Reorder ${symbol}`}
@@ -258,23 +259,43 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
                   setDragOver(index);
                 }}
               />
-              <button className="watch-row-main" onClick={() => setSymbol(symbol)} title={`Select ${symbol}`} disabled={disabled}>
-                <span className="watch-symbol"><strong>{base}</strong><small>{quote}</small></span>
+              <button
+                className="watch-row-main group"
+                onClick={() => setSymbol(symbol)}
+                title={`Select ${symbol}`}
+                disabled={disabled}
+              >
+                <span className="watch-symbol">
+                  <strong className="group-hover:text-[var(--ak-signal-info)] transition-colors">{base}</strong>
+                  <small className="opacity-70">/{quote}</small>
+                </span>
                 <span className="watch-quote">
-                  <strong>{quotePrice(summary?.last)}</strong>
-                  <small className={typeof change === "number" ? (change >= 0 ? "positive" : "negative") : "muted"}>
-                    {typeof change === "number" ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "—"}
-                  </small>
+                  <strong className="tabular-nums font-mono">
+                    <Decoded value={quotePrice(summary?.last)} trigger={`${symbol}|${summary?.last}`} />
+                  </strong>
+                  <AkTag
+                    variant={typeof change === "number" ? (isPositive ? "default" : "danger") : "neutral"}
+                    className={`text-[10px] px-1 py-0 h-4 min-h-0 tracking-tight leading-none ${isPositive ? "text-[var(--ak-signal-success)]" : ""}`}
+                  >
+                    {changeFormatted}
+                  </AkTag>
                 </span>
               </button>
-              <button className="watch-remove" aria-label={`Remove ${symbol} from watchlist`} onClick={() => remove(symbol)} disabled={disabled}><Trash2 size={12} /></button>
+              <button
+                className="watch-remove hover:text-[var(--ak-signal-danger)] transition-colors"
+                aria-label={`Remove ${symbol} from watchlist`}
+                onClick={() => remove(symbol)}
+                disabled={disabled}
+              >
+                <Trash2 size={12} />
+              </button>
             </div>
           );
         })}
 
         {watchlist.length === 0 && (
           <div className="empty-watchlist">
-            <Star size={14} />
+            <Star size={14} className="text-[var(--ak-signal-action)]" />
             <span>Empty. Add a symbol above, or drag one in from the search field.</span>
           </div>
         )}
@@ -287,7 +308,10 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
         )}
       </div>
 
-      <div className="watchlist-footnote">Drag to reorder</div>
+      <div className="watchlist-footnote flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] opacity-60">
+        <span>DRAG TO REORDER</span>
+        <span>{exchange.toUpperCase()} SPOT</span>
+      </div>
     </section>
   );
 }

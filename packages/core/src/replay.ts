@@ -1,3 +1,4 @@
+import { longProtectionFill, SPOT_EXECUTION_POLICY } from "./policy.js";
 import { LedgerValidationError, quantityUnits, subtractQuantity, validateMoney, decimal, money } from "./ledger.js";
 import type { Candle, ExchangeId } from "./types.js";
 import { fillPaperOrder, type PaperPortfolio } from "./paper.js";
@@ -59,6 +60,10 @@ export interface ReplayFill {
 }
 export interface ReplayExecution {
   version: 1;
+  /** Missing on historical sessions, whose execution remains read-only. */
+  policyVersion?: 2;
+  executionPolicy?: typeof SPOT_EXECUTION_POLICY;
+  datasetId?: string;
   simulationPrecision?: typeof import("./ledger.js").SIMULATION_PRECISION;
   revision: number;
   account: AccountIdentity;
@@ -115,23 +120,26 @@ function applyFill(state: ReplayExecution, orderId: string, side: "buy" | "sell"
   state.fills.push({ id: `${orderId}:${bar.timestamp}:${reason}`, orderId, accountId: state.account.id, instrumentId: state.instrument.id, timestamp: bar.timestamp, side, quantity, price, fee: result.order.fee, reason });
   return { price, fee: result.order.fee };
 }
-function runBrackets(state: ReplayExecution, bar: Candle): void {
+function runBrackets(state: ReplayExecution, bar: Candle, phase: "open" | "range", onlyOrderId?: string): void {
   for (const bracket of [...state.brackets]) {
-    const stop = bracket.stopLoss !== undefined && bar.low <= bracket.stopLoss;
-    const target = bracket.openedAt < bar.timestamp && bracket.takeProfit !== undefined && bar.high >= bracket.takeProfit;
-    if (!stop && !target) continue;
-    const price = stop ? Math.min(bar.open, bracket.stopLoss!) : Math.max(bar.open, bracket.takeProfit!);
-    applyFill(state, bracket.orderId, "sell", bracket.quantity, price, bar, stop ? "stop-loss" : "take-profit");
+    if (onlyOrderId !== undefined && bracket.orderId !== onlyOrderId) continue;
+    const protection = longProtectionFill(bar, bracket.stopLoss, bracket.takeProfit, phase, bracket.openedAt < bar.timestamp);
+    if (!protection) continue;
+    applyFill(state, bracket.orderId, "sell", bracket.quantity, protection.price, bar, protection.reason);
     bracket.quantity = 0;
   }
   state.brackets = state.brackets.filter((bracket) => bracket.quantity > 0);
 }
 export function matchReplayBar(state: ReplayExecution, bar: Candle): void {
   if (![bar.timestamp, bar.open, bar.high, bar.low, bar.close, bar.volume].every(Number.isFinite) || bar.low <= 0 || bar.low > Math.min(bar.open, bar.close) || bar.high < Math.max(bar.open, bar.close) || bar.volume < 0) throw new Error("Invalid Replay OHLCV bar.");
-  runBrackets(state, bar);
+  runBrackets(state, bar, "open");
+  for (const phase of ["open", "range"] as const) {
+  if (phase === "range") runBrackets(state, bar, "range");
   for (const order of state.orders) {
     if (order.status !== "submitted" || order.submittedAt >= bar.timestamp) continue;
     const buy = order.side === "buy";
+    const executableAtOpen = order.type === "market" || (order.type === "limit" ? (buy ? bar.open <= order.price! : bar.open >= order.price!) : (buy ? bar.open >= order.price! : bar.open <= order.price!));
+    if ((phase === "open") !== executableAtOpen) continue;
     if (order.type === "limit" && !(buy ? bar.low <= order.price! : bar.high >= order.price!)) continue;
     if (order.type === "stop" && !(buy ? bar.high >= order.price! : bar.low <= order.price!)) continue;
     let raw = order.type === "limit" ? order.price! : bar.open;
@@ -157,8 +165,9 @@ export function matchReplayBar(state: ReplayExecution, bar: Candle): void {
     if (buy) {
       // Track all inventory lots so manual partial closes reduce protected lots correctly.
       state.brackets.push({ orderId: order.clientOrderId, quantity: order.quantity, openedAt: bar.timestamp, ...(order.stopLoss !== undefined ? { stopLoss: order.stopLoss } : {}), ...(order.takeProfit !== undefined ? { takeProfit: order.takeProfit } : {}) });
-      runBrackets(state, bar);
+      if (phase === "range") runBrackets(state, bar, "range", order.clientOrderId);
     } else reduceBrackets(state, order.quantity);
+  }
   }
   state.equity.push({ timestamp: bar.timestamp, equity: money(decimal(state.portfolio.quoteBalance).plus(decimal(state.portfolio.baseBalance).times(bar.close))) });
 }
@@ -167,5 +176,5 @@ export function replayReport(state: ReplayExecution, mark: number) {
   let peak = state.config.initialCapital;
   let maxDrawdown = 0;
   for (const point of state.equity) { peak = Math.max(peak, point.equity); maxDrawdown = Math.max(maxDrawdown, (peak - point.equity) / peak); }
-  return { initialCapital: state.config.initialCapital, equity, netPnl: money(decimal(equity).minus(state.config.initialCapital)), realizedPnl: state.portfolio.realizedPnl, unrealizedPnl: money(decimal(state.portfolio.baseBalance).times(mark).minus(state.portfolio.costBasis ?? decimal(state.portfolio.baseBalance).times(state.portfolio.averageEntryPrice ?? mark))), fees: money(state.fills.reduce((sum, fill) => sum.plus(fill.fee), decimal(0))), fillCount: state.fills.length, maxDrawdown, notes: state.notes, tags: state.tags, policy: REPLAY_FILL_POLICY };
+  return { initialCapital: state.config.initialCapital, equity, netPnl: money(decimal(equity).minus(state.config.initialCapital)), realizedPnl: state.portfolio.realizedPnl, unrealizedPnl: money(decimal(state.portfolio.baseBalance).times(mark).minus(state.portfolio.costBasis ?? decimal(state.portfolio.baseBalance).times(state.portfolio.averageEntryPrice ?? mark))), fees: money(state.fills.reduce((sum, fill) => sum.plus(fill.fee), decimal(0))), fillCount: state.fills.length, maxDrawdown, notes: state.notes, tags: state.tags, policy: state.policyVersion === 2 ? REPLAY_FILL_POLICY : "Historical execution policy is unavailable; this session is read-only.", executionPolicy: state.executionPolicy ?? null };
 }

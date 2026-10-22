@@ -26,12 +26,16 @@ export function createCandleCacheAdapter(exchange: ExchangeId, adapter: Exchange
     limit: number,
     fetchOnline: () => Promise<Candle[]>,
     through = Number.MAX_SAFE_INTEGER,
+    preservePage = false,
   ): Promise<Candle[]> {
+    const now = Date.now();
+    const cutoff = Math.min(through, now);
     let candles: Candle[];
     try {
-      candles = (await fetchOnline()).filter((candle) => candle.timestamp >= since && (through === Number.MAX_SAFE_INTEGER || candle.timestamp + timeframeMilliseconds(timeframe) <= Math.min(through, Date.now()))).slice(0, limit);
+      const page = await fetchOnline();
+      candles = preservePage ? page : page.filter((candle) => candle.timestamp >= since && (through === Number.MAX_SAFE_INTEGER || candle.timestamp + timeframeMilliseconds(timeframe) <= cutoff)).sort((a, b) => a.timestamp - b.timestamp).slice(0, limit);
     } catch (error) {
-      const cached = getCachedCandles(exchange, symbol, timeframe, since, limit, Math.min(through, Date.now()) - timeframeMilliseconds(timeframe));
+      const cached = getCachedCandles(exchange, symbol, timeframe, since, limit, cutoff - timeframeMilliseconds(timeframe));
       if (cached.candles.length === 0) throw error;
       lastResult = {
         candles: cached.candles,
@@ -42,7 +46,7 @@ export function createCandleCacheAdapter(exchange: ExchangeId, adapter: Exchange
     }
     let cachedSuccessfully = true;
     try {
-      saveCachedCandles(exchange, symbol, timeframe, candles.filter((candle) => candle.timestamp + timeframeMilliseconds(timeframe) <= Math.min(through, Date.now())));
+      saveCachedCandles(exchange, symbol, timeframe, candles.filter((candle) => candle.timestamp + timeframeMilliseconds(timeframe) <= cutoff));
     } catch {
       cachedSuccessfully = false;
     }
@@ -66,7 +70,7 @@ export function createCandleCacheAdapter(exchange: ExchangeId, adapter: Exchange
         return fetch(symbol, timeframe, since, limit, () => adapter.fetchOHLCV(symbol, timeframe, limit));
       },
       fetchOHLCVSince(symbol: string, timeframe: Timeframe, since: number, limit = 500) {
-        return fetch(symbol, timeframe, since, limit, () => adapter.fetchOHLCVSince(symbol, timeframe, since, limit));
+        return fetch(symbol, timeframe, since, limit, () => adapter.fetchOHLCVSince(symbol, timeframe, since, limit), Number.MAX_SAFE_INTEGER, true);
       },
       fetchOHLCVSinceThrough(symbol: string, timeframe: Timeframe, since: number, limit: number, through: number) {
         return fetch(symbol, timeframe, since, limit, () => adapter.fetchOHLCVSince(symbol, timeframe, since, limit), through);

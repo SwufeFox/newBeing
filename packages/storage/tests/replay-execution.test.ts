@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { advanceReplaySession, candleCache, closeDatabaseForTests, commandReplay, createConfiguredReplaySession, createReplaySession, finishReplaySession, getCachedCandles, getDatabase, getReplayExecution, getReplaySession, saveCachedCandles, upgradeLegacyReplay } from "../src/index.js";
+import { advanceReplaySession, candleCache, closeDatabaseForTests, commandReplay, createConfiguredReplaySession, createReplaySession, finishReplaySession, getCachedCandles, getDatabase, getReplayExecution, getReplaySession, nextFrozenReplayBar, saveCachedCandles, saveDatasetSnapshot, upgradeLegacyReplay } from "../src/index.js";
 import type { Candle, InstrumentIdentity, ReplaySession } from "@newbeing/core";
 
 let directory: string;
@@ -42,6 +42,33 @@ describe("transactional Replay execution", () => {
     expect(saved?.portfolio.quoteBalance).toBeCloseTo(1797.798);
     expect(saved?.tags).toEqual(["test"]);
     expect(getReplaySession(s.id)?.cursor).toBe(120_000);
+  });
+
+  it("binds seed and every subsequent fill to the verified frozen dataset across restart", () => {
+    const s = session();
+    const candles = [candle(60_000), { ...candle(120_000), open: 105 }, candle(180_000)];
+    const datasetId = saveDatasetSnapshot({ exchange: s.exchange, symbol: s.symbol, timeframe: s.timeframe, candles });
+    expect(() => createConfiguredReplaySession({ ...s, bars: [{ ...s.bars[0]!, close: 101 }] }, instrument, config, datasetId)).toThrow(/seed/);
+    expect(getReplaySession(s.id)).toBeUndefined();
+    const wrongVenue = saveDatasetSnapshot({ exchange: "binance", symbol: s.symbol, timeframe: s.timeframe, candles });
+    expect(() => createConfiguredReplaySession(s, instrument, config, wrongVenue)).toThrow(/instrument mismatch/);
+    createConfiguredReplaySession(s, instrument, config, datasetId);
+    commandReplay(s.id, 0, { action: "order", order });
+    closeDatabaseForTests();
+    const before = getReplayExecution(s.id);
+    expect(before?.datasetId).toBe(datasetId);
+    expect(nextFrozenReplayBar(s.id)).toEqual(candles[1]);
+    expect(() => advanceReplaySession(s.id, s.cursor, candle(120_000), undefined, 1)).toThrow(/frozen dataset/);
+    expect(getReplayExecution(s.id)).toEqual(before);
+    expect(getReplaySession(s.id)).toEqual(s);
+    advanceReplaySession(s.id, s.cursor, candles[1]!, undefined, 1);
+    expect(getReplayExecution(s.id)?.fills[0]?.price).toBe(106.05);
+    advanceReplaySession(s.id, 120_000, candles[2]!, undefined, 2);
+    expect(nextFrozenReplayBar(s.id)).toBeUndefined();
+    const exhausted = getReplayExecution(s.id);
+    expect(() => advanceReplaySession(s.id, 180_000, candle(240_000), undefined, 3)).toThrow(/frozen dataset/);
+    expect(getReplayExecution(s.id)).toEqual(exhausted);
+    expect(getReplaySession(s.id)?.cursor).toBe(180_000);
   });
 
   it("deduplicates order retries after revision changes and rejects conflicting intent", () => {

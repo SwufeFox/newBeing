@@ -38,7 +38,12 @@ export async function GET(): Promise<NextResponse> {
 
 export async function PUT(request: Request): Promise<NextResponse> {
   try {
-    const body: unknown = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body." }, { status: 400 });
+    }
     const parsed = stateSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid workspace state." }, { status: 400 });
     const state: WorkspaceState = {

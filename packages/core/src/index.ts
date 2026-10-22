@@ -1,3 +1,5 @@
+export * from "./spot.js";
+export * from "./policy.js";
 export * from "./ledger.js";
 export * from "./replay.js";
 export * from "./backtest.js";

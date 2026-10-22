@@ -19,6 +19,7 @@ const requestSchema = z.object({
   strategyId: z.string().min(1).max(120),
   parameters: z.record(z.string(), z.union([z.number().finite(), z.boolean()])),
   config: z.object({
+    accountMode: z.enum(["spot", "legacy-margin"]).default("spot"),
     initialCapital: z.number().positive().max(1_000_000_000),
     positionFraction: z.number().positive().max(1),
     feeRate: z.number().min(0).max(0.05),
@@ -44,10 +45,16 @@ export async function POST(request: Request): Promise<NextResponse> {
   const guard = researchReadGuard();
   if (guard) return guard;
   try {
-    const body: unknown = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body." }, { status: 400 });
+    }
     const parsed = requestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid backtest request." }, { status: 400 });
     const config = {
+      accountMode: parsed.data.config.accountMode,
       initialCapital: parsed.data.config.initialCapital,
       positionFraction: parsed.data.config.positionFraction,
       feeRate: parsed.data.config.feeRate,

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { ENGINE_VERSION, getStrategy, type BacktestResult, type ResearchReproduction, type StrategyDefinition, type StrategyParameters } from "@newbeing/core";
-import { canonicalJson, getWorkspaceState, loadDatasetSnapshot } from "@newbeing/storage";
+import { canonicalJson, getWorkspaceState, loadDatasetSnapshot, outcomeIdentity } from "@newbeing/storage";
+export { outcomeIdentity } from "@newbeing/storage";
 
 export class ResearchError extends Error {
   constructor(message: string, public readonly status: 404 | 409 | 422) { super(message); }
@@ -14,7 +15,17 @@ export function assertResearchAvailable(): void {
 /** Hash all executable core modules, not just a version label or function body.
  * The server deployment must retain its compiled core artifact for reruns. */
 export function researchImplementationHash(): string {
-  const directory = path.dirname(fileURLToPath(import.meta.resolve("@newbeing/core")));
+  // Bundlers may replace import.meta.url with a virtual [project] URL. Resolve
+  // from the real host cwd first; native Node/MCP can fall back to this module.
+  let entry: string | undefined;
+  for (const anchor of [path.join(process.cwd(), "package.json"), import.meta.url]) {
+    try {
+      const candidate = createRequire(anchor).resolve("@newbeing/core");
+      if (existsSync(candidate)) { entry = candidate; break; }
+    } catch { /* Try the next runtime module anchor. */ }
+  }
+  if (!entry) throw new Error("Executable core artifact is unavailable.");
+  const directory = path.dirname(entry);
   const files = readdirSync(directory).filter((name) => name.endsWith(".js")).sort();
   if (!files.length) throw new Error("Executable core artifact is unavailable.");
   const hash = createHash("sha256");
@@ -25,23 +36,10 @@ export function reproductionFor(snapshotId: string): ResearchReproduction {
   return { format: 1, snapshotId, implementationHash: researchImplementationHash() };
 }
 
-/** Deterministic outcome identity: same dataset + parameters + assumptions + engine
- * produces the same id on every run. Deliberately excludes resultId and createdAt,
- * so a rerun of the same inputs yields the same outcome while keeping a fresh run id. */
-export function outcomeIdentity(result: Pick<BacktestResult, "datasetId" | "strategyId" | "strategyVersion" | "parameters" | "assumptions" | "execution" | "engineVersion">): string {
-  const hash = createHash("sha256");
-  hash.update(canonicalJson([
-    "outcome-1",
-    result.datasetId,
-    result.strategyId,
-    result.strategyVersion,
-    result.parameters,
-    result.assumptions,
-    result.execution,
-    result.engineVersion,
-  ]));
-  return hash.digest("hex");
+export function assertSameOutcome(saved: BacktestResult, result: BacktestResult): void {
+  if (outcomeIdentity(saved) !== outcomeIdentity(result)) throw new ResearchError("Saved research output drift detected; rerun was not published.", 409);
 }
+
 export function resolveResearchStrategy(id: string, parameters: StrategyParameters): { strategy: StrategyDefinition; parameters: StrategyParameters } {
   const strategy = getStrategy(id);
   if (!strategy) throw new Error(`Unknown built-in strategy: ${id}`);

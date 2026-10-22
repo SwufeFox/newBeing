@@ -3,18 +3,19 @@
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { loader } from "@monaco-editor/react";
-import { Check, Code2, Play, Save, ShieldAlert } from "lucide-react";
+import { Check, Code2, Play, Save, ShieldAlert, Sliders } from "lucide-react";
 import { STRATEGIES, type StrategyDefinition, type StrategyParameters } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
+import { AkSelect, AkChoice, AkTag, AkNotice, AkField, AkFieldLabel, AkInput } from "@swufefox/ak-ui-react";
 
 loader.config({ paths: { vs: "/monaco/vs" } });
 
 const Monaco = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
-  loading: () => <div className="editor-loading">Loading local Monaco assets…</div>,
+  loading: () => <div className="editor-loading p-4 text-xs font-mono text-[var(--ak-text-secondary)]">Loading local Monaco assets…</div>,
 });
 
 interface StrategyLabProps {
@@ -104,47 +105,158 @@ export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Ele
     }
   };
 
-  if (!strategy) return <div className="empty-panel">No built-in strategy is available.</div>;
+  if (!strategy) return <div className="empty-panel p-4 font-mono text-xs">No built-in strategy is available.</div>;
 
   const invalidSma = strategy.id === "sma-crossover"
     && typeof params.fastPeriod === "number" && typeof params.slowPeriod === "number"
     && params.fastPeriod >= params.slowPeriod;
 
   return (
-    <div className="strategy-lab">
-      <div className="strategy-toolbar">
-        <label className="field-label" htmlFor="strategy-select">Strategy</label>
-        <select id="strategy-select" className="select-input" value={strategy.id} onChange={(event) => updateStrategy(event.target.value)}>
-          {STRATEGIES.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-      </div>
-      <div className="strategy-description" data-testid="executable-strategy">
-        <strong>EXECUTABLE · {strategy.id}@{strategy.version}</strong>
-        <p>{strategy.executionSummary?.(params) ?? strategy.description}</p>
+    <div className="strategy-lab flex flex-col gap-3 p-3 bg-[var(--ak-surface-canvas)]">
+      <div className="strategy-toolbar flex items-center justify-between gap-2 border-b border-[var(--ak-border-subtle)] pb-2">
+        <label className="field-label text-xs font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider" htmlFor="strategy-select">
+          STRATEGY TEMPLATE
+        </label>
+        <AkSelect
+          id="strategy-select"
+          className="select-input font-bold text-xs"
+          value={strategy.id}
+          onChange={(event) => updateStrategy(event.target.value)}
+        >
+          {STRATEGIES.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </AkSelect>
       </div>
 
-      <div className="strategy-params">
+      <div className="strategy-description bg-[var(--ak-surface-sunken)] p-2.5 border-l-2 border-[var(--ak-signal-info)]" data-testid="executable-strategy">
+        <div className="flex items-center gap-2 mb-1">
+          <strong className="text-xs font-mono text-[var(--ak-signal-info)]">
+            EXECUTABLE · {strategy.id}@{strategy.version}
+          </strong>
+        </div>
+        <p className="text-xs text-[var(--ak-text-secondary)] leading-relaxed m-0">
+          {strategy.executionSummary?.(params) ?? strategy.description}
+        </p>
+      </div>
+
+      <div className="strategy-params space-y-2 bg-[var(--ak-surface-sunken-2)] p-2.5 border border-[var(--ak-border-subtle)]">
+        <div className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider pb-1 border-b border-[var(--ak-border-subtle)]">
+          <Sliders size={12} className="text-[var(--ak-signal-action)]" />
+          <span>TUNABLE PARAMETERS</span>
+        </div>
         {parameterEntries.map(([key, defaultValue]) => {
           const value = params[key] ?? defaultValue;
           if (typeof defaultValue === "boolean") {
-            return <label className="toggle-row" key={key}><span>{parameterLabel(key)}</span><input type="checkbox" checked={Boolean(value)} onChange={(event) => updateParameter(key, event.target.checked)} /></label>;
+            return (
+              <div className="toggle-row flex items-center justify-between py-1" key={key}>
+                <span className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(key)}</span>
+                <AkChoice
+                  variant="switch"
+                  checked={Boolean(value)}
+                  onChange={(event) => updateParameter(key, event.target.checked)}
+                />
+              </div>
+            );
           }
-          return <label className="param-row" key={key}><span>{parameterLabel(key)}</span><input className="compact-input" type="number" min={0} max={1000} step={key.toLowerCase().includes("pct") ? 0.1 : 1} value={typeof value === "number" ? value : defaultValue} onChange={(event) => updateParameter(key, Number(event.target.value))} /></label>;
+          return (
+            <div className="param-row flex items-center justify-between gap-2 py-1" key={key}>
+              <span className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(key)}</span>
+              <AkInput
+                className="compact-input w-24 h-7 text-xs font-mono text-right"
+                type="number"
+                min={0}
+                max={1000}
+                step={key.toLowerCase().includes("pct") ? 0.1 : 1}
+                value={typeof value === "number" ? value : defaultValue}
+                onChange={(event) => updateParameter(key, Number(event.target.value))}
+              />
+            </div>
+          );
         })}
-        {invalidSma && <div className="inline-alert"><ShieldAlert size={13} /> Fast period must be lower than slow period.</div>}
+        {invalidSma && (
+          <div className="inline-alert flex items-center gap-1.5 text-[11px] text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">
+            <ShieldAlert size={13} />
+            <span>Fast period must be lower than slow period.</span>
+          </div>
+        )}
       </div>
 
-      <div className="assumptions-heading">Simulation assumptions</div>
-      <div className="assumption-grid">
-        <label><span>Initial capital</span><input className="compact-input" type="number" min={100} step={1000} value={config.initialCapital} onChange={(event) => setConfig({ ...config, initialCapital: Math.max(100, Number(event.target.value)) })} /></label>
-        <label><span>Position %</span><input className="compact-input" type="number" min={1} max={100} step={1} value={Math.round(config.positionFraction * 100)} onChange={(event) => setConfig({ ...config, positionFraction: Math.max(0.01, Math.min(1, Number(event.target.value) / 100)) })} /></label>
-        <label><span>Fee (bps)</span><input className="compact-input" type="number" min={0} max={500} step={1} value={Math.round(config.feeRate * 10_000)} onChange={(event) => setConfig({ ...config, feeRate: Math.max(0, Math.min(0.05, Number(event.target.value) / 10_000)) })} /></label>
-        <label><span>Slippage (bps)</span><input className="compact-input" type="number" min={0} max={500} step={1} value={Math.round(config.slippageRate * 10_000)} onChange={(event) => setConfig({ ...config, slippageRate: Math.max(0, Math.min(0.05, Number(event.target.value) / 10_000)) })} /></label>
+      <div className="assumptions-heading text-[11px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider pt-1">
+        SIMULATION ASSUMPTIONS
       </div>
-      <p className="assumption-note">Signal at close → next bar open; stop-first if both OHLC barriers hit. Shorting has no borrow/funding/liquidation model.</p>
+      <div className="assumption-grid grid grid-cols-2 gap-2 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-[var(--ak-text-secondary)] font-mono">INITIAL CAPITAL</span>
+          <AkInput
+            className="compact-input h-7 text-xs font-mono"
+            type="number"
+            min={100}
+            step={1000}
+            value={config.initialCapital}
+            onChange={(event) => setConfig({ ...config, initialCapital: Math.max(100, Number(event.target.value)) })}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-[var(--ak-text-secondary)] font-mono">POSITION %</span>
+          <AkInput
+            className="compact-input h-7 text-xs font-mono"
+            type="number"
+            min={1}
+            max={100}
+            step={1}
+            value={Math.round(config.positionFraction * 100)}
+            onChange={(event) => setConfig({ ...config, positionFraction: Math.max(0.01, Math.min(1, Number(event.target.value) / 100)) })}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-[var(--ak-text-secondary)] font-mono">FEE (BPS)</span>
+          <AkInput
+            className="compact-input h-7 text-xs font-mono"
+            type="number"
+            min={0}
+            max={500}
+            step={1}
+            value={Math.round(config.feeRate * 10_000)}
+            onChange={(event) => setConfig({ ...config, feeRate: Math.max(0, Math.min(0.05, Number(event.target.value) / 10_000)) })}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-[var(--ak-text-secondary)] font-mono">SLIPPAGE (BPS)</span>
+          <AkInput
+            className="compact-input h-7 text-xs font-mono"
+            type="number"
+            min={0}
+            max={500}
+            step={1}
+            value={Math.round(config.slippageRate * 10_000)}
+            onChange={(event) => setConfig({ ...config, slippageRate: Math.max(0, Math.min(0.05, Number(event.target.value) / 10_000)) })}
+          />
+        </label>
+      </div>
+      <label className="flex flex-col gap-1 text-xs">Execution account
+        <AkSelect aria-label="Backtest account mode" value={config.accountMode ?? "spot"} onChange={(event) => setConfig({ ...config, accountMode: event.target.value as "spot" | "legacy-margin", allowShorts: false })}>
+          <option value="spot">Spot · fee-inclusive sizing</option><option value="legacy-margin">Legacy synthetic margin simulation</option>
+        </AkSelect>
+      </label>
+      {config.accountMode === "legacy-margin" && <label className="flex gap-2 text-xs"><input type="checkbox" checked={config.allowShorts} onChange={(event) => setConfig({ ...config, allowShorts: event.target.checked })} />Allow synthetic shorts (no borrow/funding model)</label>}
+      <p className="assumption-note text-[10px] text-[var(--ak-text-secondary)] opacity-70 m-0">
+        {config.accountMode === "legacy-margin" ? "Historical synthetic model; no native derivative contract, margin, liquidation or funding simulation." : "Spot inventory and quote fees; budget includes entry fee. Opening gaps precede opening orders; entry-bar targets are deferred."}
+      </p>
 
-      <div className="editor-heading"><div><Code2 size={13} /><span>Strategy source</span></div><span className="draft-badge">DRAFT · NOT EXECUTED</span></div>
-      <div className="editor-frame">
+      <div className="editor-heading flex items-center justify-between border-t border-[var(--ak-border-subtle)] pt-2 mt-1">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--ak-text-primary)]">
+          <Code2 size={13} className="text-[var(--ak-signal-info)]" />
+          <span>STRATEGY SOURCE</span>
+        </div>
+        <span className="draft-badge text-[10px] font-mono px-1.5 py-0.5 bg-[var(--ak-surface-raised)] border border-[var(--ak-border)] text-[var(--ak-signal-action)]">
+          DRAFT · NOT EXECUTED
+        </span>
+      </div>
+
+      <div className="editor-frame h-48 border border-[var(--ak-border-strong)] bg-[#1e1e1e]">
         <Monaco
           height="100%"
           language="typescript"
@@ -161,18 +273,48 @@ export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Ele
             tabSize: 2,
             renderLineHighlight: "gutter",
             overviewRulerBorder: false,
-            padding: { top: 10, bottom: 10 },
+            padding: { top: 6, bottom: 6 },
           }}
         />
       </div>
-      <div className="sandbox-note"><ShieldAlert size={13} /><span>Only the reviewed built-in strategy runs. This TypeScript draft is never eval’d and cannot access files, network, or exchange credentials.</span></div>
-      {saveError && <div className="error-inline">{saveError}</div>}
-      <div className="strategy-actions">
-        <Button data-testid="save-strategy-draft" variant="outline" size="sm" onClick={() => void saveSource()}>{saved ? <Check size={13} /> : <Save size={13} />}{saved ? "Saved" : "Save draft"}</Button>
-        {/* A run is compared against the venue it was sourced from, so the panel
-            states which one that is rather than gating on Binance. */}
-        <p className="assumption-note">Runs on {EXCHANGE_LABELS[exchange]} history · {symbol} · {timeframe}</p>
-        <Button variant="primary" size="sm" onClick={onRun} disabled={running || invalidSma}>{running ? <span className="spin"><Play size={13} /></span> : <Play size={13} />}{running ? "Running" : "Run backtest"}</Button>
+
+      <div className="sandbox-note flex items-center gap-2 p-1.5 text-[10px] text-[var(--ak-text-secondary)] opacity-80">
+        <ShieldAlert size={13} className="text-[var(--ak-signal-info)] shrink-0" />
+        <span>Only the reviewed built-in strategy runs. This TypeScript draft is stored in local SQLite without arbitrary code execution.</span>
+      </div>
+
+      {saveError && (
+        <div className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">
+          {saveError}
+        </div>
+      )}
+
+      <div className="strategy-actions flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[var(--ak-border-subtle)]">
+        <Button
+          data-testid="save-strategy-draft"
+          variant="outline"
+          size="sm"
+          onClick={() => void saveSource()}
+          icon={saved ? <Check size={13} className="text-[var(--ak-signal-success)]" /> : <Save size={13} />}
+          className="text-xs"
+        >
+          {saved ? "Saved" : "Save draft"}
+        </Button>
+
+        <p className="assumption-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80">
+          Runs on {EXCHANGE_LABELS[exchange]} · {symbol} · {timeframe}
+        </p>
+
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={onRun}
+          disabled={running || invalidSma}
+          icon={running ? <Play size={13} className="spin" /> : <Play size={13} />}
+          className="text-xs font-bold"
+        >
+          {running ? "Running" : "Run backtest"}
+        </Button>
       </div>
     </div>
   );

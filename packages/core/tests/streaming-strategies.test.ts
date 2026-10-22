@@ -95,7 +95,7 @@ describe("streaming strategy execution", () => {
 
   it("preserves baseline signals, trades, equity and executed strategy metadata", () => {
     const candles = createCandles();
-    const config = { ...golden.config };
+    const config = { ...golden.config, accountMode: "legacy-margin" as const };
     for (const [id, parameters] of cases) {
       const strategy = requireStrategy(id);
       const result = runBacktest({

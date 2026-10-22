@@ -1,9 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { randomUUID } from "node:crypto";
-import { estimatePaperAmounts, fillPaperOrder, SIMULATION_PRECISION, DEFAULT_WORKSPACE_STATE, logEvent, STRATEGIES, type Timeframe, type WorkspaceState } from "@newbeing/core";
+import { SPOT_EXECUTION_POLICY, estimatePaperAmounts, fillPaperOrder, SIMULATION_PRECISION, DEFAULT_WORKSPACE_STATE, logEvent, STRATEGIES, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import { findCandleGaps, getExchangeAdapter, removeFormingCandles } from "@newbeing/market-data";
 import {
+  getSpotAccount,
   getExperiment,
   getReplaySession,
   getReplayExecution,
@@ -57,6 +58,9 @@ function summarizeExperiment(result: NonNullable<ReturnType<typeof getExperiment
     parameters: result.parameters,
     assumptions: result.assumptions,
     execution: result.execution,
+    executionPolicy: result.executionPolicy ?? null,
+    reproduction: result.reproduction ?? null,
+    exchange: result.exchange,
     engineVersion: result.engineVersion,
     createdAt: result.createdAt,
     metrics: result.metrics,
@@ -90,7 +94,7 @@ export function createNewBeingMcpServer(): McpServer {
 
   server.registerTool("get_market_data", {
     title: "Get selected venue public OHLCV",
-    description: "Fetch completed public Spot bars from the selected venue. Returns normalized UTC timestamps, detected gaps and source metadata. Backtest, Replay and Paper remain Binance-only.",
+    description: "Fetch completed public Spot bars from the selected venue. Returns normalized UTC timestamps, detected gaps and source metadata. Backtest, Replay and Paper support all configured spot venues.",
     inputSchema: z.object({
       symbol: symbolSchema,
       timeframe,
@@ -118,16 +122,18 @@ export function createNewBeingMcpServer(): McpServer {
   server.registerTool("get_portfolio", {
     title: "Get isolated Paper portfolio",
     description: "Read the local Paper simulator wallet for a symbol. This is not an exchange account and never includes API credentials.",
-    inputSchema: z.object({ symbol: symbolSchema.default("BTC/USDT") }),
+    inputSchema: z.object({ symbol: symbolSchema.default("BTC/USDT"), account_mode: z.enum(["legacy", "shared-spot"]).default("legacy") }),
     annotations: { readOnlyHint: true },
-  }, async ({ symbol }) => {
+  }, async ({ symbol, account_mode }) => {
     try {
       const workspace = getWorkspaceState().state;
+      if (account_mode === "shared-spot" && workspace.activeWorkspace === "replay") return errorResult(new Error("Shared spot accounts are hidden during Replay."));
       if (workspace.activeWorkspace === "replay") {
         const session = workspace.activeReplayId ? getReplaySession(workspace.activeReplayId) : undefined;
         if (!session || session.exchange !== workspace.exchange || session.symbol !== symbol) return errorResult(new Error("Replay portfolio is available only for the active replay symbol."));
         return textResult({ mode: "replay", source: "isolated local replay simulator", symbol, sessionId: session.id, portfolio: getReplayExecution(session.id)?.portfolio ?? getPaperPortfolio(replayAccountId(session.id, symbol, session.exchange)) });
       }
+      if (account_mode === "shared-spot") return textResult({ mode: "paper", accountMode: "shared-spot", account: getSpotAccount(workspace.exchange, symbol.split("/")[1]!) ?? null, policy: SPOT_EXECUTION_POLICY, note: "Open and trade the shared account explicitly in the trusted UI. Legacy previews remain bound to legacy pair wallets." });
       return textResult({ mode: "paper", source: "local simulator", symbol, portfolio: getPaperPortfolio(paperAccountId(symbol, workspace.exchange)) });
     } catch (error) { return errorResult(error); }
   });
@@ -202,6 +208,7 @@ export function createNewBeingMcpServer(): McpServer {
       position_fraction: z.number().positive().max(1),
       fee_rate: z.number().min(0).max(0.05),
       slippage_rate: z.number().min(0).max(0.05),
+      account_mode: z.enum(["spot", "legacy-margin"]).default("spot"),
       allow_shorts: z.boolean().default(false),
       stop_loss_pct: z.number().positive().max(0.99).optional(),
       take_profit_pct: z.number().positive().max(9.99).optional(),
@@ -209,8 +216,8 @@ export function createNewBeingMcpServer(): McpServer {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async (input) => {
     try {
-      if (getWorkspaceState().state.exchange !== "binance") return errorResult(new Error("Backtests currently use Binance Spot data only. Switch the selected venue to Binance Spot first."));
       const config = {
+        accountMode: input.account_mode,
         initialCapital: input.initial_capital,
         positionFraction: input.position_fraction,
         feeRate: input.fee_rate,
@@ -287,7 +294,6 @@ export function createNewBeingMcpServer(): McpServer {
     const workspace: WorkspaceState["activeWorkspace"] = requestedWorkspace === "backtest" ? "research" : requestedWorkspace;
     const current = getWorkspaceState().state;
     const replayId = replay_id ?? current.activeReplayId;
-      if (workspace === "replay" && current.exchange !== "binance") return errorResult(new Error("Backtest and Replay are currently limited to Binance Spot. Switch venues before opening them."));
       if (workspace === "replay" && (!replayId || !getReplaySession(replayId))) return errorResult(new Error("Provide a valid replay_id before opening Replay."));
       if (result_id && !getExperiment(result_id)) return errorResult(new Error("Requested backtest result does not exist."));
       const state: WorkspaceState = {
@@ -303,15 +309,17 @@ export function createNewBeingMcpServer(): McpServer {
 
   server.registerTool("prepare_order", {
     title: "Prepare paper order preview",
-    description: "Calculate a local Paper-only order preview. Does not place an order. User confirmation in the trusted UI is required for a simulated fill; live trading is disabled.",
+    description: "Calculate a preview for the legacy per-pair Paper wallet only. Shared spot previews are unsupported and rejected. User confirmation in the trusted UI is required; live trading is disabled.",
     inputSchema: z.object({
       symbol: symbolSchema,
       side: z.enum(["buy", "sell"]),
       quantity: z.number().positive().max(1_000_000),
       mode: z.enum(["paper", "live"]).default("paper"),
+      account_mode: z.enum(["legacy", "shared-spot"]).default("legacy"),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-  }, async ({ symbol: orderSymbol, side, quantity, mode }) => {
+  }, async ({ symbol: orderSymbol, side, quantity, mode, account_mode }) => {
+    if (account_mode === "shared-spot") return errorResult(new Error("Shared spot previews are unsupported by prepare_order; use the shared spot UI ticket. No legacy wallet was accessed."));
     if (mode === "live") return errorResult(new Error("Live trading is disabled; a real order preview cannot be prepared."));
     try {
       const workspace = getWorkspaceState().state;
@@ -343,6 +351,7 @@ export function createNewBeingMcpServer(): McpServer {
       } as const;
       saveOrderPreview(preview);
       return textResult({
+        accountMode: "legacy",
         preview,
         simulationPrecision: SIMULATION_PRECISION,
         note: "Preview is stored in the local workspace. No order was created or transmitted. Confirm separately in the UI before expiry; the quote may change.",

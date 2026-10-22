@@ -19,11 +19,11 @@ async function activate(locator: import("@playwright/test").Locator, keyboard: b
   }
 }
 
-test.beforeAll(async ({ request }) => {
+test.beforeAll({ timeout: 360_000 }, async ({ request }) => {
   if (process.env.PLAYWRIGHT_API_STUBS === "1") return;
   // Compile the dev routes before browser actions; a cold route can trigger a
   // Fast Refresh reload that interrupts an in-flight UI request.
-  test.setTimeout(180_000);
+  test.setTimeout(360_000);
   for (const path of ["/", "/api/strategies", "/api/backtests", "/api/paper", "/api/replay", "/api/replay/e2e-warmup"]) {
     const response = await request.get(path);
     expect(response.status(), `Warm-up ${path}`).toBeLessThan(500);
@@ -33,7 +33,7 @@ test.beforeAll(async ({ request }) => {
 
 test("chart, backtest, source draft, Paper order, Replay and workspace sync use local fixtures", async ({ page }) => {
   // This case includes cold route compilation and several complete UI workflows.
-  test.setTimeout(180_000);
+  test.setTimeout(360_000);
   const apiMock = process.env.PLAYWRIGHT_API_STUBS === "1" ? await installApiMocks(page) : null;
   const useKeyboard = apiMock !== null;
   if (!apiMock) await setTrainingWorkspace(page.request);
@@ -100,7 +100,7 @@ test("chart, backtest, source draft, Paper order, Replay and workspace sync use 
       const response = await page.request.get("/api/workspace");
       const state = await response.json();
       return state.state?.activeWorkspace;
-    }).toBe("research");
+    }, { timeout: 15_000 }).toBe("research");
   }
 });
 
@@ -433,6 +433,10 @@ test("Paper shows an interrupted intent from its original account and persists m
   const before = await readJson<{ portfolio: unknown }>(await page.request.get("/api/paper?symbol=BTC/USD&exchange=kraken"));
   await page.goto("/");
   const panel = page.getByTestId("paper-recovery");
+  /* "0 pending" before the first read resolves is not an account state. Wait for
+     the panel to actually report a completed read, so a slow first load surfaces
+     as a load failure instead of being read as "the intent disappeared". */
+  await expect(panel).toHaveAttribute("data-loaded", "true", { timeout: 20_000 });
   const card = panel.locator(".order-preview-card").filter({ hasText: clientOrderId });
   await expect(card).toContainText("paper:kraken-spot:BTC:USD");
   await expect(card).toContainText("submitted");

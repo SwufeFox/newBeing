@@ -16,6 +16,7 @@ const requestSchema = z.object({
   strategyId: z.string().min(1).max(120),
   parameters: z.record(z.string(), z.union([z.number().finite(), z.boolean()])),
   config: z.object({
+    accountMode: z.enum(["spot", "legacy-margin"]).default("spot"),
     initialCapital: z.number().positive().max(1_000_000_000),
     positionFraction: z.number().positive().max(1),
     feeRate: z.number().min(0).max(0.05),
@@ -62,6 +63,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         /* exactOptionalPropertyTypes: an absent optional must be ABSENT, not
            present-and-undefined, so spread it in conditionally. */
         config: {
+          accountMode: parsed.data.config.accountMode,
           initialCapital: parsed.data.config.initialCapital,
           positionFraction: parsed.data.config.positionFraction,
           feeRate: parsed.data.config.feeRate,

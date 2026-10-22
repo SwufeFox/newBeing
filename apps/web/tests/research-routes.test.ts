@@ -5,7 +5,7 @@ import path from "node:path";
 import { DEFAULT_WORKSPACE_STATE, type BacktestResult, type BacktestSweepResult, type Candle } from "@newbeing/core";
 import { closeDatabaseForTests, datasetSnapshotPath, getExperiment, saveExperiment, saveWorkspaceState } from "@newbeing/storage";
 const fixture = vi.hoisted(() => ({ fetch: vi.fn(), bars: [] as Candle[] }));
-vi.mock("@newbeing/market-data", async () => import("@newbeing/market-data/utils"));
+vi.mock("@newbeing/market-data", async (importOriginal) => importOriginal<typeof import("@newbeing/market-data")>());
 vi.mock("@/lib/market-adapter", () => ({ getWebMarketAdapter: (id: string) => ({ id, fetchOHLCV: fixture.fetch, fetchOHLCVSince: fixture.fetch, searchSymbols: vi.fn(), fetchSummary: vi.fn(), fetchSummaries: vi.fn(), fetchOrderBook: vi.fn(), fetchRecentTrades: vi.fn(), close: vi.fn() }) }));
 import { POST as createRun, GET as listRuns } from "../src/app/api/backtests/route.js";
 import { GET as getRun } from "../src/app/api/backtests/[id]/route.js";
@@ -20,9 +20,12 @@ const context = (id: string) => ({ params: Promise.resolve({ id }) });
 let directory: string;
 beforeEach(() => {
   closeDatabaseForTests(); directory = mkdtempSync(path.join(tmpdir(), "newbeing-research-routes-")); process.env.NEWBEING_DATA_DIR = directory;
-  fixture.bars = [100, 101, 104, 102, 106, 109, 108, 112, 105, 103, 106, 110].map((close, i) => ({ timestamp: i * 60_000, open: close, high: close + 1, low: close - 1, close, volume: i + 1 }));
+  fixture.bars = Array.from({ length: 50 }, (_, i) => {
+    const close = 100 + (i % 7) * 2;
+    return { timestamp: i * 60_000, open: close, high: close + 1, low: close - 1, close, volume: i + 1 };
+  });
   fixture.fetch.mockImplementation(async () => structuredClone(fixture.bars));
-  vi.spyOn(Date, "now").mockReturnValue(12 * 60_000);
+  vi.spyOn(Date, "now").mockReturnValue(50 * 60_000);
 });
 afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); closeDatabaseForTests(); delete process.env.NEWBEING_DATA_DIR; rmSync(directory, { recursive: true, force: true }); });
 

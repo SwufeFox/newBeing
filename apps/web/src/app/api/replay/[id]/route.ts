@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logEvent, replayReport, type ReplaySession } from "@newbeing/core";
 import { nextCompletedBarAfter, timeframeMilliseconds } from "@newbeing/market-data";
-import { advanceReplaySession, commandReplay, getReplayExecution, getPaperPortfolio, getReplaySession, listPaperOrders, replayAccountId } from "@newbeing/storage";
+import { nextFrozenReplayBar, advanceReplaySession, commandReplay, getReplayExecution, getPaperPortfolio, getReplaySession, listPaperOrders, replayAccountId } from "@newbeing/storage";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 import { createCandleCacheAdapter } from "@/lib/candle-cache-adapter";
 
@@ -41,7 +41,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const session = getReplaySession(id);
     if (!session) return NextResponse.json({ error: "Replay session not found." }, { status: 404 });
     const execution = getReplayExecution(id);
-    if (!execution) {
+    if (!execution || execution.policyVersion !== 2) {
       throw new Error("Legacy Replay is read-only. Start a new configured session to use pending execution; existing wallet and history are preserved.");
     }
     if (action.action === "step") {
@@ -50,10 +50,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (expectedCursor !== session.cursor) return NextResponse.json({ ...snapshot(session), deduplicated: true });
       const expectedRevision = action.expectedRevision ?? execution.revision;
       const interval = timeframeMilliseconds(session.timeframe);
-      const cached = createCandleCacheAdapter(session.exchange, getWebMarketAdapter(session.exchange));
-      const fetched = await cached.adapter.fetchOHLCVSince(session.symbol, session.timeframe, session.cursor + interval, 4);
-      const next = nextCompletedBarAfter(fetched, session.timeframe, session.cursor);
-      const provenance = cached.getLastResult();
+      const cached = execution.datasetId ? undefined : createCandleCacheAdapter(session.exchange, getWebMarketAdapter(session.exchange));
+      const fetched = cached ? await cached.adapter.fetchOHLCVSince(session.symbol, session.timeframe, session.cursor + interval, 4) : [];
+      const next = execution.datasetId ? nextFrozenReplayBar(id) : nextCompletedBarAfter(fetched, session.timeframe, session.cursor);
+      const provenance = cached?.getLastResult();
       if (!next) return NextResponse.json({ ...snapshot(getReplaySession(id)!), bar: null, hasNext: false });
       if (next.timestamp !== session.cursor + interval) throw new Error("A missing OHLCV interval blocks safe replay; cursor was not advanced.");
       const advanced = advanceReplaySession(id, expectedCursor, next, provenance ? { source: provenance.source, cache: { fallback: provenance.cache.fallback, cachedAt: provenance.cache.cachedAt } } : undefined, expectedRevision);
