@@ -8,6 +8,7 @@ import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { buildEvaluationCandidates } from "@/lib/evaluation-candidates";
 import { AkInput, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import { useWorkspaceStore } from "@/store/workspace";
+import { useShallow } from "zustand/react/shallow";
 
 const DATASET_ID = /^sha256:[a-f0-9]{64}$/;
 
@@ -67,7 +68,9 @@ function pct(value: number): string {
 }
 
 export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: string; timeframe: Timeframe; exchange: ExchangeId }): React.JSX.Element {
-  const [strategyId, parameters, config, result] = useWorkspaceStore((state) => [state.selectedStrategyId, state.strategyParameters, state.backtestConfig, state.backtest]);
+  /* useShallow is required: a selector returning a fresh array is a new
+     reference on every render, and React treats that as an uncached snapshot. */
+  const [strategyId, parameters, config, result] = useWorkspaceStore(useShallow((state) => [state.selectedStrategyId, state.strategyParameters, state.backtestConfig, state.backtest]));
   const strategy = STRATEGIES.find((item) => item.id === strategyId) ?? STRATEGIES[0];
   const keys = useMemo(() => numericKeys(strategy?.defaults ?? {}), [strategy]);
 

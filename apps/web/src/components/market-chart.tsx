@@ -143,8 +143,16 @@ export function MarketChart({ backtest, replayBars, onRangeChange }: MarketChart
     const chart = chartRef.current;
     if (chart) {
       const storedRange = visibleRangeRef.current;
-      if (storedRange.from !== null && storedRange.to !== null && storedRange.from < storedRange.to) {
-        chart.timeScale().setVisibleRange({ from: asUTCTime(storedRange.from), to: asUTCTime(storedRange.to) });
+      /* A remembered window can be narrower than the new series — switching to a
+         higher timeframe leaves a range that only covers a bar or two, which
+         renders as a lone candle and hides the history just loaded. Only honour
+         it when it still spans a usable slice of what is now on the chart. */
+      const span = parsed.candles.length > 1
+        ? parsed.candles[parsed.candles.length - 1]!.timestamp - parsed.candles[0]!.timestamp
+        : 0;
+      const storedSpan = storedRange.from !== null && storedRange.to !== null ? storedRange.to - storedRange.from : 0;
+      if (storedSpan > 0 && span > 0 && storedSpan >= span / 10) {
+        chart.timeScale().setVisibleRange({ from: asUTCTime(storedRange.from!), to: asUTCTime(storedRange.to!) });
       } else {
         chart.timeScale().fitContent();
       }

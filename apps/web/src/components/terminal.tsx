@@ -1030,7 +1030,10 @@ export function Terminal(): React.JSX.Element {
                 />
               )}
 
-              <div className="flex-1 min-h-0 relative">
+              {/* The chart's own shell fills via `flex: 1 1 auto`, so this wrapper
+                  has to be a flex column — a plain block parent leaves it sized to
+                  its content and the candles collapse into a sliver. */}
+              <div className="flex-1 min-h-0 relative flex flex-col">
                 <MarketChart
                   key={`${exchange}|${symbol}|${timeframe}|${deferredWorkspace}`}
                   backtest={workspace === "replay" ? null : result}
