@@ -19,8 +19,39 @@
    ============================================================ */
 
 @import "./fonts.css";
-@import "@swufefox/ak-ui-react/style.css";
+/* ak-ui ships unlayered rules that pin every button to height:50px /
+   min-width:120px / font-size:1rem. Unlayered CSS beats *all* layered CSS
+   regardless of specificity, so with Tailwind 4 (which emits its utilities into
+   @layer utilities) every `h-7 text-xs` on a button was silently a no-op and the
+   controls overrode the dense workstation grid. Declaring a named layer before
+   Tailwind puts ak-ui underneath the utilities, where the existing call sites'
+   intent starts working again. */
+@layer ak-ui, theme, base, components, utilities;
+@import "@swufefox/ak-ui-react/style.css" layer(ak-ui);
 @import "tailwindcss";
+
+/* ak-ui ships its own near-black ramp (#111315 canvas, #171a1d sunken) that is a
+   different hue family from the app's PRTS ramp (#0f0f10 / #141516 / #1a1b1c).
+   Both rendered on the same screen, so every ak-ui surface read as "slightly the
+   wrong black". Point the ak tokens at the app ramp once, here, instead of
+   overriding surface colours at forty call sites. Declared after the ak-ui import
+   so it wins inside the same layer. */
+:root {
+  --ak-surface-canvas: var(--c-canvas);
+  --ak-surface-sunken: var(--c-inset);
+  --ak-surface-sunken-2: var(--c-surface-2);
+  --ak-surface-raised: var(--c-surface-3);
+  --ak-surface-panel: var(--c-surface);
+  --ak-border: var(--c-line);
+  --ak-border-subtle: var(--c-line-soft);
+  --ak-border-strong: var(--c-line-strong);
+}
+
+/* `.ak-tag` re-declares --ak-tag-surface inside its own rule, so a :root default
+   cannot reach it. Override the class itself. */
+.ak-tag {
+  --ak-tag-surface: var(--c-surface);
+}
 
 /* ══════════════════════════════════════════════════════════════
    1. TOKENS
@@ -40,7 +71,7 @@
   --c-fg: #f0f0f0;
   --c-fg-2: #c9c9c9;
   --c-fg-3: #8d8d8d;
-  --c-fg-4: #6f7071;
+  --c-fg-4: #85868a; /* was #6f7071 (3.48:1 on the canvas) - lifted to 4.74:1 so the metadata it colors (quote time, statusbar, captions) stays legible at 10-11px. */
 
   --c-accent: #18d1ff;
   --c-accent-hover: #5ddcff;
@@ -1179,6 +1210,25 @@ button, input, select { font: inherit; color: inherit; }
 }
 .tab-trigger svg { flex: 0 0 auto; }
 
+/* Dock tabs are peers of one another, so six equally-bold, equally-tracked,
+   equally-iconed labels read as six competing headings. Quiet the inactive ones
+   to a plain sentence-case label and let the active tab carry the weight and the
+   accent; the icon keeps its colour only while selected. */
+.dock-tabs .tab-trigger {
+  min-height: 30px;
+  padding: 0 var(--s-2);
+  gap: var(--s-1);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+.dock-tabs .tab-trigger svg { opacity: 0.55; }
+.dock-tabs .tab-trigger[data-state="active"] {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.dock-tabs .tab-trigger[data-state="active"] svg { opacity: 1; }
+
 .inspector-tabs > [role="tabpanel"] {
   display: flex;
   flex-direction: column;
@@ -1310,6 +1360,80 @@ button, input, select { font: inherit; color: inherit; }
   font-size: var(--t-label);
 }
 .select-input { cursor: pointer; }
+
+/* ak-ui's `.ak-select` pins min-height:3rem, font-size:1rem, a 4px cyan
+   border-left and .72rem padding — a form-scale control dropped into a dense
+   trading grid. Its own size modifiers do not exist, and Tailwind's `h-7
+   text-xs` on the call sites loses to it (same unlayered-vs-layer problem as
+   the buttons). These two-class selectors settle it once for every AkSelect. */
+/* Every AkSelect, whether or not its call site remembered to add .select-input.
+   Scoped to .ak-select so it cannot reach native pickers. */
+.ak-select,
+.ak-select.select-input,
+.ak-select.ak-select-compact {
+  min-height: 0;
+  height: 28px;
+  padding: 0 var(--s-2);
+  border: var(--line) solid var(--c-line);
+  border-left-width: var(--line);
+  border-radius: var(--r);
+  background: var(--c-inset);
+  color: var(--c-fg);
+  font-family: var(--f-body);
+  font-size: var(--t-label);
+  line-height: 1;
+}
+
+/* Native <select> pickers that never went through AkSelect. Matching the ak-ui
+   control means the venue picker and Replay speed stop looking like OS widgets. */
+select.nb-select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 24px;
+  padding: 0 1.35rem 0 var(--s-2);
+  border: var(--line) solid var(--c-line);
+  border-radius: var(--r);
+  background-color: var(--c-inset);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--c-fg-3) 50%),
+    linear-gradient(135deg, var(--c-fg-3) 50%, transparent 50%);
+  background-position: calc(100% - 9px) 52%, calc(100% - 5px) 52%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  color: var(--c-fg);
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  cursor: pointer;
+}
+select.nb-select:hover:not(:disabled) { border-color: var(--c-line-strong); }
+select.nb-select:focus-visible {
+  outline: none;
+  border-color: var(--mode);
+}
+select.nb-select:disabled { color: var(--c-fg-4); cursor: not-allowed; }
+
+/* A select that already sits inside a bordered shell (the venue picker): keep the
+   unified type + caret, drop the second border. */
+select.nb-select-bare {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 100%;
+  align-self: stretch;
+  padding-right: 1rem;
+  border: 0;
+  background-color: transparent;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--c-fg-3) 50%),
+    linear-gradient(135deg, var(--c-fg-3) 50%, transparent 50%);
+  background-position: calc(100% - 7px) 52%, calc(100% - 3px) 52%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  color: var(--c-fg);
+  font-family: var(--f-mono);
+  cursor: pointer;
+}
+select.nb-select-bare:focus-visible { outline: none; color: var(--mode); }
+select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .compact-input {
   font-family: var(--f-mono);
   font-variant-numeric: tabular-nums;
@@ -2105,6 +2229,58 @@ button, input, select { font: inherit; color: inherit; }
               box-shadow var(--dur) var(--ease),
               background-color var(--dur) var(--ease),
               color var(--dur) var(--ease);
+}
+
+/* ak-ui's own `.ak-button` pins height:50px / min-width:120px / font-size:1rem for
+   a marketing-scale control. The size modifiers it advertises (ak-btn-size-*) are
+   not defined in its stylesheet, so without these rules every button in the
+   workstation renders at 50px tall and fights the dense grid. These selectors are
+   class+class so they beat `.ak-button` on specificity rather than load order. */
+.nb-button.ak-btn-size-sm {
+  height: 26px;
+  min-width: 0;
+  padding: 0 0.55rem;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  gap: 0.3rem;
+}
+
+.nb-button.ak-btn-size-md {
+  height: 30px;
+  min-width: 0;
+  padding: 0 0.75rem;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  gap: 0.35rem;
+}
+
+.nb-button.ak-btn-size-icon {
+  height: 26px;
+  width: 26px;
+  min-width: 0;
+  padding: 0;
+  font-size: 11px;
+}
+
+/* ak-ui also leaves decorative weight on its variants: a white 0.5rem-blur
+   drop shadow on outline, a 2px pure-white border, and a right-aligned label on
+   the action button. Against the flat PRTS surfaces those read as chrome from a
+   different design system, so the bridge strips them. The product's own
+   hover/active feedback below is what actually signals state. */
+.nb-button.ak-button--outline {
+  border-width: var(--line);
+  border-color: var(--c-line);
+  box-shadow: none;
+}
+.nb-button.ak-button--action {
+  text-align: center;
+  box-shadow: none;
+}
+/* Only neutralise the inherited weight; the product's own primary variant
+   re-declares its intent shadow below and must keep it. */
+.nb-button.ak-button--outline,
+.nb-button.ak-button--action {
+  box-shadow: none;
 }
 .nb-button.ak-btn-variant-primary {
   border: 0;

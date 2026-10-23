@@ -55,15 +55,20 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
   }, [session, playing, busy, onTogglePlay, onStep]);
 
   return (
-    <div className="replay-controls bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] p-3 shadow-md relative">
-      <div className="replay-title flex items-center justify-between pb-2 mb-2 border-b border-[var(--ak-border-subtle)]">
-        <div className="flex items-center gap-2">
-          <Clock3 size={15} className="text-[var(--ak-signal-info)]" />
-          <strong className="tracking-wider text-sm">REPLAY SIMULATION</strong>
-          <AkTag variant="advanced" className="text-[10px]">TIME TRAVEL</AkTag>
-        </div>
-        <span className="text-[11px] font-mono text-[var(--ak-text-secondary)] opacity-80 uppercase tracking-widest">
-          FUTURE BARS HIDDEN · STEP DETERMINISTIC
+    <div className="replay-controls bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] px-2 py-1.5 relative">
+      {/* This strip sits directly above the price chart, so every row it takes comes
+          straight out of the candles. It used to stack four redundant announcements
+          (title, TIME TRAVEL badge, a long trailing sentence, and a boxed panel).
+          Keep the icon + name as the anchor and fold the guarantees into the title
+          tooltip — they are reassurance, not controls the user reads each session. */}
+      <div
+        className="replay-title flex items-center gap-2 pb-1 mb-1.5 border-b border-[var(--ak-border-subtle)]"
+        title="Future bars stay hidden; every step is deterministic and reads only the revealed snapshot."
+      >
+        <Clock3 size={13} className="text-[var(--ak-signal-info)]" />
+        <strong className="tracking-wider text-[11px]">Replay simulation</strong>
+        <span className="ml-auto text-[10px] font-mono text-[var(--ak-text-secondary)] opacity-60">
+          future bars hidden
         </span>
       </div>
 
@@ -163,8 +168,8 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-[var(--ak-surface-sunken)] px-2 py-1 border border-[var(--ak-border-subtle)]">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
@@ -183,7 +188,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               )}
             </div>
 
-            <div className="replay-actions flex items-center gap-2">
+            <div className="replay-actions nb-button ak-btn-size-sm flex items-center gap-2">
               <AkButton
                 variant={playing ? "default" : "action"}
                 disabled={busy || session.status !== "active"}
@@ -213,7 +218,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                   aria-label="Replay speed"
                   value={speed}
                   onChange={(event) => onSpeedChange(Number(event.target.value))}
-                  className="bg-transparent text-xs font-mono outline-none cursor-pointer"
+                  className="nb-select bg-transparent text-xs font-mono outline-none cursor-pointer"
                 >
                   <option value={0.5}>0.5×</option>
                   <option value={1}>1×</option>

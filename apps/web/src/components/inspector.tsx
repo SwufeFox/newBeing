@@ -261,25 +261,33 @@ function WorkspaceContext(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="context-list grid grid-cols-2 gap-1.5 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
-        <ContextField label="SYMBOL" value={state.symbol} />
-        <ContextField label="EXCHANGE" value={exchangeLabel(state.exchange)} />
-        <ContextField label="TIMEFRAME" value={state.timeframe} />
-        <ContextField label="WORKSPACE" value={state.activeWorkspace.toUpperCase()} />
-        <ContextField label="STRATEGY" value={state.selectedStrategyId} />
-        <ContextField label="EXECUTION" value="Paper (Local)" />
-        <ContextField label="ACTIVE BACKTEST" value={state.activeBacktestId ? `${state.activeBacktestId.slice(0, 10)}…` : "None"} />
-        <ContextField
-          label="CHART RANGE"
-          value={state.visibleRange.from && state.visibleRange.to
-            ? `${new Date(state.visibleRange.from).toISOString().slice(5, 10)} → ${new Date(state.visibleRange.to).toISOString().slice(5, 10)}`
-            : "Dynamic"}
-        />
+      {/* Eight equally-weighted label/value pairs at 9px uppercase read as a wall.
+          Lead with the one line that answers "where am I", and fold the rest into
+          a disclosure the reader opens only when they need to check a field. */}
+      <div className="context-summary flex items-baseline gap-2 px-2 py-1.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
+        <strong className="text-sm font-mono text-[var(--ak-text-primary)] truncate">{state.symbol}</strong>
+        <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{state.timeframe}</span>
+        <span className="text-[10px] font-mono text-[var(--ak-text-secondary)] opacity-70 truncate">{exchangeLabel(state.exchange)}</span>
+        <span className="ml-auto text-[10px] font-mono text-[var(--ak-signal-info)] uppercase">{state.activeWorkspace}</span>
       </div>
 
-      <div className="context-note text-[10px] text-[var(--ak-text-secondary)] opacity-70 leading-normal">
-        The stdio MCP server reads this live SQLite workspace snapshot. No account credentials or exchange API keys are exposed.
-      </div>
+      <details className="context-details text-[10px] text-[var(--ak-text-secondary)] font-mono">
+        <summary className="cursor-pointer opacity-70 hover:opacity-100 py-0.5">All context fields</summary>
+        <div className="context-list grid grid-cols-2 gap-1.5 p-2 mt-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
+          <ContextField label="STRATEGY" value={state.selectedStrategyId} />
+          <ContextField label="EXECUTION" value="Paper (Local)" />
+          <ContextField label="ACTIVE BACKTEST" value={state.activeBacktestId ? `${state.activeBacktestId.slice(0, 10)}…` : "None"} />
+          <ContextField
+            label="CHART RANGE"
+            value={state.visibleRange.from && state.visibleRange.to
+              ? `${new Date(state.visibleRange.from).toISOString().slice(5, 10)} → ${new Date(state.visibleRange.to).toISOString().slice(5, 10)}`
+              : "Dynamic"}
+          />
+        </div>
+        <p className="context-note opacity-70 leading-normal mt-1.5 m-0">
+          The stdio MCP server reads this live SQLite workspace snapshot. No account credentials or exchange API keys are exposed.
+        </p>
+      </details>
 
       <Button
         variant="outline"
