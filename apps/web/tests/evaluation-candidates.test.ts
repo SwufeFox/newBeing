@@ -42,6 +42,32 @@ describe("evaluation candidate construction", () => {
     expect(buildEvaluationCandidates(base, "fastPeriod", "a", "10", "1").error).toMatch(/must be numbers/);
   });
 
+  it("includes decimal endpoints that binary subtraction would undercount", () => {
+    const result = buildEvaluationCandidates(base, "fastPeriod", "0", "0.3", "0.1");
+    expect(result.error).toBeNull();
+    expect(result.candidates.map((candidate) => candidate.fastPeriod)).toEqual([0, 0.1, 0.2, 0.3]);
+  });
+
+  it("keeps scientific-notation steps distinct below ten decimal places", () => {
+    const result = buildEvaluationCandidates(base, "fastPeriod", "0", "3e-12", "1e-12");
+    expect(result.error).toBeNull();
+    expect(result.candidates.map((candidate) => candidate.fastPeriod)).toEqual([0, 1e-12, 2e-12, 3e-12]);
+  });
+
+  it("rejects candidates that cannot roundtrip rather than merging them", () => {
+    const result = buildEvaluationCandidates(base, "fastPeriod", "1", "1.0000000000000002", "1e-17");
+    expect(result.candidates).toEqual([]);
+    expect(result.error).toMatch(/roundtrip/);
+  });
+
+  it.each([0, 1, 2])("rejects an empty field at index %s", (index) => {
+    const fields = ["1", "10", "1"];
+    fields[index] = " ";
+    const result = buildEvaluationCandidates(base, "fastPeriod", fields[0]!, fields[1]!, fields[2]!);
+    expect(result.candidates).toEqual([]);
+    expect(result.error).toMatch(/must be numbers/);
+  });
+
   it("rejects a strategy with no numeric parameter to vary", () => {
     expect(buildEvaluationCandidates(base, "", "1", "5", "1").error).toMatch(/no numeric parameter/);
   });

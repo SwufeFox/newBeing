@@ -1,7 +1,7 @@
 import type { StrategyParameters } from "@newbeing/core";
+import { sweepValues, SWEEP_MAX_RUNS } from "@newbeing/application/sweep-values";
 
-/** Mirrors SWEEP_MAX_RUNS on the server; candidates above it are rejected, not truncated. */
-export const MAX_EVALUATION_CANDIDATES = 40;
+export const MAX_EVALUATION_CANDIDATES = SWEEP_MAX_RUNS;
 
 /** Inclusive from/to/step values, each candidate overriding one numeric parameter.
  *  Rejects an oversized range instead of silently dropping its tail. */
@@ -16,20 +16,15 @@ export function buildEvaluationCandidates(
   const start = Number(from);
   const end = Number(to);
   const increment = Number(step);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(increment)) {
+  if ([from, to, step].some((value) => value.trim() === "") || !Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(increment)) {
     return { candidates: [], error: "From, to and step must be numbers." };
   }
   if (increment <= 0) return { candidates: [], error: "Step must be greater than zero." };
   if (end < start) return { candidates: [], error: "To must be at least from." };
-  const count = Math.floor((end - start) / increment) + 1;
-  if (count > MAX_EVALUATION_CANDIDATES) {
-    return { candidates: [], error: `That range needs ${count} candidates; the limit is ${MAX_EVALUATION_CANDIDATES}. Widen the step.` };
+  try {
+    const candidates = sweepValues(start, end, increment).map((value) => ({ ...parameters, [key]: value }));
+    return { candidates, error: null };
+  } catch (reason) {
+    return { candidates: [], error: reason instanceof Error ? reason.message : "Invalid evaluation range." };
   }
-  const candidates: StrategyParameters[] = [];
-  /* Rebuilt from index arithmetic so a 0.1 step does not accumulate binary drift
-     into near-duplicate candidates that the server would reject as duplicates. */
-  for (let index = 0; index < count; index += 1) {
-    candidates.push({ ...parameters, [key]: Number((start + index * increment).toFixed(10)) });
-  }
-  return { candidates, error: null };
 }

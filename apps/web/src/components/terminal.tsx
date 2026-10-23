@@ -25,7 +25,7 @@ import { WATCHLIST_DRAG_TYPE } from "@/components/watchlist";
 import { WorkspaceSync } from "@/components/workspace-sync";
 import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
-import { captureWorkspaceSelection } from "@/lib/workspace-selection";
+import { applyReplaySelection, captureReplaySelection, captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
@@ -462,6 +462,7 @@ function RailReplayState({ session, playing, speed }: { session: ReplaySession |
 }
 
 export function Terminal(): React.JSX.Element {
+  const workspaceReady = useWorkspaceStore((state) => state.workspaceReady);
   const exchange = useWorkspaceStore((state) => state.exchange);
   const [workspace, setWorkspace, symbol, timeframe, theme, setTheme, layout, setLayout, visibleRange, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
     state.activeWorkspace, state.setWorkspace, state.symbol, state.timeframe, state.theme, state.setTheme, state.layout, state.setLayout,
@@ -470,7 +471,7 @@ export function Terminal(): React.JSX.Element {
   ]));
 
   const deferredWorkspace = useDeferredValue(workspace);
-  const { summary, error: summaryError, retry: retrySummary } = useSummary(symbol, exchange, workspace !== "replay");
+  const { summary, error: summaryError, retry: retrySummary } = useSummary(symbol, exchange, workspaceReady && workspace !== "replay");
   const [running, setRunning] = useState(false);
   const [backtestError, setBacktestError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
@@ -503,6 +504,7 @@ export function Terminal(): React.JSX.Element {
 
   // Global hotkeys 1, 2, 3 to switch workspaces
   useEffect(() => {
+    if (!workspaceReady) return;
     const handleKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
@@ -513,7 +515,7 @@ export function Terminal(): React.JSX.Element {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setPage]);
+  }, [setPage, workspaceReady]);
 
   const runBacktest = useCallback(async (): Promise<void> => {
     const canApply = captureWorkspaceSelection();
@@ -559,9 +561,13 @@ export function Terminal(): React.JSX.Element {
     setVisibleRange(range);
   }, [setVisibleRange]);
 
+  const replayRefreshRef = useRef(0);
   const refreshReplay = useCallback(async (id: string): Promise<void> => {
+    const canApply = captureReplaySelection(id);
+    const refresh = ++replayRefreshRef.current;
     const response = await fetch(`/api/replay/${encodeURIComponent(id)}`, { cache: "no-store" });
     const payload: unknown = await response.json();
+    if (!canApply() || refresh !== replayRefreshRef.current) return;
     if (!response.ok) {
       const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Replay session could not be loaded.";
       throw new Error(message);
@@ -573,17 +579,18 @@ export function Terminal(): React.JSX.Element {
     setReplayPortfolio(parsed.portfolio ?? null);
     setReplayOrders(parsed.orders ?? []);
     const currentWorkspace = useWorkspaceStore.getState();
+    if (currentWorkspace.activeWorkspace !== "replay") return;
     if (currentWorkspace.exchange !== parsed.session.exchange) currentWorkspace.setExchange(parsed.session.exchange);
     if (useWorkspaceStore.getState().symbol !== parsed.session.symbol) useWorkspaceStore.getState().setSymbol(parsed.session.symbol);
     if (useWorkspaceStore.getState().timeframe !== parsed.session.timeframe) useWorkspaceStore.getState().setTimeframe(parsed.session.timeframe);
   }, []);
 
   useEffect(() => {
-    if (!activeReplayId) return;
+    if (!workspaceReady || !activeReplayId) return;
     void Promise.resolve().then(() => refreshReplay(activeReplayId)).catch((error: unknown) => {
       setReplayError(error instanceof Error ? error.message : "Replay session could not be restored.");
     });
-  }, [activeReplayId, refreshReplay]);
+  }, [activeReplayId, refreshReplay, workspaceReady]);
 
   const startReplayFromBacktest = async (backtest: BacktestResult): Promise<void> => {
     /* Practise on the result's own frozen snapshot, seeded part-way through the
@@ -605,7 +612,7 @@ export function Terminal(): React.JSX.Element {
       const response = await fetch("/api/replay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, navigate: false }),
       });
       const payload: unknown = await response.json();
       if (!response.ok) {
@@ -614,19 +621,12 @@ export function Terminal(): React.JSX.Element {
       }
       const parsed = parseReplayEnvelope(payload);
       if (!parsed) throw new Error("Replay start response was malformed.");
+      // The server saved the session even if the user has since navigated away.
+      if (!applyReplaySelection(parsed.session, canApply)) return;
       setReplaySession(parsed.session);
       setReplayExecution(parsed.execution ?? null);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders([]);
-      setActiveReplayId(parsed.session.id);
-      /* The session is saved either way; only an uninterrupted view navigates. */
-      if (canApply()) {
-        const store = useWorkspaceStore.getState();
-        store.setExchange(parsed.session.exchange);
-        store.setSymbol(parsed.session.symbol);
-        store.setTimeframe(parsed.session.timeframe);
-        setWorkspace("replay");
-      }
     } catch (error) {
       setReplayError(error instanceof Error ? error.message : "Replay could not be started.");
     } finally {
@@ -643,7 +643,7 @@ export function Terminal(): React.JSX.Element {
       const response = await fetch("/api/replay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exchange, symbol, timeframe, endAt: new Date(replayStartAt).getTime(), limit: replayLimit, ...replayConfig }),
+        body: JSON.stringify({ exchange, symbol, timeframe, endAt: new Date(replayStartAt).getTime(), limit: replayLimit, ...replayConfig, navigate: false }),
       });
       const payload: unknown = await response.json();
       if (!response.ok) {
@@ -652,12 +652,11 @@ export function Terminal(): React.JSX.Element {
       }
       const parsed = parseReplayEnvelope(payload);
       if (!parsed) throw new Error("Replay start response was malformed.");
+      if (!applyReplaySelection(parsed.session, canApply)) return;
       setReplaySession(parsed.session);
       setReplayExecution(parsed.execution ?? null);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders([]);
-      setActiveReplayId(parsed.session.id);
-      if (canApply()) setWorkspace("replay");
     } catch (error) {
       setReplayError(error instanceof Error ? error.message : "Replay could not be started.");
     } finally {
@@ -667,6 +666,7 @@ export function Terminal(): React.JSX.Element {
 
   const stepReplay = useCallback(async (): Promise<void> => {
     if (!replaySession || replaySession.status !== "active" || replayBusyRef.current) return;
+    const canApply = captureReplaySelection(replaySession.id);
     replayBusyRef.current = true;
     setReplayBusy(true);
     setReplayError(null);
@@ -677,6 +677,7 @@ export function Terminal(): React.JSX.Element {
         body: JSON.stringify({ action: "step", expectedCursor: replaySession.cursor, expectedRevision: replayExecution?.revision }),
       });
       const payload: unknown = await response.json();
+      if (!canApply()) return;
       if (!response.ok) {
         if (response.status === 409) await refreshReplay(replaySession.id);
         const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Replay step failed.";
@@ -693,6 +694,7 @@ export function Terminal(): React.JSX.Element {
         setReplayError("No next completed bar is available yet. The replay cursor did not move.");
       }
     } catch (error) {
+      if (!canApply()) return;
       setReplayPlaying(false);
       setReplayError(error instanceof Error ? error.message : "Replay step failed.");
     } finally {
@@ -713,6 +715,7 @@ export function Terminal(): React.JSX.Element {
 
   const finishReplay = async (): Promise<void> => {
     if (!replaySession || replayBusyRef.current) return;
+    const canApply = captureReplaySelection(replaySession.id);
     replayBusyRef.current = true;
     setReplayBusy(true);
     setReplayPlaying(false);
@@ -723,6 +726,7 @@ export function Terminal(): React.JSX.Element {
         body: JSON.stringify({ action: "finish", expectedRevision: replayExecution?.revision }),
       });
       const payload: unknown = await response.json();
+      if (!canApply()) return;
       if (!response.ok) {
         if (response.status === 409) await refreshReplay(replaySession.id);
         throw new Error(typeof payload === "object" && payload !== null && "error" in payload ? String(payload.error) : "Could not finish replay session.");
@@ -735,6 +739,7 @@ export function Terminal(): React.JSX.Element {
         setReplayOrders(parsed.orders ?? []);
       }
     } catch (error) {
+      if (!canApply()) return;
       setReplayError(error instanceof Error ? error.message : "Could not finish replay session.");
     } finally {
       replayBusyRef.current = false;
@@ -744,6 +749,7 @@ export function Terminal(): React.JSX.Element {
 
   const replayCommand = async (command: Record<string, unknown>): Promise<void> => {
     if (!replaySession || replayBusyRef.current) return;
+    const canApply = captureReplaySelection(replaySession.id);
     replayBusyRef.current = true;
     setReplayBusy(true);
     setReplayPlaying(false);
@@ -754,12 +760,14 @@ export function Terminal(): React.JSX.Element {
         body: JSON.stringify({ ...command, expectedRevision: replayExecution?.revision }),
       });
       const payload: unknown = await response.json();
+      if (!canApply()) return;
       if (!response.ok) {
         if (response.status === 409) await refreshReplay(replaySession.id);
         throw new Error(typeof payload === "object" && payload !== null && "error" in payload ? String(payload.error) : "Replay action failed.");
       }
       await refreshReplay(replaySession.id);
     } catch (error) {
+      if (!canApply()) return;
       setReplayError(error instanceof Error ? error.message : "Replay action failed. Reload before retrying.");
       throw error;
     } finally {
@@ -792,11 +800,29 @@ export function Terminal(): React.JSX.Element {
   const replayPrice = replaySession?.bars.at(-1)?.close ?? null;
 
   const showsWatchlist = workspace === "terminal";
+  /* The inspector keeps a fixed pixel width because the study panels need it, but in
+     a narrow pane (the sidebar browser is ~420px) that fixed width leaves the chart
+     ~45px and the workspace becomes unusable. Cap the side column as a share of the
+     canvas so the chart always keeps a majority of the width. */
+  const [canvasWidth, setCanvasWidth] = useState(0);
+  useEffect(() => {
+    const canvas = document.querySelector<HTMLElement>(".market-canvas");
+    if (!canvas) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setCanvasWidth(entry.contentRect.width);
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [workspaceReady]);
+  const sideLimit = canvasWidth > 0 ? Math.round(canvasWidth * 0.42) : Number.POSITIVE_INFINITY;
+  const railWidth = Math.min(layout.watchlistWidth, canvasWidth > 0 ? Math.round(canvasWidth * 0.3) : Infinity);
+  const sideWidth = Math.min(workspace === "research"
+    ? Math.max(layout.inspectorWidth, 380)
+    : Math.max(layout.inspectorWidth, 320), sideLimit);
   const gridColumns = showsWatchlist
-    ? `${layout.watchlistWidth}px 5px minmax(0, 1fr) 5px ${layout.inspectorWidth}px`
-    : `minmax(0, 1fr) 5px ${workspace === "research"
-        ? Math.max(layout.inspectorWidth, 380)
-        : Math.max(layout.inspectorWidth, 320)}px`;
+    ? `${railWidth}px 5px minmax(0, 1fr) 5px ${sideWidth}px`
+    : `minmax(0, 1fr) 5px ${sideWidth}px`;
 
   const col = showsWatchlist
     ? { rail: 1, railDrag: 2, chart: 3, inspectorDrag: 4, inspector: 5 }
@@ -809,6 +835,10 @@ export function Terminal(): React.JSX.Element {
   return (
     <div className={`application-shell mode-${workspace}`} data-ak-ui="system" data-theme={theme === "light" ? "light" : undefined}>
       <WorkspaceSync />
+      {!workspaceReady ? (
+        <div role="status" className="p-3 text-xs font-mono text-[var(--ak-text-secondary)]">Loading local workspace…</div>
+      ) : (
+        <>
       <header className="topbar flex items-center gap-2 px-3 bg-[var(--ak-surface-canvas)] border-b border-[var(--ak-border-strong)] z-20">
         <div className="brand-lockup flex items-center gap-2">
           <div className="brand-mark p-1 bg-[var(--ak-signal-info)] text-black">
@@ -864,7 +894,7 @@ export function Terminal(): React.JSX.Element {
             value={exchange}
             disabled={replayLocked}
             onChange={(event) => useWorkspaceStore.getState().setExchange(event.target.value as WorkspaceState["exchange"])}
-            className="bg-transparent border-0 outline-none text-xs font-mono cursor-pointer"
+            className="nb-select-bare bg-transparent border-0 outline-none text-xs font-mono cursor-pointer"
           >
             <option value="binance">Binance Spot</option>
             <option value="coinbaseexchange">Coinbase</option>
@@ -963,7 +993,7 @@ export function Terminal(): React.JSX.Element {
         </div>
 
         <section className="market-canvas" aria-label={`${workspaceName} market workspace`}>
-          <div className="workspace-grid" style={{ gridTemplateColumns: gridColumns, gridTemplateRows: `minmax(0, 1fr) 5px ${dockHeight}px` }}>
+          <div className="workspace-grid" style={{ gridTemplateColumns: gridColumns, gridTemplateRows: `minmax(0, 1fr) 5px min(${dockHeight}px, max(150px, calc(100% - 265px)))` }}>
             {showsWatchlist && (
               <>
                 <div className="left-rail" style={{ gridColumn: col.rail, gridRow: "1 / 4" }}>
@@ -1111,6 +1141,8 @@ export function Terminal(): React.JSX.Element {
           <span>SQLITE LOCAL PERSISTENCE</span>
         </div>
       </footer>
+        </>
+      )}
     </div>
   );
 }

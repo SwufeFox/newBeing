@@ -25,6 +25,8 @@ const requestSchema = z.object({
   feeRate: z.number().min(0).max(0.05).default(0.001),
   slippageRate: z.number().min(0).max(0.05).default(0.0005),
   exchange: z.enum(["binance", "coinbaseexchange", "okx", "kraken"]).optional(),
+  // Browser clients apply navigation locally after checking their selection.
+  navigate: z.boolean().default(true),
 });
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -34,7 +36,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (!parsed.success) return NextResponse.json({ error: "Invalid replay start request." }, { status: 400 });
     /* The venue is resolved once and used for the seed fetch, the stored
        session, and every later step — a session must not change venue midway. */
-    const exchange: ExchangeId = parsed.data.exchange ?? getWorkspaceState().state.exchange;
+    const initialWorkspace = getWorkspaceState();
+    const exchange: ExchangeId = parsed.data.exchange ?? initialWorkspace.state.exchange;
     if (!EXCHANGE_TIMEFRAMES[exchange].includes(parsed.data.timeframe)) {
       return NextResponse.json({ error: `${exchange} does not provide ${parsed.data.timeframe} candles.` }, { status: 422 });
     }
@@ -67,8 +70,10 @@ export async function POST(request: Request): Promise<NextResponse> {
     };
     const execution = createConfiguredReplaySession(session, instrument, { initialCapital: parsed.data.initialCapital, feeRate: parsed.data.feeRate, slippageRate: parsed.data.slippageRate }, parsed.data.datasetId);
     const portfolio = execution.portfolio;
-    const current = getWorkspaceState().state;
-    saveWorkspaceState({ ...current, activeWorkspace: "replay", activeReplayId: session.id });
+    const current = getWorkspaceState();
+    if (parsed.data.navigate && current.updatedAt === initialWorkspace.updatedAt) {
+      saveWorkspaceState({ ...current.state, activeWorkspace: "replay", activeReplayId: session.id });
+    }
     return NextResponse.json({ session, portfolio, execution, source: frozen ? "Frozen research dataset snapshot" : provenance?.source === "local-cache" ? "Local persistent candle cache fallback" : `${marketDataSourceLabel(exchange)} historical bars`, cache: provenance?.cache ?? { cached: false, cachedAt: null, fallback: false }, futureBarsLoaded: 0 }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Replay could not be initialized.";

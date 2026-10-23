@@ -52,6 +52,29 @@ describe("shared spot and frozen Replay HTTP contracts", () => {
     expect(account.policy).toEqual(SPOT_EXECUTION_POLICY);
   });
 
+  it("reports a confirmed rejection before reservation without inventing an order", async () => {
+    await POST(request("spot", { action: "open", exchange: "binance", quote: "USDT" }));
+    const response = await POST(request("spot", { action: "order", exchange: "binance", symbol: "BTC/USDT", side: "buy", quantity: 1000, maximumPrice: 100, clientOrderId: "spot-http-too-large" }));
+    expect(response.status).toBe(422);
+    const payload = await response.json();
+    expect(payload.intentRecorded).toBe(false);
+    expect(payload.order).toBeNull();
+    expect(payload.account.balances.USDT).toEqual({ total: 10000, reserved: 0 });
+    expect(payload.account.orders).toEqual([]);
+  });
+
+  it("retains an unknown order and its reservation when obtaining a quote fails", async () => {
+    await POST(request("spot", { action: "open", exchange: "binance", quote: "USDT" }));
+    fixture.summary.mockRejectedValueOnce(new Error("Quote connection lost"));
+    const response = await POST(request("spot", { action: "order", exchange: "binance", symbol: "BTC/USDT", side: "buy", quantity: 1, maximumPrice: 100, clientOrderId: "spot-http-unknown" }));
+    expect(response.status).toBe(202);
+    const payload = await response.json();
+    expect(payload.order.status).toBe("unknown");
+    expect(payload.intentRecorded).not.toBe(false);
+    expect(payload.account.balances.USDT).toEqual({ total: 10000, reserved: 100.1 });
+    expect(payload.account.fills).toEqual([]);
+  });
+
   it("acknowledges an in-flight retry as pending and fences its late quote after cancellation", async () => {
     await POST(request("spot", { action: "open", exchange: "binance", quote: "USDT" }));
     let resolve!: (value: unknown) => void;

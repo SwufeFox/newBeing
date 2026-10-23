@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, FlaskConical, Play, TrendingDown, TrendingUp } from "lucide-react";
 import { STRATEGIES, type ExchangeId, type StrategyParameters, type Timeframe } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,7 @@ interface EvaluationResponse {
   selectionRule: string;
   initialization: string;
   evaluation: string;
-  holdout: { resultId: string; metrics: EvaluationMetrics };
+  holdout: { resultId: string; metrics: EvaluationMetrics; exchange: ExchangeId; symbol: string; timeframe: Timeframe };
   resultIds: { training: string[]; holdout: string };
 }
 
@@ -74,17 +74,25 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const strategy = STRATEGIES.find((item) => item.id === strategyId) ?? STRATEGIES[0];
   const keys = useMemo(() => numericKeys(strategy?.defaults ?? {}), [strategy]);
 
-  /* The dataset is the immutable snapshot the last result was scored on. A legacy
-     result has no canonical id, so the field stays empty and must be pasted in. */
-  const [datasetId, setDatasetId] = useState<string>(DATASET_ID.test(result?.datasetId ?? "") ? result!.datasetId : "");
+  // Follow newly completed backtests; a manual id belongs to its source result only.
+  const sourceDataset = result?.datasetId ?? "";
+  const [datasetOverride, setDatasetOverride] = useState<{ source: string; value: string } | null>(null);
+  const datasetId = datasetOverride?.source === sourceDataset
+    ? datasetOverride.value
+    : DATASET_ID.test(sourceDataset) ? sourceDataset : "";
   const [splitIndex, setSplitIndex] = useState("300");
   const [parameter, setParameter] = useState<string>(keys[0] ?? "");
   const [from, setFrom] = useState("5");
   const [to, setTo] = useState("30");
   const [step, setStep] = useState("5");
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<EvaluationResponse | null>(null);
+  const [pending, setPending] = useState<{ context: string; controller: AbortController } | null>(null);
+  const [failure, setFailure] = useState<{ context: string; message: string } | null>(null);
+  const [savedReport, setSavedReport] = useState<{
+    response: EvaluationResponse; context: string; parameter: string; strategyId: string; request: string;
+  } | null>(null);
+  const activeRequest = useRef<AbortController | null>(null);
+  const report = savedReport?.response ?? null;
+  const reportKey = savedReport?.parameter ?? "";
 
   const activeKey = keys.includes(parameter) ? parameter : (keys[0] ?? "");
   const spotOnly = (config.accountMode ?? "spot") === "spot" && config.allowShorts === false;
@@ -92,28 +100,50 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const split = Number(splitIndex);
   const splitValid = Number.isInteger(split) && split >= 2;
 
+  const context = JSON.stringify({ sourceDataset, datasetId, strategyId, parameters, config, symbol, timeframe, exchange, activeKey, from, to, step, splitIndex });
+  const running = pending?.context === context && !pending.controller.signal.aborted;
+  const error = failure?.context === context ? failure.message : null;
+  const stale = savedReport !== null && savedReport.context !== context;
+
+  // Abort on every input/workspace change and on unmount. Identity checks also
+  // protect against transports that resolve even after aborting.
+  useLayoutEffect(() => {
+    return () => {
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+    };
+  }, [context]);
+
   const run = async (): Promise<void> => {
+    activeRequest.current?.abort();
+    activeRequest.current = null;
+    setPending(null);
+    if (!validDataset || !splitValid || !spotOnly) return;
     const built = buildEvaluationCandidates(parameters, activeKey, from, to, step);
     if (built.error) {
-      setReport(null);
-      setError(built.error);
+      setFailure({ context, message: built.error });
       return;
     }
-    setRunning(true);
-    setError(null);
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    const request = JSON.stringify({
+      datasetId: datasetId.trim(),
+      strategyId: strategy?.id ?? strategyId,
+      candidates: built.candidates,
+      config: { ...config, accountMode: "spot", allowShorts: false },
+      splitIndex: split,
+    });
+    setPending({ context, controller });
+    setFailure(null);
     try {
       const response = await fetch("/api/evaluations", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          datasetId: datasetId.trim(),
-          strategyId: strategy?.id ?? strategyId,
-          candidates: built.candidates,
-          config: { ...config, accountMode: "spot", allowShorts: false },
-          splitIndex: split,
-        }),
+        body: request,
       });
       const payload: unknown = await response.json();
+      if (controller.signal.aborted || activeRequest.current !== controller) return;
       if (!response.ok) {
         const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Evaluation failed.";
         throw new Error(message);
@@ -121,12 +151,15 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       if (typeof payload !== "object" || payload === null || !("training" in payload) || !Array.isArray(payload.training) || !("holdout" in payload)) {
         throw new Error("Evaluation response was malformed.");
       }
-      setReport(payload as EvaluationResponse);
+      setSavedReport({ response: payload as EvaluationResponse, context, parameter: activeKey, strategyId: strategy?.id ?? strategyId, request });
     } catch (reason) {
-      setReport(null);
-      setError(reason instanceof Error ? reason.message : "Evaluation failed.");
+      if (controller.signal.aborted || activeRequest.current !== controller) return;
+      setFailure({ context, message: reason instanceof Error ? reason.message : "Evaluation failed." });
     } finally {
-      setRunning(false);
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        setPending(null);
+      }
     }
   };
 
@@ -135,7 +168,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
     return report.training.reduce((best, run) => (run.result.metrics.totalReturn > best.result.metrics.totalReturn ? run : best));
   }, [report]);
 
-  if (keys.length === 0) {
+  if (keys.length === 0 && !report) {
     return <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><FlaskConical size={22} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>Nothing to evaluate</strong><span>This strategy has no numeric parameter to vary.</span></div>;
   }
 
@@ -149,7 +182,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             className="compact-input h-7 text-xs font-mono"
             placeholder="sha256:… — run a backtest first"
             value={datasetId}
-            onChange={(event) => setDatasetId(event.target.value)}
+            onChange={(event) => setDatasetOverride({ source: sourceDataset, value: event.target.value })}
           />
         </label>
         <label className="evaluation-field flex flex-col gap-1">
@@ -172,7 +205,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
         </label>
         <label className="evaluation-field flex flex-col gap-1">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">STEP</span>
-          <AkInput className="compact-input w-20 h-7 text-xs font-mono" type="number" min={1} value={step} onChange={(event) => setStep(event.target.value)} />
+          <AkInput className="compact-input w-20 h-7 text-xs font-mono" type="number" min={0} step="any" value={step} onChange={(event) => setStep(event.target.value)} />
         </label>
         <Button
           variant="primary"
@@ -214,11 +247,19 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
 
       {report && (
         <>
+          <p role="status" className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0">
+            {stale ? "Previous evaluation — inputs have changed. Run again for the current inputs." : "Saved evaluation for these inputs."}
+            {running && " New evaluation pending; showing the saved report."}
+          </p>
+          <details className="text-[10px] text-[var(--ak-text-secondary)] font-mono break-all">
+            <summary>Saved evaluation request · {savedReport?.strategyId} · {label(reportKey)}</summary>
+            {savedReport?.request}
+          </details>
           <div className="evaluation-verdict grid grid-cols-2 md:grid-cols-4 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
             <div className="evaluation-verdict-cell flex flex-col">
               <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">SELECTED ON TRAIN</span>
               <strong className="text-xs text-[var(--ak-signal-success)] font-mono font-bold">
-                {label(activeKey)} = {String(report.selectedParameters[activeKey])}
+                {label(reportKey)} = {String(report.selectedParameters[reportKey])}
               </strong>
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
@@ -251,7 +292,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             <table className="data-table evaluation-table w-full text-xs">
               <thead>
                 <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] font-mono uppercase text-left">
-                  <th className="p-1.5">{label(activeKey)}</th>
+                  <th className="p-1.5">{label(reportKey)}</th>
                   <th className="p-1.5">TRAIN RETURN</th>
                   <th className="p-1.5">MAX DD</th>
                   <th className="p-1.5">SHARPE</th>
@@ -265,7 +306,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                   return (
                     <tr key={candidate.result.resultId} className={`border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors ${isSelected ? "is-best bg-[var(--ak-surface-raised)]" : ""}`}>
                       <td className="mono p-1.5 font-bold flex items-center gap-1.5">
-                        <span>{String(candidate.parameters[activeKey])}</span>
+                        <span>{String(candidate.parameters[reportKey])}</span>
                         {isSelected && <AkTag variant="advanced" className="text-[9px] px-1 py-0 h-3.5 leading-none">PICKED</AkTag>}
                       </td>
                       <td className={`p-1.5 font-mono font-bold ${candidate.result.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
@@ -287,7 +328,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             Saved · train dataset {report.trainingDatasetId.slice(0, 24)}… · holdout dataset {report.holdoutDatasetId.slice(0, 24)}… · holdout result {report.holdout.resultId} · parent {report.datasetId.slice(0, 24)}…
           </p>
           <p className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-70">
-            {EXCHANGE_LABELS[exchange]} · {symbol} · {timeframe} · selection rule {report.selectionRule}
+            {EXCHANGE_LABELS[report.holdout.exchange]} · {report.holdout.symbol} · {report.holdout.timeframe} · strategy {savedReport?.strategyId} · selection rule {report.selectionRule}
           </p>
         </>
       )}

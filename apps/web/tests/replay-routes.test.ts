@@ -3,15 +3,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DEFAULT_WORKSPACE_STATE, type Candle, type ReplayExecution, type ReplaySession } from "@newbeing/core";
-import { closeDatabaseForTests, commandReplay, createConfiguredReplaySession, createReplaySession, getReplayExecution, getReplaySession, saveWorkspaceState } from "@newbeing/storage";
+import { closeDatabaseForTests, commandReplay, createConfiguredReplaySession, createReplaySession, getReplayExecution, getReplaySession, getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
 
-const fixture = vi.hoisted(() => ({ bars: [] as Candle[], fetch: vi.fn() }));
+const fixture = vi.hoisted(() => ({ bars: [] as Candle[], fetch: vi.fn(), instrument: vi.fn() }));
 vi.mock("@newbeing/market-data", async () => import("@newbeing/market-data/utils"));
 vi.mock("@/lib/market-adapter", () => ({
-  getWebMarketAdapter: (exchange: string) => ({ id: exchange, fetchOHLCVSince: fixture.fetch, searchSymbols: vi.fn(), fetchOHLCV: vi.fn(), fetchSummary: vi.fn(), fetchSummaries: vi.fn(), fetchOrderBook: vi.fn(), fetchRecentTrades: vi.fn(), close: vi.fn() }),
+  getWebMarketAdapter: (exchange: string) => ({ id: exchange, getInstrument: fixture.instrument, fetchOHLCVSince: fixture.fetch, searchSymbols: vi.fn(), fetchOHLCV: vi.fn(), fetchSummary: vi.fn(), fetchSummaries: vi.fn(), fetchOrderBook: vi.fn(), fetchRecentTrades: vi.fn(), close: vi.fn() }),
   marketDataSourceLabel: () => "Named deterministic route fixture",
 }));
 import { GET as market } from "../src/app/api/market/route.js";
+import { POST as startReplay } from "../src/app/api/replay/route.js";
 import { POST as replay } from "../src/app/api/replay/[id]/route.js";
 
 let directory: string;
@@ -32,12 +33,79 @@ beforeEach(() => {
   process.env.NEWBEING_DATA_DIR = directory;
   fixture.bars = [bar(120_000)];
   fixture.fetch.mockImplementation(async () => fixture.bars);
+  fixture.instrument.mockResolvedValue({ id: "kraken:spot:XXBTZUSD", venue: "kraken", nativeId: "XXBTZUSD", symbol: "BTC/USD", base: "BTC", quote: "USD", marketType: "spot", active: true });
 });
 afterEach(() => {
   closeDatabaseForTests();
   delete process.env.NEWBEING_DATA_DIR;
   rmSync(directory, { recursive: true, force: true });
   vi.clearAllMocks();
+});
+
+describe("Replay creation navigation", () => {
+  function start(extra: Record<string, unknown> = {}) {
+    return startReplay(new Request("http://localhost/api/replay", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exchange: "kraken", symbol: "BTC/USD", timeframe: "1m", endAt: 180_000, ...extra }),
+    }));
+  }
+
+  beforeEach(() => {
+    fixture.bars = [bar(60_000), bar(120_000)];
+    saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "research" });
+  });
+
+  it("keeps legacy requests navigating normally", async () => {
+    const response = await start();
+    expect(response.status).toBe(201);
+    const { session: created } = await response.json();
+    expect(getWorkspaceState().state).toMatchObject({ activeWorkspace: "replay", activeReplayId: created.id });
+    expect(getReplayExecution(created.id)).toBeDefined();
+  });
+
+  it("allows browser clients to save without server navigation", async () => {
+    const before = getWorkspaceState();
+    const response = await start({ navigate: false });
+    expect(response.status).toBe(201);
+    const { session: created } = await response.json();
+    expect(getWorkspaceState()).toEqual(before);
+    expect(getReplaySession(created.id)).toEqual(created);
+    expect(getReplayExecution(created.id)).toBeDefined();
+  });
+
+  it.each(["instrument", "candles"])("preserves newer navigation while awaiting %s, but saves the session", async (stage) => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const instrument = await fixture.instrument();
+    const mock = stage === "instrument" ? fixture.instrument : fixture.fetch;
+    mock.mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+      return stage === "instrument" ? instrument : fixture.bars;
+    });
+    const pending = start();
+    await entered.promise;
+    saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "terminal", symbol: "ETH/USDT", activeReplayId: "another-session" });
+    const navigated = getWorkspaceState();
+    release.resolve();
+    const response = await pending;
+    expect(response.status).toBe(201);
+    const { session: created } = await response.json();
+    expect(getWorkspaceState()).toEqual(navigated);
+    expect(getReplaySession(created.id)).toEqual(created);
+    expect(getReplayExecution(created.id)).toBeDefined();
+  });
+
+  it("detects navigation away and back during metadata loading", async () => {
+    const original = getWorkspaceState().state;
+    fixture.instrument.mockImplementationOnce(async () => {
+      saveWorkspaceState({ ...original, activeWorkspace: "terminal" });
+      saveWorkspaceState(original);
+      return { id: "kraken:spot:XXBTZUSD", venue: "kraken", nativeId: "XXBTZUSD", symbol: "BTC/USD", base: "BTC", quote: "USD", marketType: "spot", active: true };
+    });
+    expect((await start()).status).toBe(201);
+    expect(getWorkspaceState().state).toEqual(original);
+  });
 });
 
 describe("Replay HTTP integration", () => {

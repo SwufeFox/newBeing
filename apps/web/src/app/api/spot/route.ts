@@ -23,14 +23,28 @@ export async function GET(request: Request) {
 }
 export async function POST(request: Request) {
   if (getWorkspaceState().state.activeWorkspace === "replay") return NextResponse.json({ error: "Normal Paper commands are disabled during Replay." }, { status: 409 });
+  let input: z.infer<typeof schema> | undefined;
   try {
-    const input = schema.parse(await request.json());
+    input = schema.parse(await request.json());
     if (getWorkspaceState().state.activeWorkspace === "replay") return NextResponse.json({ error: "Normal Paper commands are disabled during Replay." }, { status: 409 });
     if (input.action === "open") return NextResponse.json({ account: openSpotAccount(input.exchange, input.quote), legacyAssets: "preserved-separately" });
     if (input.action === "cancel") return NextResponse.json(cancelSpotIntent(input.exchange, input.quote, input.clientOrderId));
     const result = await executeSharedSpotOrder(input, getWebMarketAdapter(input.exchange));
     return NextResponse.json(result, { status: result.order.status === "filled" ? 200 : ["submitted", "unknown"].includes(result.order.status) ? 202 : 422 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Shared spot command failed." }, { status: 422 });
+    // A validation/metadata failure can occur before an intent exists. Report the
+    // persisted outcome so the ticket can distinguish that from an unknown fill.
+    let outcome: Record<string, unknown> = {};
+    if (input?.action === "order") {
+      try {
+        const account = getSpotAccount(input.exchange, input.symbol.split("/")[1]!);
+        const clientOrderId = input.clientOrderId;
+        const order = account?.orders.find((item) => item.clientOrderId === clientOrderId);
+        outcome = { account: account ?? null, order: order ?? null, intentRecorded: Boolean(order) };
+      } catch {
+        // Storage could not be read: the outcome remains unconfirmed.
+      }
+    }
+    return NextResponse.json({ ...outcome, error: error instanceof Error ? error.message : "Shared spot command failed." }, { status: 422 });
   }
 }
