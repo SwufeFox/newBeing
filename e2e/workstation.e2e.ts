@@ -411,9 +411,14 @@ test("Paper shows an interrupted intent from its original account and persists m
   // so this is the database the API actually reads. Assert equality rather than
   // silently falling back to a directory the server never opened.
   const directory = process.env.NEWBEING_E2E_DATA_DIR;
-  const serverDirectory = info.config.webServer?.env?.NEWBEING_DATA_DIR;
   expect(directory, "Recovery E2E needs the isolated fixture database directory.").toBeTruthy();
-  expect(serverDirectory, "The dev server must use the same fixture database as this test.").toBe(directory);
+  /* With an externally managed server (PLAYWRIGHT_BASE_URL) there is no webServer
+     block to compare against; the seeded-intent read below is the real proof that
+     the API opened this directory. Inline-server runs can state it up front. */
+  const serverDirectory = info.config.webServer?.env?.NEWBEING_DATA_DIR;
+  if (serverDirectory !== undefined) {
+    expect(serverDirectory, "The dev server must use the same fixture database as this test.").toBe(directory);
+  }
   const clientOrderId = `interrupted-${randomUUID()}`;
   const moduleUrl = pathToFileURL(resolve("packages/storage/dist/index.js")).href;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", `

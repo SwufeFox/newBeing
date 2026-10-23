@@ -30,6 +30,8 @@ export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
   fullyParallel: false,
+  // Real API suites share one workspace and fixture database across files.
+  workers: 1,
   timeout: 120_000,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
