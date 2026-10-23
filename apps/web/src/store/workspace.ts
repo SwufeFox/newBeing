@@ -19,6 +19,8 @@ export interface WorkspaceStore extends WorkspaceState {
   sourceDrafts: Record<string, string>;
   backtest: BacktestResult | null;
   syncUpdatedAt: number;
+  workspaceReady: boolean;
+  setWorkspaceReady: (workspaceReady: boolean) => void;
   setExchange: (exchange: ExchangeId) => void;
   setSymbol: (symbol: string) => void;
   setTimeframe: (timeframe: Timeframe) => void;
@@ -55,6 +57,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   sourceDrafts: {},
   backtest: null,
   syncUpdatedAt: 0,
+  workspaceReady: false,
+  setWorkspaceReady: (workspaceReady) => set({ workspaceReady }),
   setSymbol: (symbol) => set({ symbol, visibleRange: { from: null, to: null } }),
   /* Switching venues keeps the session intact. Every venue can now serve
      backtests and replays, so dropping the user's results on a venue change

@@ -11,7 +11,7 @@ interface WorkspaceEnvelope {
 
 async function readRemote(): Promise<WorkspaceEnvelope | null> {
   try {
-    const response = await fetch("/api/workspace", { cache: "no-store" });
+    const response = await fetch("/api/workspace", { cache: "no-store", signal: AbortSignal.timeout(10_000) });
     if (!response.ok) return null;
     const payload: unknown = await response.json();
     if (typeof payload !== "object" || payload === null || !("state" in payload) || !("updatedAt" in payload)) return null;
@@ -34,6 +34,7 @@ export function WorkspaceSync(): null {
     let poll: ReturnType<typeof setInterval> | undefined;
 
     const sendState = async (): Promise<void> => {
+      if (stopped) return;
       if (isSending) {
         pendingSend = true;
         return;
@@ -47,8 +48,9 @@ export function WorkspaceSync(): null {
           headers: { "Content-Type": "application/json" },
           body: stateJson,
         });
-        if (!response.ok) return;
+        if (stopped || !response.ok) return;
         const envelope = (await response.json()) as WorkspaceEnvelope;
+        if (stopped) return;
         lastLocalWrite = envelope.updatedAt;
         lastServerTime = Math.max(lastServerTime, envelope.updatedAt);
         lastSyncedJson = JSON.stringify(envelope.state);
@@ -76,6 +78,7 @@ export function WorkspaceSync(): null {
       await useWorkspaceStore.persist.rehydrate();
       if (stopped) return;
       const remote = await readRemote();
+      if (stopped) return;
       if (remote) {
         lastServerTime = remote.updatedAt;
         const localTimestamp = useWorkspaceStore.getState().syncUpdatedAt;
@@ -90,15 +93,17 @@ export function WorkspaceSync(): null {
         } else {
           lastSyncedJson = JSON.stringify(toSharedWorkspaceState(useWorkspaceStore.getState()));
           await sendState();
+          if (stopped) return;
         }
       } else {
         lastSyncedJson = JSON.stringify(toSharedWorkspaceState(useWorkspaceStore.getState()));
       }
       ready = true;
+      useWorkspaceStore.getState().setWorkspaceReady(true);
       poll = setInterval(() => {
         void (async () => {
           const next = await readRemote();
-          if (!next || next.updatedAt <= lastServerTime) return;
+          if (stopped || !next || next.updatedAt <= lastServerTime) return;
           lastServerTime = next.updatedAt;
           if (next.updatedAt <= lastLocalWrite) return;
           const currentShared = toSharedWorkspaceState(useWorkspaceStore.getState());
