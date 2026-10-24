@@ -34,3 +34,45 @@ export function derivativeUnrealized(
   if (!Number.isFinite(raw)) return null;
   return position.kind === "option" ? raw : Math.max(raw, -Number(position.margin));
 }
+
+export interface OptionChainRow {
+  strike: number;
+  call: DerivativeInstrument | null;
+  put: DerivativeInstrument | null;
+}
+
+export interface OptionChainExpiry {
+  /** UTC ms of expiry, as published natively. */
+  expiry: number;
+  rows: OptionChainRow[];
+}
+
+/**
+ * Group a flat option list into expiries, then strike-paired call/put rows.
+ * A strike present on only one side still gets its row; the other side is null.
+ * Never invents expiries or strikes; all grouping comes from native metadata.
+ */
+export function derivativeOptionChain(instruments: DerivativeInstrument[]): OptionChainExpiry[] {
+  const byExpiry = new Map<number, Map<number, OptionChainRow>>();
+  for (const instrument of instruments) {
+    if (instrument.kind !== "option" || instrument.expiry === null || instrument.strike === null) continue;
+    let rows = byExpiry.get(instrument.expiry);
+    if (!rows) { rows = new Map(); byExpiry.set(instrument.expiry, rows); }
+    let row = rows.get(instrument.strike);
+    if (!row) { row = { strike: instrument.strike, call: null, put: null }; rows.set(instrument.strike, row); }
+    if (instrument.optionRight === "call" && !row.call) row.call = instrument;
+    if (instrument.optionRight === "put" && !row.put) row.put = instrument;
+  }
+  return [...byExpiry.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([expiry, rows]) => ({
+      expiry,
+      rows: [...rows.values()].sort((a, b) => a.strike - b.strike),
+    }));
+}
+
+/** UTC date label for an expiry selector, e.g. "2026-12-25". */
+export function derivativeExpiryLabel(expiry: number): string {
+  if (!Number.isFinite(expiry) || expiry <= 0) return "—";
+  return new Date(expiry).toISOString().slice(0, 10);
+}

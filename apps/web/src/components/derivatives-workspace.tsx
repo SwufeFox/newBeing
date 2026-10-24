@@ -8,7 +8,7 @@ import type { DerivativeInstrument, DerivativeKind, DerivativeQuote } from "@new
 import type { DerivativesAccount, DerivativesOrderRequest, DerivativesPosition } from "@newbeing/application/derivatives-types";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceStore } from "@/store/workspace";
-import { derivativeNumber, derivativeDate, derivativeBlockReason, derivativeUnrealized } from "@/lib/derivatives-ui";
+import { derivativeNumber, derivativeDate, derivativeBlockReason, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel } from "@/lib/derivatives-ui";
 
 const KINDS = [["perpetual", "Perpetuals"], ["future", "Futures"], ["option", "Options"]] as const;
 
@@ -32,17 +32,32 @@ function EngineModel(): React.JSX.Element {
   </AkPopover>;
 }
 
-/** Sparse series stay sparse: polyline over real closes, no gap filling. */
+/** Sparse series stay sparse: real OHLC candles, no gap filling. Each bar maps
+ * to one x slot in arrival order, so missing intervals simply do not appear. */
 function CandleSeries({ bars }: { bars: Candle[] }): React.JSX.Element {
-  const values = bars.map((bar) => bar.close);
-  const min = Math.min(...values), max = Math.max(...values);
-  return <svg viewBox="0 0 600 140" className="w-full h-36" role="img" aria-label="Contract closing prices, 1 hour candles">
-    <title>Contract closing prices · 1h · sparse series preserved</title>
-    <polyline fill="none" stroke="var(--c-accent)" strokeWidth="2" points={bars.map((bar) => {
-      const span = bars.at(-1)!.timestamp - bars[0]!.timestamp;
-      const x = span > 0 ? 5 + (bar.timestamp - bars[0]!.timestamp) / span * 590 : 300;
-      return `${x},${max === min ? 70 : 130 - (bar.close - min) / (max - min) * 120}`;
-    }).join(" ")} />
+  const lows = bars.map((bar) => bar.low);
+  const highs = bars.map((bar) => bar.high);
+  const min = Math.min(...lows), max = Math.max(...highs);
+  const span = max - min || 1;
+  const W = 640, H = 200, PAD = 8, CHART_H = H - 18;
+  const slot = (W - PAD * 2) / bars.length;
+  const bodyW = Math.max(1.5, Math.min(11, slot * 0.62));
+  const y = (price: number) => PAD + (1 - (price - min) / span) * (CHART_H - PAD * 2);
+  return <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-48" role="img" aria-label="Contract OHLC candles, 1 hour">
+    <title>Contract OHLC · 1h · sparse series preserved</title>
+    {bars.map((bar, index) => {
+      const cx = PAD + slot * index + slot / 2;
+      const up = bar.close >= bar.open;
+      const color = up ? "var(--c-up)" : "var(--c-down)";
+      const bodyTop = y(Math.max(bar.open, bar.close));
+      const bodyBottom = y(Math.min(bar.open, bar.close));
+      return <g key={bar.timestamp} stroke={color} fill={color}>
+        <line x1={cx} x2={cx} y1={y(bar.high)} y2={y(bar.low)} strokeWidth="1" />
+        <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={Math.max(1, bodyBottom - bodyTop)} strokeWidth="0" />
+      </g>;
+    })}
+    <text x={PAD} y={H - 5} fill="var(--c-fg-4)" fontSize="9" fontFamily="var(--f-display)">{derivativeDate(bars[0]?.timestamp)}</text>
+    <text x={W - PAD} y={H - 5} fill="var(--c-fg-4)" fontSize="9" fontFamily="var(--f-display)" textAnchor="end">{derivativeDate(bars.at(-1)?.timestamp)}</text>
   </svg>;
 }
 
@@ -70,6 +85,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [quantity, setQuantity] = useState("");
   const [leverage, setLeverage] = useState("1");
   const [maximumPrice, setMaximumPrice] = useState("");
+  const [chainExpiry, setChainExpiry] = useState<number | null>(null);
   const pendingOrder = useRef<DerivativesOrderRequest | null>(null);
   const mutationLock = useRef(false);
   /* remoteReplay null = first poll still outstanding: hide the markets rather
@@ -140,7 +156,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
     setMaximumPrice(""); setQuantity(""); setNotice(null); pendingOrder.current = null;
   }
   function changeKind(next: DerivativeKind): void {
-    setKind(next); setItems([]); setListLoading(true); select(""); setSide("long"); setLeverage("1"); setAction("open");
+    setKind(next); setItems([]); setListLoading(true); select(""); setSide("long"); setLeverage("1"); setAction("open"); setChainExpiry(null);
   }
   // A close order must reuse the position's terms; the engine rejects mismatches,
   // so pre-filling removes the most common avoidable rejection.
@@ -176,6 +192,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
   }
 
   const stale = quote != null && now - quote.timestamp > 15000;
+  const chain = kind === "option" ? derivativeOptionChain(items) : [];
+  const activeChain = chain.find((entry) => entry.expiry === chainExpiry) ?? chain[0] ?? null;
 
   return <div className="derivatives-shell font-mono">
     <header className="derivatives-topbar">
@@ -264,11 +282,40 @@ export function DerivativesWorkspace(): React.JSX.Element {
         <div className="p-2 border-b border-[var(--c-line)]">
           <AkInput aria-label="Search derivatives" placeholder="Search contracts" value={query} disabled={busy} onChange={(event) => setQuery(event.target.value)} />
         </div>
+        {kind === "option" && chain.length > 0 && <div className="flex flex-wrap gap-1 p-2 border-b border-[var(--c-line)]" role="group" aria-label="Expiry">
+          {chain.map((entry) => (
+            <button key={entry.expiry} type="button" disabled={busy}
+              className={'px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider border ' + ((activeChain?.expiry === entry.expiry) ? "text-[var(--c-accent)] border-[var(--c-accent)] bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)]" : "text-[var(--c-fg-3)] border-[var(--c-line)] hover:text-[var(--c-fg)]")}
+              aria-pressed={activeChain?.expiry === entry.expiry}
+              onClick={() => setChainExpiry(entry.expiry)}>
+              {derivativeExpiryLabel(entry.expiry)}
+            </button>
+          ))}
+        </div>}
         <div className="derivatives-list">
           {blocked ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">Live data hidden while Paper is disabled.</p>
             : listLoading ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">Loading instruments…</p>
               : listError ? <div className="p-3 space-y-2"><p className="text-[var(--c-fg-3)] text-[11px]">{listError}</p><Button size="sm" variant="outline" onClick={() => setRevision((n) => n + 1)}>Retry</Button></div>
                 : !items.length ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">No matching contracts.</p>
+                  : kind === "option" && activeChain ? activeChain.rows.map((row) => (
+                    <div key={activeChain.expiry + "-" + row.strike} className="grid grid-cols-[1fr_auto_1fr] items-stretch border-b border-[var(--c-line-soft)]" role="group" aria-label={"Strike " + derivativeNumber(row.strike)}>
+                      {(["call", "put"] as const).map((right) => {
+                        const option = row[right];
+                        if (!option) return <div key={right} className="min-h-[44px]" aria-label={"No " + right + " at this strike"} />;
+                        const strikeTag = right === "call" ? "C" : "P";
+                        return (
+                          <button key={right} type="button"
+                            className={'derivatives-row !border-b-0 ' + (selectedId === option.id ? "selected" : "") + (right === "call" ? " border-r border-[var(--c-line-soft)]" : "")}
+                            disabled={busy} aria-current={selectedId === option.id} onClick={() => select(option.id)}>
+                            <span className="min-w-0">
+                              <strong className="truncate">{derivativeNumber(row.strike)} <span className="text-[var(--c-accent)]">{strikeTag}</span></strong>
+                              <small>{option.settle} · {option.linear ? "Linear" : "Coin"}</small>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))
                   : items.map((item) => (
                     <button key={item.id} type="button" className={`derivatives-row ${selectedId === item.id ? "selected" : ""}`} disabled={busy} aria-current={selectedId === item.id} onClick={() => select(item.id)}>
                       <span className="min-w-0">
