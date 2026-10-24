@@ -5,6 +5,7 @@
   "type": "module",
   "types": "./src/index.ts",
   "exports": {
+    "./derivatives": { "types": "./src/derivatives.ts", "import": "./dist/derivatives.js", "default": "./dist/derivatives.js" },
     ".": {
       "types": "./src/index.ts",
       "import": "./dist/index.js",

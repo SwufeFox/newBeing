@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -864,6 +865,7 @@ export function Terminal(): React.JSX.Element {
               {label} <span className="opacity-50 text-[9px]">[{num}]</span>
             </button>
           ))}
+          <Link href="/derivatives" className="workspace-tab px-3 py-1 text-xs font-mono font-bold uppercase text-[var(--ak-text-secondary)]">Derivatives</Link>
         </nav>
 
         <div className="topbar-spacer flex-1" />

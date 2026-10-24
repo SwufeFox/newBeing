@@ -1,6 +1,6 @@
 # newBeing — AI-Native Trading Workstation
 
-**Trade. Research. Replay. Evolve.** A local-first research terminal. The current vertical slice ships real Binance Spot public data, an interactive Lightweight Charts workspace, deterministic bar-by-bar backtests, cursor-gated historical replay with session-isolated paper fills, SQLite-backed experiments, synchronized workspace state, and a local stdio MCP server. Live trading is intentionally disabled.
+**Trade. Research. Replay. Evolve.** A local-first research terminal with public spot and derivatives markets, interactive Lightweight Charts, deterministic spot research, cursor-gated historical Replay, independent Paper ledgers, SQLite-backed experiments, synchronized workspace state, and a local stdio MCP server. Live trading is intentionally disabled.
 
 ## Requirements
 
@@ -18,6 +18,14 @@ pnpm dev
 Open <http://localhost:3000>. No API key or third-party SaaS account is required. If pnpm is not installed, enable it with `corepack enable pnpm` or use `npx pnpm@12 install` / `npx pnpm@12 dev`.
 
 The local SQLite database and saved experiments live under `.newbeing/` (ignored by Git). `NEWBEING_DATA_DIR` can move that state elsewhere. Public exchange requests are made server-side through CCXT; the browser subscribes only to Binance's public kline stream. This workspace is not a hosted service.
+
+## Derivatives
+
+Open **Derivatives** from the main navigation (or `/derivatives`). The dedicated workspace keeps native product identities, contract quantities and settlement currencies separate from spot symbols. It includes OKX USDT linear perpetuals, Deribit USDC linear dated futures, plus Deribit options with expiry, strike and call/put selection. Public data needs no exchange credentials.
+
+Paper accounts must be explicitly opened. Contracts support local isolated margin and long/short exposure; options support paid-premium buys and sells that close an existing long. Quotes, collateral, contract multipliers and fees use the instrument's actual settlement units. These accounts never import spot or legacy wallet assets.
+
+The local execution policy, funding coverage, expiry handling and research boundaries are described in [the derivatives guide](docs/derivatives.md). Public derivatives and their normal Paper accounts are blocked while a frozen Replay is active.
 
 ## Checks
 

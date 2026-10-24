@@ -22,6 +22,7 @@ import {
   saveWorkspaceState,
 } from "@newbeing/storage";
 import { runResearchBacktest } from "@newbeing/application";
+import { registerDerivativesTools } from "./derivatives-tools.js";
 
 const timeframe = z.enum(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]);
 const symbolSchema = z.string().regex(/^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/);
@@ -76,6 +77,7 @@ function summarizeExperiment(result: NonNullable<ReturnType<typeof getExperiment
 
 export function createNewBeingMcpServer(): McpServer {
   const server = new McpServer({ name: "newbeing-local-research", version: "0.1.0" });
+  registerDerivativesTools(server);
 
   server.registerTool("get_workspace_context", {
     title: "Get newBeing workspace context",

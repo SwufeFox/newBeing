@@ -6,6 +6,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": { "types": "./src/index.ts", "import": "./dist/index.js", "default": "./dist/index.js" },
+    "./derivatives-types": { "types": "./src/derivatives-types.ts", "import": "./dist/derivatives-types.js", "default": "./dist/derivatives-types.js" },
+    "./derivatives": { "types": "./src/derivatives.ts", "import": "./dist/derivatives.js", "default": "./dist/derivatives.js" },
     "./sweep-values": { "types": "./src/sweep-values.ts", "import": "./dist/sweep-values.js", "default": "./dist/sweep-values.js" }
   },
   "scripts": {
@@ -17,6 +19,7 @@
     "@newbeing/core": "workspace:*",
     "@newbeing/market-data": "workspace:*",
     "@newbeing/storage": "workspace:*",
+    "decimal.js": "^10.6.0",
     "zod": "^4.2.4"
   },
   "devDependencies": { "vitest": "^5.0.3", "typescript": "5.9.3" }

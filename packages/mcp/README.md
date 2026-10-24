@@ -42,6 +42,7 @@ The command must resolve the pinned pnpm 12 toolchain (for example through Corep
 ## Tools and permissions
 
 - Read-only: `get_workspace_context`, `get_market_data`, `get_portfolio`, `list_strategies`, `get_strategy`, `get_backtest_result`, `list_experiments`.
+- Derivatives reads: `list_derivative_instruments` discovers native perpetual/future/option IDs; `get_derivative_market` returns actual product units and public quotes; `get_derivative_portfolio` reads an independent venue/settlement Paper account without opening or funding it. All three are blocked during frozen Replay. They add no trading or account-opening capability to MCP.
 - Research writes: `create_strategy` and `update_strategy` save local source drafts; `run_backtest` uses a reviewed built-in strategy and persists a result; `open_workspace_view` changes local navigation.
 - Transaction preparation only: `prepare_order` stores a five-minute **Paper-only** preview. It does not create an order. The user must confirm in the local UI; the server has no live order tool.
 

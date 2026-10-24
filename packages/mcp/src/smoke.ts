@@ -20,6 +20,7 @@ const transport = new StdioClientTransport({
   env: {
     PATH: process.env.PATH ?? "",
     NODE_ENV: "test",
+    NEWBEING_E2E_FIXTURES: "1",
     NEWBEING_DATA_DIR: dataDirectory,
   },
   stderr: "inherit",
@@ -39,7 +40,7 @@ try {
   const required = ["get_workspace_context", "get_market_data", "run_backtest", "prepare_order"];
   const missing = required.filter((name) => !names.includes(name));
   if (missing.length > 0) throw new Error(`MCP tool registration missing: ${missing.join(", ")}`);
-  const expected = ["get_workspace_context", "get_market_data", "list_strategies", "get_strategy", "create_strategy", "run_backtest", "list_experiments", "get_backtest_result", "update_strategy", "open_workspace_view", "get_portfolio", "prepare_order"];
+  const expected = ["get_workspace_context", "get_market_data", "list_strategies", "get_strategy", "create_strategy", "run_backtest", "list_experiments", "get_backtest_result", "update_strategy", "open_workspace_view", "get_portfolio", "prepare_order", "list_derivative_instruments", "get_derivative_market", "get_derivative_portfolio"];
   if (names.length !== expected.length || expected.some((name) => !names.includes(name))) throw new Error("MCP execution surface changed; only the approved tools may be registered.");
   const pendingOwner = paperAccountId("BTC/USD", "kraken");
   beginPaperIntent({ clientOrderId: "mcp-interrupted-order", symbol: "BTC/USD", side: "buy", quantity: 0.1 }, pendingOwner);
@@ -60,6 +61,13 @@ try {
   const shared = readPayload(await client.callTool({ name: "get_portfolio", arguments: { symbol: "BTC/USDT", account_mode: "shared-spot" } }));
   if (shared.accountMode !== "shared-spot" || shared.account !== null) throw new Error("MCP shared-wallet reads must not seed or return a legacy wallet.");
   if (!(await client.callTool({ name: "prepare_order", arguments: { symbol: "BTC/USDT", side: "buy", quantity: 1, account_mode: "shared-spot" } })).isError) throw new Error("MCP silently routed a shared preview to the legacy wallet.");
+  const derivativesPortfolio = readPayload(await client.callTool({ name: "get_derivative_portfolio", arguments: { venue: "okx", settle: "USDT" } }));
+  if (derivativesPortfolio.account !== null) throw new Error("MCP derivatives reads must not initialize an account.");
+  const derivativeList = readPayload(await client.callTool({ name: "list_derivative_instruments", arguments: { kind: "perpetual", query: "BTC" } }));
+  const derivativeInstruments = derivativeList.instruments as { id: string; kind: string; source: string }[];
+  if (!derivativeInstruments?.length || derivativeInstruments[0]?.kind !== "perpetual" || derivativeInstruments[0]?.source !== "fixture") throw new Error("MCP derivatives fixtures must be explicit and retain native product identity.");
+  const derivativeMarket = readPayload(await client.callTool({ name: "get_derivative_market", arguments: { instrument_id: derivativeInstruments[0]!.id } }));
+  if ((derivativeMarket.quote as { instrumentId: string }).instrumentId !== derivativeInstruments[0]!.id) throw new Error("MCP derivative quote does not match its product.");
   const seedBar = { timestamp: 60_000, open: 100, high: 105, low: 95, close: 100, volume: 10 };
   const session: ReplaySession = { id: "mcp-smoke-replay", exchange: "binance", symbol: "BTC/USDT", timeframe: "1m", startAt: 120_000, cursor: 60_000, bars: [seedBar], status: "active", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString() };
   createConfiguredReplaySession(session, { id: "binance:spot:BTCUSDT", venue: "binance", nativeId: "BTCUSDT", symbol: session.symbol, base: "BTC", quote: "USDT", marketType: "spot" }, { initialCapital: 25_000, feeRate: 0.002, slippageRate: 0.001 });
@@ -76,6 +84,9 @@ try {
     { name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1d" } },
     { name: "get_portfolio", arguments: { symbol: "ETH/USDT" } },
     { name: "get_portfolio", arguments: { symbol: session.symbol, account_mode: "shared-spot" } },
+    { name: "list_derivative_instruments", arguments: { kind: "option" } },
+    { name: "get_derivative_market", arguments: { instrument_id: derivativeInstruments[0]!.id } },
+    { name: "get_derivative_portfolio", arguments: { venue: "okx", settle: "USDT" } },
     { name: "list_experiments", arguments: {} },
     { name: "get_backtest_result", arguments: { result_id: "hidden" } },
     { name: "prepare_order", arguments: { symbol: session.symbol, side: "buy", quantity: 1 } },
