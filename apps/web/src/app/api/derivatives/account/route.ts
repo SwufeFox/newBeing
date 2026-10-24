@@ -37,10 +37,18 @@ export async function GET(request: Request) {
   if (blocked) return blocked;
   try {
     const id = derivativeIdSchema.parse(new URL(request.url).searchParams.get("instrumentId"));
-    const instrument = await getDerivativeInstrument(id);
+    // The account namespace is venue:settle, and every supported product's
+    // settle currency is a fixed venue constant (OKX USDT; Deribit USDC or the
+    // coin base for BTC/ETH options). Parse it locally instead of fetching
+    // native metadata first — the UI can load the account in parallel.
+    const match = /^(okx|deribit):(perpetual|future|option):([A-Za-z0-9_-]+)$/.exec(id);
+    if (!match) throw new Error("Invalid derivative identity.");
+    const [, venue = "", kind = "", nativeId = ""] = match;
+    const settle = venue === "okx" ? "USDT" : kind === "option" && nativeId.startsWith("BTC-") ? "BTC" : kind === "option" && nativeId.startsWith("ETH-") ? "ETH" : "USDC";
     const lateBlock = derivativeReplayRejection();
     if (lateBlock) return lateBlock;
-    return derivativeJson({ account: getDerivativesAccount(instrument.venue, instrument.settle) ?? null, policy: DERIVATIVES_POLICY });
+    const account = getDerivativesAccount(venue as "okx" | "deribit", settle);
+    return derivativeJson({ account: account ?? null, policy: DERIVATIVES_POLICY });
   } catch (error) {
     return derivativeReplayRejection() ?? derivativeFailure(error);
   }

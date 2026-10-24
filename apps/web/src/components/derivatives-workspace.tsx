@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { AkBrackets, AkInput, AkPopover, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import type { Candle } from "@newbeing/core";
 import type { DerivativeInstrument, DerivativeKind, DerivativeQuote } from "@newbeing/market-data/derivatives";
@@ -19,6 +19,24 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+/** Ticking wall clock scoped to the caller: only the component holding the
+ * return value re-renders per interval, so the candle SVG and instrument list
+ * never reconcile because time passed. The selector keeps state in one place. */
+function useNow(intervalMs: number, select: (tick: number) => boolean): boolean {
+  const [value, setValue] = useState(() => select(Date.now()));
+  const selectRef = useRef(select);
+  useEffect(() => {
+    selectRef.current = select;
+    // A stale-quote banner is not sub-second material; align onto the interval.
+    const timer = window.setInterval(() => setValue((previous) => {
+      const next = selectRef.current(Date.now());
+      return next === previous ? previous : next;
+    }), intervalMs);
+    return () => window.clearInterval(timer);
+  });
+  return value;
+}
+
 function EngineModel(): React.JSX.Element {
   return <AkPopover trigger={<Button size="sm" variant="outline">Engine model</Button>} title="Local isolated Paper" eyebrow="EXECUTION POLICY">
     <div className="space-y-2 text-xs">
@@ -33,8 +51,9 @@ function EngineModel(): React.JSX.Element {
 }
 
 /** Sparse series stay sparse: real OHLC candles, no gap filling. Each bar maps
- * to one x slot in arrival order, so missing intervals simply do not appear. */
-function CandleSeries({ bars }: { bars: Candle[] }): React.JSX.Element {
+ * to one x slot in arrival order, so missing intervals simply do not appear.
+ * Memoized: 150 bars ≈ 300 SVG nodes that must not re-render on clock ticks. */
+const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): React.JSX.Element {
   const lows = bars.map((bar) => bar.low);
   const highs = bars.map((bar) => bar.high);
   const min = Math.min(...lows), max = Math.max(...highs);
@@ -59,7 +78,7 @@ function CandleSeries({ bars }: { bars: Candle[] }): React.JSX.Element {
     <text x={PAD} y={H - 5} fill="var(--c-fg-4)" fontSize="9" fontFamily="var(--f-display)">{derivativeDate(bars[0]?.timestamp)}</text>
     <text x={W - PAD} y={H - 5} fill="var(--c-fg-4)" fontSize="9" fontFamily="var(--f-display)" textAnchor="end">{derivativeDate(bars.at(-1)?.timestamp)}</text>
   </svg>;
-}
+});
 
 export function DerivativesWorkspace(): React.JSX.Element {
   const globalWorkspace = useWorkspaceStore((state) => state.activeWorkspace);
@@ -79,15 +98,18 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: "good" | "alert"; text: string } | null>(null);
   const [revision, setRevision] = useState(0);
-  const [now, setNow] = useState(Date.now);
   const [action, setAction] = useState<"open" | "close">("open");
   const [side, setSide] = useState<"long" | "short">("long");
   const [quantity, setQuantity] = useState("");
   const [leverage, setLeverage] = useState("1");
   const [maximumPrice, setMaximumPrice] = useState("");
   const [chainExpiry, setChainExpiry] = useState<number | null>(null);
+  /* Wall-clock reads use the last fetch-landing timestamp (see the quote
+     effect). The one interval-driven display — the staleness banner — lives
+     in useNow() so clock ticks never reconcile the ~300-node candle SVG. */
   const pendingOrder = useRef<DerivativesOrderRequest | null>(null);
   const mutationLock = useRef(false);
+  const nowRef = useRef<number>(0);
   /* remoteReplay null = first poll still outstanding: hide the markets rather
    than flashing a boundary banner that usually resolves to "available". */
   const blocked = globalWorkspace === "replay" || remoteReplay === true;
@@ -101,14 +123,18 @@ export function DerivativesWorkspace(): React.JSX.Element {
   // Read the shared boundary, without mounting WorkspaceSync or writing spot state.
   useEffect(() => {
     let disposed = false;
+    let inFlight = false;
     const refresh = async () => {
+      if (inFlight || disposed) return;
+      inFlight = true;
       try {
         const data = await readJson<{ state: { activeWorkspace: string } }>("/api/workspace");
         if (!disposed) setRemoteReplay(data.state.activeWorkspace === "replay");
       } catch { if (!disposed) setRemoteReplay(null); }
+      finally { inFlight = false; }
     };
     void refresh();
-    const timer = window.setInterval(() => { setNow(Date.now()); void refresh(); }, 1500);
+    const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 1500);
     return () => { disposed = true; window.clearInterval(timer); };
   }, []);
 
@@ -130,15 +156,26 @@ export function DerivativesWorkspace(): React.JSX.Element {
   useEffect(() => {
     if (blocked || !selectedId) return;
     let disposed = false;
+    let inFlight = false;
     const controller = new AbortController();
     const refresh = async () => {
+      // Skip while the previous poll is outstanding: a slow native read must
+      // not pile up (throttled background tabs fire a burst on refocus).
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
       try {
         const data = await readJson<{ instrument: DerivativeInstrument; quote: DerivativeQuote; candles: Candle[]; candleError: string | null }>(`/api/derivatives/market?instrumentId=${encodeURIComponent(selectedId)}`, { signal: controller.signal });
-        if (!disposed) { setMarket(data); setMarketError(null); setBars(data.candles); setCandleError(data.candleError); }
+        if (!disposed) { nowRef.current = data.quote.timestamp; setMarket(data); setMarketError(null); setBars(data.candles); setCandleError(data.candleError); }
       } catch (error) { if (!disposed) { setMarket(null); setMarketError(error instanceof Error ? error.message : "Quote unavailable."); } }
+      finally { inFlight = false; }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 5000);
+    const timer = window.setInterval(() => {
+      // Hidden tabs clamp timers to >=1s and drop them entirely after ~5min;
+      // skip wasted polls while the page cannot be seen.
+      if (document.hidden) return;
+      void refresh();
+    }, 5000);
     return () => { disposed = true; controller.abort(); window.clearInterval(timer); };
   }, [selectedId, revision, blocked]);
 
@@ -164,7 +201,11 @@ export function DerivativesWorkspace(): React.JSX.Element {
     setAction("close"); setSide(position.side === "short" ? "short" : "long"); setLeverage(String(position.leverage)); setQuantity(position.quantity);
     pendingOrder.current = null; setNotice(null);
   }
-  const reason = derivativeBlockReason(instrument, quote, now);
+  // reason gates the submit button. It is evaluated during render off the last
+  // fetch-landing timestamp (see the quote effect); every await in the order
+  // path re-checks expiry inside the engine's transaction, so render-time
+  // freshness here is a UI gate, not the correctness boundary.
+  const reason = quote ? derivativeBlockReason(instrument, quote, quote.timestamp) : instrument ? "A matching two-sided native quote is required for Paper execution." : "Select a contract with native metadata.";
   const validOrder = /^\d+(?:\.\d+)?$/.test(quantity) && Number(quantity) > 0 && /^\d+(?:\.\d+)?$/.test(maximumPrice) && Number(maximumPrice) > 0 && Number.isInteger(Number(leverage)) && Number(leverage) >= 1 && Number(leverage) <= 20;
 
   async function command(openAccount: boolean): Promise<void> {
@@ -191,9 +232,16 @@ export function DerivativesWorkspace(): React.JSX.Element {
     } finally { mutationLock.current = false; setBusy(false); }
   }
 
-  const stale = quote != null && now - quote.timestamp > 15000;
-  const chain = kind === "option" ? derivativeOptionChain(items) : [];
-  const activeChain = chain.find((entry) => entry.expiry === chainExpiry) ?? chain[0] ?? null;
+  /* Staleness is re-evaluated on a slow wall-clock tick only while a quote is
+     on screen — a 1s interval on the banner, not a 1.5s setState on the tree. */
+  const stale = useNow(1000, (nowTick) => quote != null && nowTick - quote.timestamp > 15000);
+  /* Grouping ~100 options runs on every render otherwise; items only change on
+     list refetch, so the chain is keyed to that, not to clock ticks. */
+  const chain = useMemo(() => (kind === "option" ? derivativeOptionChain(items) : []), [kind, items]);
+  const activeChain = useMemo(
+    () => chain.find((entry) => entry.expiry === chainExpiry) ?? chain[0] ?? null,
+    [chain, chainExpiry],
+  );
 
   return <div className="derivatives-shell font-mono">
     <header className="derivatives-topbar">
@@ -390,7 +438,11 @@ export function DerivativesWorkspace(): React.JSX.Element {
                             <table className="derivatives-table">
                               <thead><tr>{["Instrument", "Side", "Qty", "Entry", "Margin", "uPnL", ""].map((label) => <th key={label}>{label}</th>)}</tr></thead>
                               <tbody>{account.positions.map((position) => {
-                                const unrealized = derivativeUnrealized(position, quote?.mark ?? null, now);
+                                // Quote-time, not wall-clock: a frozen/expired
+                                // verdict only needs to be right at the last
+                                // fetch landing, which is when mark came in.
+                                const asOf = quote?.timestamp ?? position.expiry ?? 0;
+                                const unrealized = derivativeUnrealized(position, quote?.mark ?? null, asOf);
                                 return <tr key={`${position.instrumentId}:${position.side}`}>
                                   <td className="max-w-0 truncate" title={position.instrumentId}>{position.instrumentId}</td>
                                   <td>{position.side}</td>
@@ -398,7 +450,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                                   <td>{position.entryPrice}</td>
                                   <td>{position.margin} · {position.leverage}x</td>
                                   <td className={unrealized == null ? "" : unrealized < 0 ? "down" : unrealized > 0 ? "up" : ""}>{unrealized === null ? "—" : `${unrealized > 0 ? "+" : ""}${unrealized}`}</td>
-                                  <td>{position.expiry !== null && position.expiry <= now ? <span className="meta">Frozen</span> : <Button size="sm" variant="outline" disabled={busy} onClick={() => beginClose(position)}>Close</Button>}</td>
+                                  <td>{position.expiry !== null && position.expiry <= asOf ? <span className="meta">Frozen</span> : <Button size="sm" variant="outline" disabled={busy} onClick={() => beginClose(position)}>Close</Button>}</td>
                                 </tr>;
                               })}</tbody>
                             </table>
