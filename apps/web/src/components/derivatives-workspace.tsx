@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { AkInput, AkPopover, AkSelect, AkTag } from "@swufefox/ak-ui-react";
+import { AkBrackets, AkInput, AkPopover, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import type { Candle } from "@newbeing/core";
 import type { DerivativeInstrument, DerivativeKind, DerivativeQuote } from "@newbeing/market-data/derivatives";
 import type { DerivativesAccount, DerivativesOrderRequest, DerivativesPosition } from "@newbeing/application/derivatives-types";
@@ -11,8 +11,6 @@ import { useWorkspaceStore } from "@/store/workspace";
 import { derivativeNumber, derivativeDate, derivativeBlockReason, derivativeUnrealized } from "@/lib/derivatives-ui";
 
 const KINDS = [["perpetual", "Perpetuals"], ["future", "Futures"], ["option", "Options"]] as const;
-const panel = "border border-[var(--ak-border-subtle)] bg-[var(--ak-surface-canvas)] p-3";
-const muted = "text-[var(--ak-text-secondary)]";
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init });
@@ -34,12 +32,13 @@ function EngineModel(): React.JSX.Element {
   </AkPopover>;
 }
 
+/** Sparse series stay sparse: polyline over real closes, no gap filling. */
 function CandleSeries({ bars }: { bars: Candle[] }): React.JSX.Element {
   const values = bars.map((bar) => bar.close);
   const min = Math.min(...values), max = Math.max(...values);
   return <svg viewBox="0 0 600 140" className="w-full h-36" role="img" aria-label="Contract closing prices, 1 hour candles">
     <title>Contract closing prices · 1h · sparse series preserved</title>
-    <polyline fill="none" stroke="var(--ak-signal-info)" strokeWidth="2" points={bars.map((bar) => {
+    <polyline fill="none" stroke="var(--c-accent)" strokeWidth="2" points={bars.map((bar) => {
       const span = bars.at(-1)!.timestamp - bars[0]!.timestamp;
       const x = span > 0 ? 5 + (bar.timestamp - bars[0]!.timestamp) / span * 590 : 300;
       return `${x},${max === min ? 70 : 130 - (bar.close - min) / (max - min) * 120}`;
@@ -63,7 +62,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [accountState, setAccountState] = useState<{ key: string; account: DerivativesAccount | null } | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: "good" | "alert"; text: string } | null>(null);
   const [revision, setRevision] = useState(0);
   const [now, setNow] = useState(Date.now);
   const [action, setAction] = useState<"open" | "close">("open");
@@ -73,7 +72,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [maximumPrice, setMaximumPrice] = useState("");
   const pendingOrder = useRef<DerivativesOrderRequest | null>(null);
   const mutationLock = useRef(false);
-  const blocked = globalWorkspace === "replay" || remoteReplay !== false;
+  /* remoteReplay null = first poll still outstanding: hide the markets rather
+   than flashing a boundary banner that usually resolves to "available". */
+  const blocked = globalWorkspace === "replay" || remoteReplay === true;
   const instrument = !blocked && market?.instrument.id === selectedId ? market.instrument : null;
   const quote = !blocked && market?.quote.instrumentId === selectedId && !marketError ? market.quote : null;
   const initialBalance = instrument?.settle === "BTC" ? "1" : instrument?.settle === "ETH" ? "10" : "10000";
@@ -167,108 +168,273 @@ export function DerivativesWorkspace(): React.JSX.Element {
       }
       const data = await readJson<{ account: DerivativesAccount; deduplicated?: boolean }>("/api/derivatives/account", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       setAccountState({ key: accountKey, account: data.account });
-      setNotice(openAccount ? "Local Paper account opened." : data.deduplicated ? "Previously filled order confirmed." : "Paper order filled.");
+      setNotice({ tone: "good", text: openAccount ? "Local Paper account opened." : data.deduplicated ? "Previously filled order confirmed." : "Paper order filled." });
       pendingOrder.current = null;
     } catch (error) {
-      setNotice(`${error instanceof Error ? error.message : "Paper command failed."} Refresh the account to confirm the outcome before changing this order. Retrying unchanged order details uses the same client order ID.`);
+      setNotice({ tone: "alert", text: `${error instanceof Error ? error.message : "Paper command failed."} Refresh the account to confirm the outcome before changing this order. Retrying unchanged order details uses the same client order ID.` });
     } finally { mutationLock.current = false; setBusy(false); }
   }
 
-  return <div className="derivatives-page min-h-screen bg-[var(--ak-surface-canvas)] text-[var(--ak-text-primary)] font-mono text-xs">
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ak-border-strong)] p-3">
-      <div className="flex items-center gap-4"><Link href="/" className="font-bold">newBeing <span className="text-[var(--ak-signal-info)]">PRTS</span></Link><h1 className="text-sm font-bold">Derivatives</h1><AkTag variant="advanced">PAPER · LIVE OFF</AkTag></div>
-      <div className="flex items-center gap-3"><EngineModel /><Link href="/" className="underline">Back to terminal</Link></div>
+  const stale = quote != null && now - quote.timestamp > 15000;
+
+  return <div className="derivatives-shell font-mono">
+    <header className="derivatives-topbar">
+      <Link href="/" className="derivatives-brand">
+        <AkBrackets className="flex items-center gap-1">
+          <span>newBeing</span>
+          <em>PRTS</em>
+        </AkBrackets>
+      </Link>
+      <h1 className="meta">/ Derivatives</h1>
+      <AkTag variant="advanced">PAPER · LIVE OFF</AkTag>
+      <div className="flex-1" />
+      <EngineModel />
+      <Link href="/" className="meta hover:text-[var(--c-fg)]">← Back to terminal</Link>
     </header>
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ak-border-subtle)] p-3">
-      <div role="tablist" aria-label="Derivative markets" className="flex gap-2">{KINDS.map(([value, label]) => <Button key={value} role="tab" id={`derivatives-${value}`} aria-selected={kind === value} aria-controls="derivatives-panel" variant={kind === value ? "primary" : "ghost"} size="sm" disabled={busy} onClick={() => changeKind(value)}>{label}</Button>)}</div>
-      <span className={muted}>{kind === "option" ? "Deribit · Long options only" : "OKX · Linear isolated contracts"}</span>
+
+    {/* market plate: same grammar as the terminal's market-heading */}
+    <div className="derivatives-plate">
+      <div className="derivatives-identity">
+        <span className="eyebrow">
+          {instrument ? `${instrument.venue === "okx" ? "OKX" : "Deribit"} · ${kind === "perpetual" ? "PERPETUAL SWAP" : kind === "future" ? "DATED FUTURE" : "OPTION"}` : "SELECT A CONTRACT"}
+        </span>
+        <span className="title">
+          <span className="truncate" title={instrument?.nativeId}>{instrument ? instrument.nativeId : <span className="text-[var(--c-fg-3)]">—</span>}</span>
+          {instrument && <small>{instrument.settle}</small>}
+        </span>
+      </div>
+      {instrument && quote && <>
+        <div className="derivatives-quote">
+          <span className="side bid"><span className="value">{derivativeNumber(quote.bid)}</span><span className="tag">Bid</span></span>
+          <span className="side ask"><span className="value">{derivativeNumber(quote.ask)}</span><span className="tag">Ask</span></span>
+        </div>
+        <dl className="derivatives-context">
+          <div className="kv"><dt>Mark</dt><dd>{derivativeNumber(quote.mark)}</dd></div>
+          <div className="kv"><dt>Index</dt><dd>{derivativeNumber(quote.index)}</dd></div>
+          {instrument.kind === "option" && <div className="kv"><dt>Strike</dt><dd>{derivativeNumber(instrument.strike)} {instrument.quote}</dd></div>}
+          {instrument.kind === "option" && quote.iv != null && <div className="kv"><dt>IV</dt><dd>{(quote.iv * 100).toFixed(1)}%</dd></div>}
+          {instrument.kind === "option" && quote.delta != null && <div className="kv"><dt>Delta</dt><dd>{derivativeNumber(quote.delta)}</dd></div>}
+          {instrument.kind !== "option" && <div className="kv"><dt>Expiry</dt><dd>{instrument.kind === "perpetual" ? "Perpetual" : derivativeDate(instrument.expiry)}</dd></div>}
+          {quote.fundingRate != null && <div className="kv"><dt>Funding</dt><dd>{(quote.fundingRate * 100).toFixed(4)}%</dd></div>}
+          {quote.openInterest != null && <div className="kv"><dt>OI</dt><dd>{derivativeNumber(quote.openInterest)}</dd></div>}
+        </dl>
+      </>}
+      <div className="flex-1" />
+      <div className="flex items-center gap-3">
+        <AkTag variant={quote?.source === "fixture" ? "danger" : "default"}>
+          {quote?.source === "fixture" ? "FIXTURE · TEST DATA" : quote ? "PUBLIC REALTIME" : "NO QUOTE"}
+        </AkTag>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Refresh</Button>
+      </div>
     </div>
-    {blocked && <div role="status" className="p-3 border-b border-[var(--ak-border-subtle)] text-[var(--ak-signal-action)]">{globalWorkspace === "replay" || remoteReplay ? "Derivatives Paper is unavailable during Replay. Return to Markets in the main terminal first. These tabs do not leave Replay." : "Checking workspace boundary. Paper is disabled until the shared workspace is available."} <Link href="/" className="underline">Open main terminal</Link></div>}
-    <main id="derivatives-panel" role="tabpanel" aria-labelledby={`derivatives-${kind}`} className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)_300px] gap-3 p-3 items-start">
-      <section className={panel} aria-label="Contract browser">
-        <h2 className="font-bold mb-3">Instruments</h2>
-        <AkInput aria-label="Search derivatives" placeholder="Search contracts" value={query} disabled={busy} onChange={(event) => setQuery(event.target.value)} />
-        <div role="status" className={`my-2 ${muted}`}>{blocked ? "Live data hidden while Paper is disabled." : listLoading ? "Loading instruments…" : listError ?? `${items.length} instruments · native metadata`}</div>
-        {listError && <Button size="sm" onClick={() => setRevision((n) => n + 1)}>Retry</Button>}
-        {!listLoading && !listError && !items.length && <p className={muted}>No matching contracts.</p>}
-        <div className="max-h-[540px] overflow-y-auto space-y-1">{(blocked ? [] : items).map((item) => <Button key={item.id} block size="sm" disabled={busy} variant={selectedId === item.id ? "primary" : "ghost"} onClick={() => select(item.id)} className="text-left"><span className="truncate">{item.nativeId}<small className="block">{item.settle} · {item.linear ? "Linear" : item.inverse ? "Inverse · view only" : "Option"}</small></span></Button>)}</div>
+
+    {blocked && <div role="status" className="derivatives-banner">
+      <span>Derivatives Paper is unavailable during Replay. Return to Markets in the main terminal first; these tabs do not leave Replay.</span>
+      <Link href="/" className="underline">Open main terminal</Link>
+    </div>}
+
+    {/* kind switch: the workspace-tab grammar from the main terminal nav */}
+    <div role="tablist" aria-label="Derivative markets" className="flex items-center gap-2 px-4 py-2">
+      {KINDS.map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          id={'derivatives-' + value}
+          aria-selected={kind === value}
+          aria-controls="derivatives-panel"
+          className={'workspace-tab relative px-3 py-1 text-xs font-mono font-bold tracking-wider uppercase border border-transparent ' + (kind === value ? "active text-[var(--c-accent)] bg-[var(--c-surface-3)] border-[var(--c-accent)]" : "text-[var(--c-fg-2)] hover:text-white")}
+          disabled={busy}
+          onClick={() => changeKind(value as DerivativeKind)}
+        >
+          {label}
+        </button>
+      ))}
+      <div className="flex-1" />
+      <span className="meta">{kind === "option" ? "Deribit · Long options only" : "OKX · Linear isolated contracts"}</span>
+    </div>
+    <div id="derivatives-panel" role="tabpanel" aria-labelledby={'derivatives-' + kind} className="flex flex-col flex-1">
+    <main className="derivatives-layout" style={{ ["--mode" as string]: kind === "option" ? "var(--c-up)" : "var(--c-accent)" }}>
+      {/* instrument rail: the watchlist vocabulary */}
+      <section className="derivatives-panel derivatives-rail" aria-label="Contract browser">
+        <div className="derivatives-panel-head">
+          <span>Instruments</span>
+          <span className="num">{blocked ? "—" : listLoading ? "…" : String(items.length).padStart(2, "0")}</span>
+        </div>
+        <div className="p-2 border-b border-[var(--c-line)]">
+          <AkInput aria-label="Search derivatives" placeholder="Search contracts" value={query} disabled={busy} onChange={(event) => setQuery(event.target.value)} />
+        </div>
+        <div className="derivatives-list">
+          {blocked ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">Live data hidden while Paper is disabled.</p>
+            : listLoading ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">Loading instruments…</p>
+              : listError ? <div className="p-3 space-y-2"><p className="text-[var(--c-fg-3)] text-[11px]">{listError}</p><Button size="sm" variant="outline" onClick={() => setRevision((n) => n + 1)}>Retry</Button></div>
+                : !items.length ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">No matching contracts.</p>
+                  : items.map((item) => (
+                    <button key={item.id} type="button" className={`derivatives-row ${selectedId === item.id ? "selected" : ""}`} disabled={busy} aria-current={selectedId === item.id} onClick={() => select(item.id)}>
+                      <span className="min-w-0">
+                        <strong className="truncate">{item.nativeId}</strong>
+                        <small>{item.settle} · {item.linear ? "Linear" : item.inverse ? "Inverse · view only" : "Option"}</small>
+                      </span>
+                    </button>
+                  ))}
+        </div>
       </section>
+
       <div className="min-w-0 space-y-3">
-        <section className={panel} aria-label="Contract market data">
-          <div className="flex flex-wrap justify-between gap-2 mb-3"><h2 className="font-bold">{instrument?.nativeId ?? "Select a contract"}</h2><Button size="sm" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Refresh</Button></div>
-          {marketError && <p role="alert" className="text-[var(--ak-signal-danger)]">{marketError}</p>}
-          {selectedId && !instrument && !marketError && <p className={muted}>Loading contract and quote…</p>}
-          {instrument && <>
-            <p className={`mb-3 break-all ${muted}`}>{instrument.id} · {quote?.source === "fixture" ? "FIXTURE · TEST DATA" : "PUBLIC MARKET DATA"}</p>
-            {/* Primary read: the executable two-sided market. Everything else is context. */}
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-3">
-              <span className="text-lg font-bold text-[var(--ak-signal-success)]">{derivativeNumber(quote?.bid)} <span className="text-[10px] font-normal opacity-70">BID</span></span>
-              <span className="text-lg font-bold text-[var(--ak-signal-danger)]">{derivativeNumber(quote?.ask)} <span className="text-[10px] font-normal opacity-70">ASK</span></span>
-              <span className={muted}>Mark {derivativeNumber(quote?.mark)} · Index {derivativeNumber(quote?.index)}</span>
-              <span className="text-[10px] uppercase tracking-widest">{instrument.settle}/{instrument.base}</span>
+        <section className="derivatives-panel" aria-label="Contract market data">
+          <div className="derivatives-panel-head">
+            <span>Contract details</span>
+            <span className="num normal-case tracking-normal">{instrument ? instrument.id : "—"}</span>
+          </div>
+          {marketError && <p role="alert" className="m-3 text-[var(--c-down)] text-[11px]">{marketError}</p>}
+          {selectedId && !instrument && !marketError && <p className="m-3 text-[var(--c-fg-4)] text-[11px]">Loading contract and quote…</p>}
+          {instrument && quote && <div className="derivatives-panel-body">
+            <div className="flex flex-wrap gap-x-6 gap-y-1">
+              <div className="flex flex-col gap-1"><span className="meta">Contract size</span><span className="num">{derivativeNumber(instrument.contractSize)} {instrument.base}</span></div>
+              <div className="flex flex-col gap-1"><span className="meta">Min / step</span><span className="num">{derivativeNumber(instrument.minContracts)} / {derivativeNumber(instrument.quantityStep)}</span></div>
+              <div className="flex flex-col gap-1"><span className="meta">Price tick</span><span className="num">{derivativeNumber(instrument.priceTick)}</span></div>
+              <div className="flex flex-col gap-1"><span className="meta">Margin</span><span className="num">{instrument.kind === "option" ? "Paid premium" : "Isolated"}</span></div>
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] mb-3">
-              <span className={muted}>Expiry {instrument.kind === "perpetual" ? "Perpetual" : derivativeDate(instrument.expiry)}</span>
-              {quote?.fundingRate != null && <span className={muted}>Funding {(quote.fundingRate * 100).toFixed(4)}%</span>}
-              {quote?.openInterest != null && <span className={muted}>OI {derivativeNumber(quote.openInterest)} contracts</span>}
-              {instrument.kind === "option" && <span className={muted}>Strike {derivativeNumber(instrument.strike)} {instrument.quote}</span>}
-              {instrument.kind === "option" && quote?.iv != null && <span className={muted}>IV {(quote.iv * 100).toFixed(1)}%</span>}
-              {instrument.kind === "option" && quote?.delta != null && <span className={muted}>Delta {derivativeNumber(quote.delta)}</span>}
-            </div>
-            {/* Contract mechanics are reference data, not headline; one disclosure. */}
-            <details className="mb-2 text-[11px]">
-              <summary className="cursor-pointer select-none text-[10px] uppercase tracking-widest text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]">All contract fields</summary>
-              <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">{[
-                ["Contract size (base)", derivativeNumber(instrument.contractSize)], ["Minimum contracts", derivativeNumber(instrument.minContracts)], ["Contract step", derivativeNumber(instrument.quantityStep)], ["Price tick", derivativeNumber(instrument.priceTick)],
-                ["Quote time (UTC)", derivativeDate(quote?.timestamp)], ["Next funding (UTC)", derivativeDate(quote?.nextFundingAt)], ["Strike (quote/base)", derivativeNumber(instrument.strike)], ["Margin model", instrument.kind === "option" ? "Paid premium" : "Isolated"],
-              ].map(([label, value]) => <div key={label}><dt className={`text-[10px] ${muted}`}>{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}</dl>
+            <details className="derivatives-details">
+              <summary>All contract fields</summary>
+              <dl className="derivatives-context mt-2">
+                <div className="kv"><dt>Native ID</dt><dd>{instrument.nativeId}</dd></div>
+                <div className="kv"><dt>Settlement</dt><dd>{instrument.settle}</dd></div>
+                <div className="kv"><dt>Underlying index</dt><dd>{instrument.quote}/{instrument.base}</dd></div>
+                {instrument.kind === "option" && <div className="kv"><dt>Expiry</dt><dd>{derivativeDate(instrument.expiry)}</dd></div>}
+                <div className="kv"><dt>Quote time</dt><dd>{derivativeDate(quote.timestamp)}</dd></div>
+                {quote.nextFundingAt != null && <div className="kv"><dt>Next funding</dt><dd>{derivativeDate(quote.nextFundingAt)}</dd></div>}
+              </dl>
             </details>
-            {reason && <p role="status" className="mt-2 text-[var(--ak-signal-action)]">{reason}</p>}
-          </>}
+            {reason && <p role="status" className="derivatives-ticket-note alert">{reason}</p>}
+          </div>}
         </section>
-        <section className={panel} aria-label="Contract candles"><h2 className="font-bold mb-2">Price history · 1h</h2>{blocked ? <p className={muted}>Live history is hidden while Paper is disabled.</p> : kind === "option" ? <p className={muted}>Option candles are not supported. Use the native quote and contract details above.</p> : candleError ? <p role="status" className={muted}>{candleError}</p> : bars.length ? <CandleSeries bars={bars} /> : <p className={muted}>{selectedId ? "No candle data available." : "Select a contract to view candles."}</p>}</section>
-        <section className={panel} aria-label="Derivatives account">
-          <h2 className="font-bold mb-3">Paper account {instrument ? `· ${instrument.venue.toUpperCase()} / ${instrument.settle}` : ""}</h2>
-          {blocked ? <p className={muted}>Account balances, positions and order history are hidden while Paper is disabled.</p> : accountError ? <p role="alert">{accountError}</p> : !accountReady ? <p className={muted}>Select a contract to load its settle account.</p> : !account ? <p className={muted}>No local account. Open one explicitly using the ticket.</p> : <>
-            <dl className="grid grid-cols-3 gap-3 mb-4">{[["Available", account.available], ["Realized P&L", account.realizedPnl], ["Fees paid", account.feesPaid]].map(([label, value]) => <div key={label}><dt className={muted}>{label}</dt><dd className="break-all">{value} {account.settle}</dd></div>)}</dl>
-            <h3 className="font-bold mb-2">Positions</h3>{!account.positions.length ? <p className={muted}>No open positions.</p> : <div className="overflow-x-auto"><table className="w-full text-left"><thead className={muted}><tr>{["Instrument", "Side", "Contracts", "Entry", "Isolated margin", "uPnL (mark est.)", "State"].map((label) => <th className="p-2 font-normal" key={label}>{label}</th>)}</tr></thead><tbody>{account.positions.map((position) => {
-              const unrealized = derivativeUnrealized(position, quote?.mark ?? null, now);
-              return <tr key={`${position.instrumentId}:${position.side}`} className="border-t border-[var(--ak-border-subtle)]">
-                <td className="p-2 break-all">{position.instrumentId}</td>
-                <td className="p-2">{position.side}</td>
-                <td className="p-2">{position.quantity}</td>
-                <td className="p-2">{position.entryPrice}</td>
-                <td className="p-2">{position.margin} {account.settle} · {position.leverage}x</td>
-                <td className="p-2">{unrealized === null ? "—" : `${unrealized > 0 ? "+" : ""}${unrealized} ${account.settle}`}</td>
-                <td className="p-2">
-                  {position.expiry !== null && position.expiry <= now ? "Awaiting official settlement" : <Button size="sm" variant="outline" disabled={busy} onClick={() => beginClose(position)}>Close</Button>}
-                </td>
-              </tr>;
-            })}</tbody></table></div>}
-            <h3 className="font-bold mt-4 mb-2">Order history</h3>{!account.orders.length ? <p className={muted}>No Paper fills.</p> : <div className="overflow-x-auto"><table className="w-full text-left"><thead className={muted}><tr>{["Time (UTC)", "Instrument", "Action", "Contracts", "Fill", "Fee"].map((label) => <th className="p-2 font-normal" key={label}>{label}</th>)}</tr></thead><tbody>{account.orders.slice(-20).reverse().map((order) => <tr key={order.clientOrderId} className="border-t border-[var(--ak-border-subtle)]"><td className="p-2">{derivativeDate(order.createdAt)}</td><td className="p-2 break-all">{order.instrumentId}</td><td className="p-2">{order.action} {order.side}</td><td className="p-2">{order.quantity}</td><td className="p-2">{order.fillPrice}</td><td className="p-2">{order.fee} {account.settle}</td></tr>)}</tbody></table></div>}
-          </>}
+
+        <section className="derivatives-panel" aria-label="Contract candles">
+          <div className="derivatives-panel-head"><span>Price history · 1h</span><span className="num">{bars.length || "—"}</span></div>
+          <div className="derivatives-panel-body">
+            {blocked ? <p className="text-[var(--c-fg-4)] text-[11px]">Live history is hidden while Paper is disabled.</p>
+              : kind === "option" ? <p className="text-[var(--c-fg-4)] text-[11px]">Option candles are not supported. Use the native quote and contract details above.</p>
+                : candleError ? <p role="status" className="text-[var(--c-fg-4)] text-[11px]">{candleError}</p>
+                  : bars.length ? <CandleSeries bars={bars} />
+                    : <p className="text-[var(--c-fg-4)] text-[11px]">{selectedId ? "No candle data available." : "Select a contract to view candles."}</p>}
+          </div>
+        </section>
+
+        <section className="derivatives-panel" aria-label="Derivatives account">
+          <div className="derivatives-panel-head">
+            <span>Paper account {instrument ? `· ${instrument.venue.toUpperCase()} / ${instrument.settle}` : ""}</span>
+          </div>
+          <div className="derivatives-panel-body">
+            {blocked ? <p className="text-[var(--c-fg-4)] text-[11px]">Account balances, positions and order history are hidden while Paper is disabled.</p>
+              : accountError ? <p role="alert" className="text-[var(--c-down)] text-[11px]">{accountError}</p>
+                : !accountReady ? <p className="text-[var(--c-fg-4)] text-[11px]">Select a contract to load its settle account.</p>
+                  : !account ? <p className="text-[var(--c-fg-4)] text-[11px]">No local account. Open one explicitly using the ticket.</p>
+                    : <>
+                      <dl className="derivatives-account-grid">
+                        <div><dt>Available</dt><dd>{account.available} <small>{account.settle}</small></dd></div>
+                        <div><dt>Realized P&L</dt><dd className={account.realizedPnl.startsWith("-") ? "text-[var(--c-down)]" : account.realizedPnl === "0" ? "" : "text-[var(--c-up)]"}>{account.realizedPnl} <small>{account.settle}</small></dd></div>
+                        <div><dt>Fees paid</dt><dd>{account.feesPaid} <small>{account.settle}</small></dd></div>
+                      </dl>
+                      <div>
+                        <span className="meta">Positions</span>
+                        {!account.positions.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">No open positions.</p>
+                          : <div className="derivatives-table-scroll mt-2 border border-[var(--c-line)]">
+                            <table className="derivatives-table">
+                              <thead><tr>{["Instrument", "Side", "Qty", "Entry", "Margin", "uPnL", ""].map((label) => <th key={label}>{label}</th>)}</tr></thead>
+                              <tbody>{account.positions.map((position) => {
+                                const unrealized = derivativeUnrealized(position, quote?.mark ?? null, now);
+                                return <tr key={`${position.instrumentId}:${position.side}`}>
+                                  <td className="max-w-0 truncate" title={position.instrumentId}>{position.instrumentId}</td>
+                                  <td>{position.side}</td>
+                                  <td>{position.quantity}</td>
+                                  <td>{position.entryPrice}</td>
+                                  <td>{position.margin} · {position.leverage}x</td>
+                                  <td className={unrealized == null ? "" : unrealized < 0 ? "down" : unrealized > 0 ? "up" : ""}>{unrealized === null ? "—" : `${unrealized > 0 ? "+" : ""}${unrealized}`}</td>
+                                  <td>{position.expiry !== null && position.expiry <= now ? <span className="meta">Frozen</span> : <Button size="sm" variant="outline" disabled={busy} onClick={() => beginClose(position)}>Close</Button>}</td>
+                                </tr>;
+                              })}</tbody>
+                            </table>
+                          </div>}
+                      </div>
+                      <div>
+                        <span className="meta">Order history</span>
+                        {!account.orders.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">No Paper fills.</p>
+                          : <div className="derivatives-table-scroll mt-2 border border-[var(--c-line)]">
+                            <table className="derivatives-table">
+                              <thead><tr>{["Time (UTC)", "Instrument", "Action", "Qty", "Fill", "Fee"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
+                              <tbody>{account.orders.slice(-20).reverse().map((order) => (
+                                <tr key={order.clientOrderId}>
+                                  <td>{derivativeDate(order.createdAt)}</td>
+                                  <td className="max-w-0 truncate" title={order.instrumentId}>{order.instrumentId}</td>
+                                  <td>{order.action} {order.side}</td>
+                                  <td>{order.quantity}</td>
+                                  <td>{order.fillPrice}</td>
+                                  <td>{order.fee}</td>
+                                </tr>
+                              ))}</tbody>
+                            </table>
+                          </div>}
+                      </div>
+                    </>}
+          </div>
         </section>
       </div>
-      <section className={`${panel} space-y-3`} aria-label="Derivatives Paper ticket">
-        <h2 className="font-bold">Paper ticket</h2><p className={muted}>Separate local settle account · spot balances are not used.</p>
-        {accountReady && !account ? <>
-          <p>Initial balance: {initialBalance} {instrument?.settle}</p>
-          <p className={muted}>Local seed in {instrument?.settle}. Fee rate: 0.1% per fill. Opening an existing account never credits it again.</p>
-          <Button block variant="primary" disabled={busy || blocked || !/^\d+(?:\.\d+)?$/.test(initialBalance) || Number(initialBalance) <= 0} onClick={() => void command(true)}>Open Paper account</Button>
-        </> : <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void command(false); }}>
-          <fieldset disabled={busy || blocked || !account} className="space-y-3">
-            <label className="block">Action<AkSelect aria-label="Order action" value={action} onChange={(event) => setAction(event.target.value as "open" | "close")}><option value="open">{kind === "option" ? "Buy to open" : "Open"}</option><option value="close">{kind === "option" ? "Sell to close" : "Close · reduce only"}</option></AkSelect></label>
-            <label className="block">Position side<AkSelect aria-label="Position side" value={side} onChange={(event) => setSide(event.target.value as "long" | "short")}><option value="long">Long</option>{kind !== "option" && <option value="short">Short</option>}</AkSelect></label>
-            <label className="block">Quantity (contracts)<AkInput aria-label="Quantity in contracts" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
-            <label className="block">Isolated leverage<AkSelect aria-label="Isolated leverage" value={leverage} onChange={(event) => setLeverage(event.target.value)}>{Array.from({ length: kind === "option" ? 1 : 20 }, (_, n) => <option key={n + 1} value={n + 1}>{n + 1}x</option>)}</AkSelect></label>
-            <label className="block">{(action === "open") === (side === "long") ? "Buy ceiling" : "Sell floor"} ({instrument?.settle ?? "settle"} / base)<AkInput aria-label="Price protection" inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} /></label>
-            <p className={muted}>{action === "close" ? "Reduce only. Use the existing position side and leverage; quantity cannot exceed that position." : "Immediate local fill at native bid / ask within your price protection."}</p>
-            <Button type="submit" block variant="primary" disabled={busy || blocked || !account || !validOrder || !!reason}>{busy ? "Submitting…" : "Submit Paper order"}</Button>
-          </fieldset>
-        </form>}
-        {notice && <p role="status" className="break-words text-[var(--ak-signal-action)]">{notice}</p>}
-        <p className={muted}>Funding is not accrued. Expiry freezes positions awaiting official settlement. Local isolated margin does not simulate exchange liquidation.</p>
+
+      {/* ticket: the spot inspector's paper ticket grammar */}
+      <section className="derivatives-panel" aria-label="Derivatives Paper ticket">
+        <div className="derivatives-panel-head"><span>Paper ticket</span><span className="num normal-case tracking-normal">{instrument ? `${instrument.venue}/${instrument.settle}` : "—"}</span></div>
+        <div className="derivatives-panel-body derivatives-ticket">
+          <p className="derivatives-ticket-note">Separate local settle account. Spot and legacy balances are never used or migrated.</p>
+          {accountReady && !account ? <>
+            <div className="flex flex-col gap-1 flex items-baseline justify-between"><span className="meta">Initial balance</span><span className="num">{initialBalance} {instrument?.settle}</span></div>
+            <p className="derivatives-ticket-note">Local seed in {instrument?.settle}. Fee rate: 0.1% per fill. Opening an existing account never credits it again.</p>
+            <Button block variant="primary" disabled={busy || blocked} onClick={() => void command(true)}>Open Paper account</Button>
+          </> : <form className="derivatives-ticket" onSubmit={(event) => { event.preventDefault(); void command(false); }}>
+            <fieldset disabled={busy || blocked || !account} className="derivatives-ticket">
+              <label className="field">
+                <span>Action</span>
+                <AkSelect aria-label="Order action" value={action} onChange={(event) => setAction(event.target.value as "open" | "close")}>
+                  <option value="open">{kind === "option" ? "Buy to open" : "Open"}</option>
+                  <option value="close">{kind === "option" ? "Sell to close" : "Close · reduce only"}</option>
+                </AkSelect>
+              </label>
+              <label className="field">
+                <span>Position side</span>
+                <AkSelect aria-label="Position side" value={side} onChange={(event) => setSide(event.target.value as "long" | "short")}>
+                  <option value="long">Long</option>
+                  {kind !== "option" && <option value="short">Short</option>}
+                </AkSelect>
+              </label>
+              <label className="field">
+                <span>Quantity (contracts)</span>
+                <AkInput aria-label="Quantity in contracts" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Isolated leverage</span>
+                <AkSelect aria-label="Isolated leverage" value={leverage} onChange={(event) => setLeverage(event.target.value)}>
+                  {Array.from({ length: kind === "option" ? 1 : 20 }, (_, n) => <option key={n + 1} value={n + 1}>{n + 1}x</option>)}
+                </AkSelect>
+              </label>
+              <label className="field">
+                <span>{(action === "open") === (side === "long") ? "Buy ceiling" : "Sell floor"} ({instrument?.settle ?? "settle"}/base)</span>
+                <AkInput aria-label="Price protection" inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} />
+              </label>
+              <p className="derivatives-ticket-note">{action === "close" ? "Reduce only. Use the existing position side and leverage; quantity cannot exceed that position." : "Immediate local fill at native bid / ask within your price protection."}</p>
+              <Button type="submit" block variant="primary" disabled={busy || blocked || !account || !validOrder || !!reason}>{busy ? "Submitting…" : "Submit Paper order"}</Button>
+            </fieldset>
+          </form>}
+          {stale && <p role="status" className="derivatives-ticket-note alert">Quote is stale — refresh before submitting.</p>}
+          {notice && <p role="status" className={`derivatives-ticket-note ${notice.tone}`}>{notice.text}</p>}
+          <p className="derivatives-ticket-note">Funding is not accrued. Expiry freezes positions awaiting official settlement. Local isolated margin does not simulate exchange liquidation.</p>
+        </div>
       </section>
     </main>
+    </div>
+
+    <footer className="derivatives-statusbar">
+      <span>LOCAL WORKSPACE · {instrument ? `${instrument.nativeId} · ${instrument.settle}` : "NO CONTRACT"}</span>
+      <span>DERIVATIVES · LIVE TRADING DISABLED · SQLITE LOCAL PERSISTENCE</span>
+    </footer>
   </div>;
 }

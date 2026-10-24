@@ -95,11 +95,11 @@ test("derivatives navigation, product selection and narrow layout", async ({ pag
   await page.goto("/");
   await page.getByRole("link", { name: /Derivatives/ }).click();
   await page.waitForURL("**/derivatives", { timeout: 120000 });
-  await expect(page.getByRole("heading", { name: "Derivatives", exact: true })).toBeVisible({ timeout: 60000 });
+  await expect(page.getByRole("heading", { name: "/ Derivatives" })).toBeVisible({ timeout: 60000 });
   await expect(page.getByRole("button", { name: /BTC-USDT-SWAP/ })).toBeVisible();
   await page.getByRole("tab", { name: "Options", exact: true }).click();
   await expect(page.getByText(/BTC_USDC-25DEC26-80000-C/, { exact: false }).first()).toBeVisible();
   await page.setViewportSize({ width: 419, height: 900 });
-  await expect(page.getByRole("heading", { name: "Derivatives", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "/ Derivatives" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
 });

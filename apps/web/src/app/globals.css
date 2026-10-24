@@ -3382,3 +3382,285 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   line-height: 1.55;
 }
 .sweep-caveat strong { color: var(--c-fg); }
+
+/* ══════════════════════════════════════════════════════════════
+   25. DERIVATIVES WORKSPACE
+   Separate route, same design system: reuses the shell's tokens,
+   panel vocabulary and type scale instead of ak-ui Tailwind vars.
+   ══════════════════════════════════════════════════════════════ */
+
+.derivatives-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--c-canvas);
+  color: var(--c-fg);
+}
+
+/* top bar mirrors the terminal topbar geometry */
+.derivatives-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  min-height: var(--bar-h);
+  padding: 0 var(--s-4);
+  background: var(--c-canvas);
+  border-bottom: var(--line) solid var(--c-line);
+}
+
+.derivatives-topbar h1 { margin: 0; font-size: var(--t-meta); }
+.derivatives-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--f-display);
+  font-size: var(--t-label);
+  font-weight: 700;
+  letter-spacing: var(--track-caps);
+  color: var(--c-fg);
+  text-decoration: none;
+}
+.derivatives-brand:hover { color: var(--c-accent); }
+.derivatives-brand em { font-style: normal; color: var(--c-accent); }
+
+.derivatives-plate {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--plate-h);
+  margin: var(--s-3) var(--s-3) 0;
+  padding: 0 var(--s-4);
+  background: var(--c-surface);
+  border: var(--line) solid var(--c-line);
+}
+
+/* instrument rail: the watchlist vocabulary */
+.derivatives-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 300px;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  align-items: start;
+}
+@media (min-width: 1081px) {
+  .derivatives-layout > .derivatives-rail { grid-column: 1; min-width: 0; }
+  .derivatives-layout > section[aria-label="Derivatives Paper ticket"] { grid-column: 3; min-width: 0; }
+}
+
+.derivatives-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--c-surface);
+  border: var(--line) solid var(--c-line);
+}
+
+.derivatives-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-height: 34px;
+  padding: 0 var(--s-3);
+  border-bottom: var(--line) solid var(--c-line);
+  font-family: var(--f-display);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--c-fg-2);
+}
+.derivatives-panel-head .num { color: var(--c-fg-4); }
+
+.derivatives-panel-body { display: flex; flex-direction: column; min-width: 0; padding: var(--s-3); }
+.derivatives-panel-body > * + * { margin-top: var(--s-3); }
+
+/* the rail search follows the terminal's 28px control line, not ak-ui's 42px marketing scale */
+.derivatives-panel .ak-input { min-height: 28px; height: 28px; font-size: var(--t-label); }
+
+/* instrument list rows borrow the watch-row left-bar selection */
+.derivatives-list { max-height: 460px; overflow-y: auto; }
+.derivatives-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--s-1) var(--s-3);
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: var(--line) solid var(--c-line-soft);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.derivatives-row:hover:not(:disabled) { background: color-mix(in srgb, var(--mode) 10%, transparent); }
+.derivatives-row.selected { background: color-mix(in srgb, var(--mode) 16%, transparent); border-left-color: var(--mode); }
+.derivatives-row:disabled { opacity: 0.4; cursor: not-allowed; }
+.derivatives-row strong {
+  display: block;
+  color: var(--c-fg);
+  font-family: var(--f-body);
+  font-size: var(--t-label);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.derivatives-row small {
+  display: block;
+  color: var(--c-fg-4);
+  font-family: var(--f-display);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.derivatives-plate .ak-tag, .derivatives-topbar .ak-tag { white-space: nowrap; flex: 0 0 auto; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+/* market plate reads: bid/ask carry the plate, context strips stay quiet */
+.derivatives-identity { display: flex; flex-direction: column; gap: var(--s-1); flex: 0 0 auto; max-width: 260px; padding-right: var(--s-4); border-right: var(--line) solid var(--c-line); }
+.derivatives-identity .eyebrow { color: var(--c-fg-4); font-family: var(--f-display); font-size: var(--t-meta); font-weight: 700; letter-spacing: var(--track-caps); text-transform: uppercase; }
+.derivatives-identity .title { display: flex; align-items: baseline; gap: var(--s-2); font-family: var(--f-display); font-size: var(--t-h1); font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+.derivatives-identity .title small { color: var(--c-fg-3); font-size: var(--t-label); font-weight: 700; padding-left: var(--s-2); border-left: var(--line) solid var(--c-line-strong); }
+.derivatives-identity .title small { color: var(--c-fg-3); font-size: var(--t-label); font-weight: 700; }
+
+.derivatives-quote { display: flex; align-items: baseline; gap: var(--s-4); min-width: 0; }
+.derivatives-quote .side { display: flex; flex-direction: column; gap: 2px; }
+.derivatives-quote .side .value { font-family: var(--f-label); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.derivatives-quote .side.bid .value { color: var(--c-up); }
+.derivatives-quote .side.ask .value { color: var(--c-down); }
+.derivatives-quote .side .tag { color: var(--c-fg-4); font-family: var(--f-display); font-size: var(--t-meta); font-weight: 700; letter-spacing: var(--track-caps); text-transform: uppercase; }
+
+.derivatives-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1) var(--s-3);
+  color: var(--c-fg-3);
+  font-family: var(--f-label);
+  font-size: var(--t-meta);
+  font-weight: 700;
+}
+.derivatives-context .kv { display: inline-flex; gap: var(--s-1); }
+.derivatives-context .kv dt { color: var(--c-fg-4); font-family: var(--f-display); letter-spacing: var(--track-caps); text-transform: uppercase; font-weight: 700; }
+.derivatives-context .kv dd { margin: 0; color: var(--c-fg-2); font-variant-numeric: tabular-nums; }
+
+/* account readouts reuse the ticket vocabulary */
+.derivatives-account-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-3); }
+.derivatives-account-grid dt { color: var(--c-fg-4); font-family: var(--f-display); font-size: var(--t-meta); font-weight: 700; letter-spacing: var(--track-caps); text-transform: uppercase; }
+.derivatives-account-grid dd { margin: var(--s-1) 0 0; font-family: var(--f-label); font-size: var(--t-body); font-weight: 700; font-variant-numeric: tabular-nums; }
+.derivatives-account-grid dd small { color: var(--c-fg-4); font-size: var(--t-meta); font-weight: 700; }
+
+/* the ticket mirrors the spot inspector's paper ticket grammar */
+.derivatives-ticket { display: flex; flex-direction: column; gap: var(--s-3); }
+.derivatives-ticket .field { display: flex; flex-direction: column; gap: var(--s-1); }
+.derivatives-ticket .field > span { color: var(--c-fg-3); font-family: var(--f-display); font-size: var(--t-meta); font-weight: 700; letter-spacing: var(--track-caps); text-transform: uppercase; }
+.derivatives-ticket .field .ak-select,
+.derivatives-ticket .field .ak-input { width: 100%; }
+.derivatives-ticket .ak-select,
+.derivatives-ticket .ak-input { min-height: 30px; font-size: var(--t-label); }
+.derivatives-ticket-note {
+  border-left: var(--bar) solid var(--c-line-strong);
+  padding: var(--s-1) var(--s-2);
+  color: var(--c-fg-3);
+  font-size: var(--t-meta);
+  line-height: 1.55;
+}
+.derivatives-ticket-note.alert { border-left-color: var(--c-warn); background: color-mix(in srgb, var(--c-warn) 10%, transparent); color: var(--c-fg-2); }
+.derivatives-ticket-note.good { border-left-color: var(--c-up); background: color-mix(in srgb, var(--c-up) 10%, transparent); color: var(--c-fg-2); }
+
+/* dense tables inside the account panel use the sweep-table grammar */
+.derivatives-table { width: 100%; border-collapse: collapse; font-size: var(--t-meta); }
+.derivatives-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  padding: var(--s-1) var(--s-2);
+  border-bottom: var(--line) solid var(--c-line);
+  background: var(--c-surface);
+  color: var(--c-fg-4);
+  font-family: var(--f-display);
+  font-weight: 700;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+.derivatives-table td { padding: var(--s-1) var(--s-2); border-bottom: var(--line) solid var(--c-line-soft); color: var(--c-fg-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.derivatives-table td.up { color: var(--c-up); }
+.derivatives-table td.down { color: var(--c-down); }
+.derivatives-table-scroll { max-height: 240px; overflow-y: auto; }
+
+/* policy / boundary banners use the caveat grammar */
+.derivatives-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-bottom: var(--line) solid var(--c-line);
+  border-left: var(--bar) solid var(--c-warn);
+  background: color-mix(in srgb, var(--c-warn) 8%, transparent);
+  color: var(--c-fg-2);
+  font-size: var(--t-meta);
+  line-height: 1.55;
+}
+.derivatives-banner a { color: var(--c-accent); }
+
+/* contract details disclosure: keep native semantics, style the summary as meta */
+.derivatives-details summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  cursor: pointer;
+  list-style: none;
+  color: var(--c-fg-4);
+  font-family: var(--f-display);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+.derivatives-details summary::-webkit-details-marker { display: none; }
+.derivatives-details summary::before { content: "▸"; font-size: 9px; }
+.derivatives-details[open] summary::before { content: "▾"; }
+.derivatives-details summary:hover { color: var(--c-fg); }
+
+/* statusbar footer like the terminal */
+.derivatives-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-height: 26px;
+  margin-top: auto;
+  padding: 0 var(--s-3);
+  background: var(--c-inset);
+  border-top: var(--line) solid var(--c-line);
+  color: var(--c-fg-4);
+  font-family: var(--f-display);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+/* The 1080px breakpoint collapses to two tracks (rail spans full width on
+   row one; content and ticket share row two). The desktop column pins above
+   are scoped to min-width 1081px so they never fight these rules. */
+@media (max-width: 1080px) {
+  .derivatives-layout { grid-template-columns: minmax(0, 1fr) 300px; }
+  .derivatives-layout > .derivatives-rail { grid-column: 1 / -1; width: auto; }
+  .derivatives-layout > .derivatives-panel[aria-label="Derivatives Paper ticket"] { grid-column: 2; width: auto; }
+  .derivatives-list { max-height: 200px; }
+}
+@media (max-width: 720px) {
+  /* Topbar labels wrap into vertical text when cramped; keep controls on one
+     horizontal line and let the page scroll vertically instead. */
+  /* keep every control readable; the bar itself scrolls horizontally rather
+     than crushing labels into vertical text */
+  .derivatives-topbar { flex-wrap: nowrap; gap: var(--s-2); overflow-x: auto; scrollbar-width: none; }
+  .derivatives-topbar::-webkit-scrollbar { display: none; }
+  .derivatives-topbar > * { flex-shrink: 0; }
+  .derivatives-topbar .meta { white-space: nowrap; }
+  .derivatives-layout { grid-template-columns: minmax(0, 1fr); }
+  .derivatives-layout > .derivatives-panel[aria-label="Derivatives Paper ticket"] { grid-column: 1; }
+  .derivatives-plate { flex-wrap: wrap; min-height: 0; padding: var(--s-3) var(--s-4); }
+  .derivatives-identity { padding-right: 0; border-right: 0; border-bottom: var(--line) solid var(--c-line); padding-bottom: var(--s-2); width: 100%; max-width: none; }
+}
