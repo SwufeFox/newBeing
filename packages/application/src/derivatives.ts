@@ -1,6 +1,6 @@
 import { Decimal } from "decimal.js";
 import {
-  assertDerivativesPaperWorkspace, derivativesAccountId, getDerivativesAccountRow,
+  assertDerivativesPaperWorkspace, derivativesAccountId, getDerivativesAccountRow, listDerivativesAccountRows,
   mutateDerivativesAccountRow, openDerivativesAccountRow,
 } from "@newbeing/storage/derivatives";
 import {
@@ -41,6 +41,10 @@ function positiveNative(value: number | null, name: string): Decimal {
 function validateAccount(venue: DerivativesVenue, settle: string): void {
   if (!["okx", "deribit"].includes(venue) || !/^[A-Z0-9]{1,20}$/.test(settle)) throw new Error("Invalid derivatives venue or settle currency.");
 }
+export function listDerivativesAccounts(): DerivativesAccount[] {
+  return listDerivativesAccountRows<DerivativesAccount>();
+}
+
 export function getDerivativesAccount(venue: DerivativesVenue, settle: string): DerivativesAccount | undefined {
   validateAccount(venue, settle);
   return getDerivativesAccountRow<DerivativesAccount>(derivativesAccountId(venue, settle));

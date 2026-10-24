@@ -19,22 +19,82 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-/** Ticking wall clock scoped to the caller: only the component holding the
- * return value re-renders per interval, so the candle SVG and instrument list
- * never reconcile because time passed. The selector keeps state in one place. */
-function useNow(intervalMs: number, select: (tick: number) => boolean): boolean {
-  const [value, setValue] = useState(() => select(Date.now()));
-  const selectRef = useRef(select);
+function exchangeErrorMessage(error: unknown, resource: string): string {
+  const detail = error instanceof Error ? error.message : "";
+  if (/fetch failed|failed to fetch|network(?:error| error)?|econn|enotfound|etimedout|timed? out|socket/i.test(detail)) {
+    return `Exchange ${resource} is temporarily unreachable. Check your internet connection or exchange access, then retry. Your local Paper ledger is stored separately.`;
+  }
+  return `Could not load exchange ${resource}${detail ? `: ${detail}` : "."} Your local Paper ledger is still available.`;
+}
+
+function QuoteFreshSubmit({ instrument, quote, disabled, submitting }: {
+  instrument: DerivativeInstrument | null;
+  quote: DerivativeQuote | null;
+  disabled: boolean;
+  submitting: boolean;
+}): React.JSX.Element {
+  /* Keep time state inside this tiny leaf. A stale-quote tick must not cause
+     the contracts, option chain, or candle SVG to render again. */
+  const [now, setNow] = useState(0);
   useEffect(() => {
-    selectRef.current = select;
-    // A stale-quote banner is not sub-second material; align onto the interval.
-    const timer = window.setInterval(() => setValue((previous) => {
-      const next = selectRef.current(Date.now());
-      return next === previous ? previous : next;
-    }), intervalMs);
-    return () => window.clearInterval(timer);
-  });
-  return value;
+    const immediate = window.setTimeout(() => setNow(Date.now()), 0);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => { window.clearTimeout(immediate); window.clearInterval(timer); };
+  }, []);
+  const reason = now > 0 ? derivativeBlockReason(instrument, quote, now) : "Checking quote freshness.";
+  return <>
+    <Button type="submit" block variant="primary" disabled={disabled || !quote || !instrument || now === 0 || !!reason}>
+      {submitting ? "Submitting…" : "Submit Paper order"}
+    </Button>
+    {quote && now > 0 && reason && <p role="status" className="derivatives-ticket-note alert">
+      {reason.toLowerCase().includes("stale") ? "Quote is stale — refresh before submitting." : reason}
+    </p>}
+  </>;
+}
+
+function LocalAccountLedger({ accounts }: { accounts: DerivativesAccount[] }): React.JSX.Element {
+  return <div className="space-y-2">
+    <p className="meta">Local Paper ledger · read only without a live quote</p>
+    {accounts.map((entry) => <details key={entry.id} className="derivatives-details" open={accounts.length === 1}>
+      <summary className="flex items-center justify-between gap-3">
+        <span>{entry.venue.toUpperCase()} / {entry.settle}</span>
+        <span className="num">{entry.available} {entry.settle}</span>
+      </summary>
+      <div className="mt-2 space-y-3">
+        <dl className="derivatives-account-grid">
+          <div><dt>Realized P&amp;L</dt><dd>{entry.realizedPnl} <small>{entry.settle}</small></dd></div>
+          <div><dt>Fees paid</dt><dd>{entry.feesPaid} <small>{entry.settle}</small></dd></div>
+        </dl>
+        <div>
+          <span className="meta">Positions · {entry.positions.length}</span>
+          {!entry.positions.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">No open positions.</p>
+            : <div className="derivatives-table-scroll mt-1 border border-[var(--c-line)]">
+              <table className="derivatives-table">
+                <thead><tr>{["Instrument", "Side", "Qty", "Entry", "Margin"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
+                <tbody>{entry.positions.map((position) => <tr key={`${position.instrumentId}:${position.side}`}>
+                  <td className="max-w-0 truncate" title={position.instrumentId}>{position.instrumentId}</td>
+                  <td>{position.side}</td><td>{position.quantity}</td><td>{position.entryPrice}</td><td>{position.margin} · {position.leverage}x</td>
+                </tr>)}</tbody>
+              </table>
+            </div>}
+        </div>
+        <details className="derivatives-details" open={accounts.length === 1 && entry.orders.length > 0}>
+          <summary>Order history · {entry.orders.length}</summary>
+          {!entry.orders.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">No Paper fills.</p>
+            : <div className="derivatives-table-scroll mt-1 border border-[var(--c-line)]">
+              <table className="derivatives-table">
+                <thead><tr>{["Time (UTC)", "Instrument", "Action", "Qty", "Fill", "Fee"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
+                <tbody>{entry.orders.slice(-20).reverse().map((order) => <tr key={order.clientOrderId}>
+                  <td>{derivativeDate(order.createdAt)}</td><td className="max-w-0 truncate" title={order.instrumentId}>{order.instrumentId}</td>
+                  <td>{order.action} {order.side}</td><td>{order.quantity}</td><td>{order.fillPrice}</td><td>{order.fee}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>}
+        </details>
+      </div>
+    </details>)}
+    <p className="derivatives-ticket-note">Balances and history are local. Orders stay disabled until exchange metadata and a fresh quote are available.</p>
+  </div>;
 }
 
 function EngineModel(): React.JSX.Element {
@@ -93,32 +153,30 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [listLoading, setListLoading] = useState(true);
   const [bars, setBars] = useState<Candle[]>([]);
   const [candleError, setCandleError] = useState<string | null>(null);
-  const [accountState, setAccountState] = useState<{ key: string; account: DerivativesAccount | null } | null>(null);
-  const [accountError, setAccountError] = useState<string | null>(null);
+  const [ledgerAccounts, setLedgerAccounts] = useState<DerivativesAccount[] | null>(null);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: "good" | "alert"; text: string } | null>(null);
   const [revision, setRevision] = useState(0);
+  const [ledgerRevision, setLedgerRevision] = useState(0);
   const [action, setAction] = useState<"open" | "close">("open");
   const [side, setSide] = useState<"long" | "short">("long");
   const [quantity, setQuantity] = useState("");
   const [leverage, setLeverage] = useState("1");
   const [maximumPrice, setMaximumPrice] = useState("");
   const [chainExpiry, setChainExpiry] = useState<number | null>(null);
-  /* Wall-clock reads use the last fetch-landing timestamp (see the quote
-     effect). The one interval-driven display — the staleness banner — lives
-     in useNow() so clock ticks never reconcile the ~300-node candle SVG. */
+  /* The account list is a local SQLite snapshot, independent of market data.
+     The clock that gates order freshness lives in QuoteFreshSubmit, a leaf. */
   const pendingOrder = useRef<DerivativesOrderRequest | null>(null);
   const mutationLock = useRef(false);
-  const nowRef = useRef<number>(0);
   /* remoteReplay null = first poll still outstanding: hide the markets rather
-   than flashing a boundary banner that usually resolves to "available". */
+     than flashing a boundary banner that usually resolves to "available". */
   const blocked = globalWorkspace === "replay" || remoteReplay === true;
   const instrument = !blocked && market?.instrument.id === selectedId ? market.instrument : null;
   const quote = !blocked && market?.quote.instrumentId === selectedId && !marketError ? market.quote : null;
   const initialBalance = instrument?.settle === "BTC" ? "1" : instrument?.settle === "ETH" ? "10" : "10000";
-  const accountKey = instrument ? `${instrument.venue}:${instrument.settle}` : "";
-  const account = !blocked && accountState?.key === accountKey ? accountState.account : null;
-  const accountReady = !blocked && accountState?.key === accountKey && !accountError;
+  const account = instrument && !blocked ? ledgerAccounts?.find((entry) => entry.venue === instrument.venue && entry.settle === instrument.settle) ?? null : null;
+  const accountReady = !blocked && ledgerAccounts !== null && ledgerError === null;
 
   // Read the shared boundary, without mounting WorkspaceSync or writing spot state.
   useEffect(() => {
@@ -141,52 +199,72 @@ export function DerivativesWorkspace(): React.JSX.Element {
   useEffect(() => {
     if (blocked) return;
     const controller = new AbortController();
+    void readJson<{ accounts: DerivativesAccount[] }>("/api/derivatives/accounts", { signal: controller.signal })
+      .then((data) => { setLedgerAccounts(data.accounts); setLedgerError(null); })
+      .catch((error: unknown) => { if (!controller.signal.aborted) { setLedgerAccounts(null); setLedgerError(error instanceof Error ? error.message : "Local account ledger unavailable."); } });
+    return () => controller.abort();
+  }, [blocked, ledgerRevision]);
+  useEffect(() => {
+    if (blocked) return;
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setListLoading(true); setListError(null);
       void readJson<{ instruments: DerivativeInstrument[] }>(`/api/derivatives/markets?kind=${kind}&query=${encodeURIComponent(query)}`, { signal: controller.signal })
         .then((data) => {
           setItems(data.instruments);
           setSelectedId((id) => id || data.instruments[0]?.id || "");
-        }).catch((error: unknown) => { if (!controller.signal.aborted) { setItems([]); setListError(error instanceof Error ? error.message : "Instrument search unavailable."); } })
+        }).catch((error: unknown) => { if (!controller.signal.aborted) { setItems([]); setListError(exchangeErrorMessage(error, "contracts")); } })
         .finally(() => { if (!controller.signal.aborted) setListLoading(false); });
     }, 200);
     return () => { controller.abort(); window.clearTimeout(timer); };
   }, [kind, query, revision, blocked]);
 
+
   useEffect(() => {
     if (blocked || !selectedId) return;
     let disposed = false;
     let inFlight = false;
+    let retryTimer = 0;
+    let delay = 5000;
     const controller = new AbortController();
+
+    const schedule = () => {
+      retryTimer = window.setTimeout(() => {
+        if (disposed || controller.signal.aborted) return;
+        if (document.hidden) { schedule(); return; }
+        void refresh();
+      }, delay);
+    };
     const refresh = async () => {
-      // Skip while the previous poll is outstanding: a slow native read must
-      // not pile up (throttled background tabs fire a burst on refocus).
       if (inFlight || controller.signal.aborted) return;
       inFlight = true;
       try {
         const data = await readJson<{ instrument: DerivativeInstrument; quote: DerivativeQuote; candles: Candle[]; candleError: string | null }>(`/api/derivatives/market?instrumentId=${encodeURIComponent(selectedId)}`, { signal: controller.signal });
-        if (!disposed) { nowRef.current = data.quote.timestamp; setMarket(data); setMarketError(null); setBars(data.candles); setCandleError(data.candleError); }
-      } catch (error) { if (!disposed) { setMarket(null); setMarketError(error instanceof Error ? error.message : "Quote unavailable."); } }
-      finally { inFlight = false; }
+        if (!disposed) { setMarket(data); setMarketError(null); setBars(data.candles); setCandleError(data.candleError); }
+        delay = 5000;
+      } catch (error) {
+        if (!disposed) { setMarket(null); setMarketError(exchangeErrorMessage(error, "quote")); }
+        delay = Math.min(delay * 2, 60000);
+      } finally {
+        inFlight = false;
+        if (!disposed && !controller.signal.aborted) schedule();
+      }
     };
-    void refresh();
-    const timer = window.setInterval(() => {
-      // Hidden tabs clamp timers to >=1s and drop them entirely after ~5min;
-      // skip wasted polls while the page cannot be seen.
-      if (document.hidden) return;
+    const onVisibilityChange = () => {
+      if (document.hidden || inFlight) return;
+      window.clearTimeout(retryTimer);
       void refresh();
-    }, 5000);
-    return () => { disposed = true; controller.abort(); window.clearInterval(timer); };
-  }, [selectedId, revision, blocked]);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void refresh();
 
-  useEffect(() => {
-    if (blocked || !instrument) return;
-    const controller = new AbortController();
-    void readJson<{ account: DerivativesAccount | null }>(`/api/derivatives/account?instrumentId=${encodeURIComponent(instrument.id)}`, { signal: controller.signal })
-      .then((data) => { setAccountState({ key: accountKey, account: data.account }); setAccountError(null); })
-      .catch((error: unknown) => { if (!controller.signal.aborted) { setAccountState(null); setAccountError(error instanceof Error ? error.message : "Account unavailable."); } });
-    return () => controller.abort();
-  }, [blocked, instrument?.venue, instrument?.settle, accountKey, revision]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      disposed = true;
+      controller.abort();
+      window.clearTimeout(retryTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [selectedId, revision, blocked]);
 
   function select(id: string): void {
     setSelectedId(id); setMarket(null); setMarketError(null); setBars([]); setCandleError(null);
@@ -201,15 +279,18 @@ export function DerivativesWorkspace(): React.JSX.Element {
     setAction("close"); setSide(position.side === "short" ? "short" : "long"); setLeverage(String(position.leverage)); setQuantity(position.quantity);
     pendingOrder.current = null; setNotice(null);
   }
-  // reason gates the submit button. It is evaluated during render off the last
-  // fetch-landing timestamp (see the quote effect); every await in the order
-  // path re-checks expiry inside the engine's transaction, so render-time
-  // freshness here is a UI gate, not the correctness boundary.
-  const reason = quote ? derivativeBlockReason(instrument, quote, quote.timestamp) : instrument ? "A matching two-sided native quote is required for Paper execution." : "Select a contract with native metadata.";
+  // Render-time validation uses the quote's timestamp. The submit handler and
+  // QuoteFreshSubmit recheck against the wall clock without ticking this tree.
+  const reason = quote ? derivativeBlockReason(instrument, quote, quote.timestamp) : instrument ? "A matching two-sided fresh native quote is required for Paper execution." : "Select a contract with native metadata.";
   const validOrder = /^\d+(?:\.\d+)?$/.test(quantity) && Number(quantity) > 0 && /^\d+(?:\.\d+)?$/.test(maximumPrice) && Number(maximumPrice) > 0 && Number.isInteger(Number(leverage)) && Number(leverage) >= 1 && Number(leverage) <= 20;
 
   async function command(openAccount: boolean): Promise<void> {
-    if (mutationLock.current || blocked || !instrument || !accountReady || (!openAccount && (reason || !validOrder))) return;
+    if (mutationLock.current || blocked || !instrument || !accountReady) return;
+    const currentReason = quote ? derivativeBlockReason(instrument, quote, Date.now()) : reason;
+    if (!openAccount && (currentReason || !validOrder)) {
+      setNotice({ tone: "alert", text: currentReason ?? "Enter a valid quantity, leverage, and price protection before submitting." });
+      return;
+    }
     mutationLock.current = true; setBusy(true); setNotice(null);
     try {
       let body: object;
@@ -224,17 +305,14 @@ export function DerivativesWorkspace(): React.JSX.Element {
         body = { action: "order", instrumentId: request.instrumentId, clientOrderId: request.clientOrderId, side: (request.action === "open") === (request.side === "long") ? "buy" : "sell", contracts: request.quantity, leverage: request.leverage, reduceOnly: request.reduceOnly, limitPrice: request.maximumPrice };
       }
       const data = await readJson<{ account: DerivativesAccount; deduplicated?: boolean }>("/api/derivatives/account", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      setAccountState({ key: accountKey, account: data.account });
+      setLedgerAccounts((current) => [...(current ?? []).filter((entry) => entry.id !== data.account.id), data.account]);
       setNotice({ tone: "good", text: openAccount ? "Local Paper account opened." : data.deduplicated ? "Previously filled order confirmed." : "Paper order filled." });
       pendingOrder.current = null;
     } catch (error) {
-      setNotice({ tone: "alert", text: `${error instanceof Error ? error.message : "Paper command failed."} Refresh the account to confirm the outcome before changing this order. Retrying unchanged order details uses the same client order ID.` });
+      setNotice({ tone: "alert", text: `${error instanceof Error ? error.message : "Paper command failed."} Refresh the local ledger to confirm the outcome before changing this order. Retrying unchanged order details uses the same client order ID.` });
     } finally { mutationLock.current = false; setBusy(false); }
   }
 
-  /* Staleness is re-evaluated on a slow wall-clock tick only while a quote is
-     on screen — a 1s interval on the banner, not a 1.5s setState on the tree. */
-  const stale = useNow(1000, (nowTick) => quote != null && nowTick - quote.timestamp > 15000);
   /* Grouping ~100 options runs on every render otherwise; items only change on
      list refetch, so the chain is keyed to that, not to clock ticks. */
   const chain = useMemo(() => (kind === "option" ? derivativeOptionChain(items) : []), [kind, items]);
@@ -381,7 +459,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
             <span>Contract details</span>
             <span className="num normal-case tracking-normal">{instrument ? instrument.id : "—"}</span>
           </div>
-          {marketError && <p role="alert" className="m-3 text-[var(--c-down)] text-[11px]">{marketError}</p>}
+          {marketError && <div role="alert" className="m-3 space-y-2 text-[var(--c-down)] text-[11px]"><p>{marketError}</p><Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Retry quote</Button></div>}
           {selectedId && !instrument && !marketError && <p className="m-3 text-[var(--c-fg-4)] text-[11px]">Loading contract and quote…</p>}
           {instrument && quote && <div className="derivatives-panel-body">
             <div className="flex flex-wrap gap-x-6 gap-y-1">
@@ -419,13 +497,17 @@ export function DerivativesWorkspace(): React.JSX.Element {
         <section className="derivatives-panel" aria-label="Derivatives account">
           <div className="derivatives-panel-head">
             <span>Paper account {instrument ? `· ${instrument.venue.toUpperCase()} / ${instrument.settle}` : ""}</span>
+            {!blocked && <Button size="sm" variant="outline" onClick={() => setLedgerRevision((n) => n + 1)}>Refresh ledger</Button>}
           </div>
           <div className="derivatives-panel-body">
             {blocked ? <p className="text-[var(--c-fg-4)] text-[11px]">Account balances, positions and order history are hidden while Paper is disabled.</p>
-              : accountError ? <p role="alert" className="text-[var(--c-down)] text-[11px]">{accountError}</p>
-                : !accountReady ? <p className="text-[var(--c-fg-4)] text-[11px]">Select a contract to load its settle account.</p>
-                  : !account ? <p className="text-[var(--c-fg-4)] text-[11px]">No local account. Open one explicitly using the ticket.</p>
-                    : <>
+              : ledgerError ? <p role="alert" className="text-[var(--c-down)] text-[11px]">Local account ledger unavailable: {ledgerError}</p>
+                : ledgerAccounts === null ? <p className="text-[var(--c-fg-4)] text-[11px]">Loading local accounts…</p>
+                  : account ? null
+                    : ledgerAccounts.length ? <LocalAccountLedger accounts={ledgerAccounts} />
+                      : <p className="text-[var(--c-fg-4)] text-[11px]">No local derivatives accounts. Open one after a contract is available.</p>}
+            {blocked ? null
+              : account ? <>
                       <dl className="derivatives-account-grid">
                         <div><dt>Available</dt><dd>{account.available} <small>{account.settle}</small></dd></div>
                         <div><dt>Realized P&L</dt><dd className={account.realizedPnl.startsWith("-") ? "text-[var(--c-down)]" : account.realizedPnl === "0" ? "" : "text-[var(--c-up)]"}>{account.realizedPnl} <small>{account.settle}</small></dd></div>
@@ -475,7 +557,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                             </table>
                           </div>}
                       </div>
-                    </>}
+                    </> : accountReady && instrument ? <p className="text-[var(--c-fg-4)] text-[11px]">No account is open for this settlement currency yet.</p> : null}
           </div>
         </section>
       </div>
@@ -485,9 +567,12 @@ export function DerivativesWorkspace(): React.JSX.Element {
         <div className="derivatives-panel-head"><span>Paper ticket</span><span className="num normal-case tracking-normal">{instrument ? `${instrument.venue}/${instrument.settle}` : "—"}</span></div>
         <div className="derivatives-panel-body derivatives-ticket">
           <p className="derivatives-ticket-note">Separate local settle account. Spot and legacy balances are never used or migrated.</p>
-          {accountReady && !account ? <>
-            <div className="flex flex-col gap-1 flex items-baseline justify-between"><span className="meta">Initial balance</span><span className="num">{initialBalance} {instrument?.settle}</span></div>
-            <p className="derivatives-ticket-note">Local seed in {instrument?.settle}. Fee rate: 0.1% per fill. Opening an existing account never credits it again.</p>
+          {blocked ? <p role="status" className="derivatives-ticket-note">Paper order entry is hidden during Replay.</p>
+            : !instrument || !quote ? <p role="status" className="derivatives-ticket-note alert">Order entry is paused until exchange metadata and a fresh quote are available. Existing balances, positions, and history remain readable in the local ledger.</p>
+              : !accountReady ? <p role="status" className="derivatives-ticket-note">{ledgerError ? "Local Paper account unavailable. Refresh the local ledger before trading." : "Loading local Paper account…"}</p>
+                : !account ? <>
+            <div className="flex flex-col gap-1 flex items-baseline justify-between"><span className="meta">Initial balance</span><span className="num">{initialBalance} {instrument.settle}</span></div>
+            <p className="derivatives-ticket-note">Local seed in {instrument.settle}. Fee rate: 0.1% per fill. Opening an existing account never credits it again.</p>
             <Button block variant="primary" disabled={busy || blocked} onClick={() => void command(true)}>Open Paper account</Button>
           </> : <form className="derivatives-ticket" onSubmit={(event) => { event.preventDefault(); void command(false); }}>
             <fieldset disabled={busy || blocked || !account} className="derivatives-ticket">
@@ -520,10 +605,11 @@ export function DerivativesWorkspace(): React.JSX.Element {
                 <AkInput aria-label="Price protection" inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} />
               </label>
               <p className="derivatives-ticket-note">{action === "close" ? "Reduce only. Use the existing position side and leverage; quantity cannot exceed that position." : "Immediate local fill at native bid / ask within your price protection."}</p>
-              <Button type="submit" block variant="primary" disabled={busy || blocked || !account || !validOrder || !!reason}>{busy ? "Submitting…" : "Submit Paper order"}</Button>
+              {instrument && quote
+                ? <QuoteFreshSubmit instrument={instrument} quote={quote} disabled={busy || blocked || !account || !validOrder || !!reason} submitting={busy} />
+                : <Button type="submit" block variant="primary" disabled>Submit Paper order</Button>}
             </fieldset>
           </form>}
-          {stale && <p role="status" className="derivatives-ticket-note alert">Quote is stale — refresh before submitting.</p>}
           {notice && <p role="status" className={`derivatives-ticket-note ${notice.tone}`}>{notice.text}</p>}
           <p className="derivatives-ticket-note">Funding is not accrued. Expiry freezes positions awaiting official settlement. Local isolated margin does not simulate exchange liquidation.</p>
         </div>

@@ -19,6 +19,10 @@ export function assertDerivativesPaperWorkspace(): void {
 export function derivativesAccountId(venue: string, settle: string): string {
   return `derivatives:${encodeURIComponent(venue)}:${encodeURIComponent(settle)}`;
 }
+export function listDerivativesAccountRows<T>(): T[] {
+  migrateDerivativesStorage();
+  return getDatabase().select().from(derivativesAccounts).all().map((row) => JSON.parse(row.payload) as T);
+}
 export function getDerivativesAccountRow<T extends { id: string }>(id: string): T | undefined {
   migrateDerivativesStorage();
   const row = getDatabase().select().from(derivativesAccounts).where(eq(derivativesAccounts.id, id)).get();
