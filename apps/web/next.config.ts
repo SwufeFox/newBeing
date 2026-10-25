@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    agentUpgrade: "security",
+  },
   distDir: process.env.NEWBEING_NEXT_DIST_DIR ?? ".next",
   transpilePackages: ["@newbeing/core", "@newbeing/market-data"],
   serverExternalPackages: ["@newbeing/application", "@newbeing/storage", "better-sqlite3", "ccxt"],
