@@ -35,7 +35,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
   const [slippageRate, setSlippageRate] = useState("0.0005");
   const cursor = session?.bars.at(-1);
 
-  // Global hotkeys for supreme tactile feel: Space = Play/Pause, ArrowRight/N = Step
+  // Global hotkeys for supreme tactile feel: Space = Play/Pause, ArrowRight/N = Step, < / > = Speed
   useEffect(() => {
     if (!session || session.status !== "active") return;
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -48,11 +48,21 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
       } else if (event.code === "ArrowRight" || event.key.toLowerCase() === "n") {
         event.preventDefault();
         if (!busy && !playing) onStep();
+      } else if (event.key === ">" || event.key === ".") {
+        event.preventDefault();
+        const speeds = [0.5, 1, 2, 5];
+        const nextIdx = Math.min(speeds.length - 1, speeds.indexOf(speed) + 1);
+        onSpeedChange(speeds[nextIdx] ?? 1);
+      } else if (event.key === "<" || event.key === ",") {
+        event.preventDefault();
+        const speeds = [0.5, 1, 2, 5];
+        const prevIdx = Math.max(0, speeds.indexOf(speed) - 1);
+        onSpeedChange(speeds[prevIdx] ?? 1);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [session, playing, busy, onTogglePlay, onStep]);
+  }, [session, playing, busy, speed, onTogglePlay, onStep, onSpeedChange]);
 
   return (
     <div className="replay-controls bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] px-2 py-1.5 relative">
@@ -212,13 +222,14 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 Step <span className="opacity-60 text-[10px] ml-1">[→]</span>
               </AkButton>
 
-              <div className="flex items-center gap-1 bg-[var(--ak-surface-canvas)] px-2 py-0.5 border border-[var(--ak-border)] text-xs">
+              <div className="flex items-center gap-1 bg-[var(--ak-surface-canvas)] px-2 py-0.5 border border-[var(--ak-border)] text-xs" title="Speed shortcuts: < and >">
                 <FastForward size={12} className="text-[var(--ak-signal-info)]" />
                 <select
                   aria-label="Replay speed"
                   value={speed}
                   onChange={(event) => onSpeedChange(Number(event.target.value))}
                   className="nb-select bg-transparent text-xs font-mono outline-none cursor-pointer"
+                  title="Speed shortcuts: < and >"
                 >
                   <option value={0.5}>0.5×</option>
                   <option value={1}>1×</option>

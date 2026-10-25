@@ -5,6 +5,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import {
   Activity,
   ChevronDown,
+  HelpCircle,
   LayoutDashboard,
   LoaderCircle,
   Moon,
@@ -126,9 +127,11 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
   const [symbol, exchange, setSymbol, addWatchlist] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.setSymbol, state.addWatchlistSymbol]));
   const [query, setQuery] = useState(symbol);
   const [open, setOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchResult, setSearchResult] = useState<{ query: string; exchange: WorkspaceState["exchange"]; items: MarketSymbol[]; error: string | null } | null>(null);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsListRef = useRef<HTMLDivElement>(null);
 
   // Global hotkey to open search: `/` or `Ctrl+K`
   useEffect(() => {
@@ -141,6 +144,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
         event.preventDefault();
         setOpen(true);
         setQuery("");
+        setSelectedIndex(0);
         window.setTimeout(() => inputRef.current?.focus(), 50);
       }
     };
@@ -156,9 +160,15 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
       void fetch(`/api/markets?exchange=${exchange}&q=${encodeURIComponent(query)}`, { cache: "no-store" }).then(async (response) => {
         const payload: unknown = await response.json();
         if (!response.ok) throw new Error(`${EXCHANGE_LABELS[exchange]} symbol search is unavailable.`);
-        if (!disposed) setSearchResult({ query, exchange, items: readItems<MarketSymbol>(payload), error: null });
+        if (!disposed) {
+          setSearchResult({ query, exchange, items: readItems<MarketSymbol>(payload), error: null });
+          setSelectedIndex(0);
+        }
       }).catch((reason: unknown) => {
-        if (!disposed) setSearchResult({ query, exchange, items: [], error: reason instanceof Error ? reason.message : "Search failed." });
+        if (!disposed) {
+          setSearchResult({ query, exchange, items: [], error: reason instanceof Error ? reason.message : "Search failed." });
+          setSelectedIndex(0);
+        }
       }).finally(() => { if (!disposed) setLoading(false); });
     }, 180);
     return () => { disposed = true; window.clearTimeout(timer); };
@@ -168,6 +178,18 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
   const items = result?.items ?? [];
   const error = result?.error ?? null;
   const showLoading = open && query.trim().length >= 1 && loading;
+
+  // Auto-scroll selected item into view for supreme keyboard navigation
+  useEffect(() => {
+    if (!open || items.length === 0) return;
+    const container = resultsListRef.current;
+    if (!container) return;
+    const buttons = container.querySelectorAll<HTMLButtonElement>(".symbol-result");
+    const activeBtn = buttons[selectedIndex];
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ block: "nearest" });
+    }
+  }, [selectedIndex, open, items.length]);
 
   const choose = (next: string): void => {
     setSymbol(next);
@@ -185,11 +207,30 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
           aria-label={`Search ${exchange} Spot symbols`}
           disabled={disabled}
           value={open ? query : symbol}
-          onFocus={() => { if (!disabled) { setOpen(true); setQuery(""); } }}
+          onFocus={() => { if (!disabled) { setOpen(true); setQuery(""); setSelectedIndex(0); } }}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Escape") { setOpen(false); setQuery(symbol); }
-            if (event.key === "Enter" && items[0]) choose(items[0].symbol);
+            if (event.key === "Escape") {
+              setOpen(false);
+              setQuery(symbol);
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              if (items.length > 0) {
+                setSelectedIndex((prev) => (prev + 1) % items.length);
+              }
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              if (items.length > 0) {
+                setSelectedIndex((prev) => (prev - 1 + items.length) % items.length);
+              }
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              if (items[selectedIndex]) {
+                choose(items[selectedIndex].symbol);
+              } else if (items[0]) {
+                choose(items[0].symbol);
+              }
+            }
           }}
           placeholder="Search market [/]"
           className="bg-transparent border-0 outline-none text-xs font-mono w-28 uppercase text-[var(--ak-text-primary)]"
@@ -200,32 +241,41 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
       {open && (
         <>
           <button className="popover-backdrop fixed inset-0 z-40 bg-black/40" aria-label="Close symbol search" onClick={() => { setOpen(false); setQuery(symbol); }} />
-          <div className="symbol-results absolute left-0 top-full mt-1 w-64 max-h-72 overflow-auto bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] z-50 shadow-2xl p-1 font-mono text-xs">
-            <div className="popover-title text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase p-1.5 border-b border-[var(--ak-border-subtle)]">
-              {EXCHANGE_LABELS[exchange].toUpperCase()} · SPOT MARKETS
+          <div ref={resultsListRef} className="symbol-results absolute left-0 top-full mt-1 w-64 max-h-72 overflow-auto bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] z-50 shadow-2xl p-1 font-mono text-xs">
+            <div className="popover-title text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase p-1.5 border-b border-[var(--ak-border-subtle)] flex items-center justify-between">
+              <span>{EXCHANGE_LABELS[exchange].toUpperCase()} · SPOT MARKETS</span>
+              <span className="text-[9px] opacity-60">↑/↓ NAV · ↵ CHOOSE</span>
             </div>
             {showLoading && <div className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><LoaderCircle className="spin" size={13} />Searching…</div>}
             {error && <div className="popover-error p-2 text-xs text-[var(--ak-signal-danger)]">{error}</div>}
-            {!showLoading && !error && items.map((item) => (
-              <button
-                className="symbol-result w-full flex items-center justify-between p-1.5 hover:bg-[var(--ak-surface-sunken)] text-left transition-colors cursor-pointer group"
-                key={item.symbol}
-                draggable
-                onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = "copy";
-                  event.dataTransfer.setData(WATCHLIST_DRAG_TYPE, item.symbol);
-                  event.dataTransfer.setData("text/plain", item.symbol);
-                }}
-                title="Click to open · drag into the watchlist to add"
-                onClick={() => choose(item.symbol)}
-              >
-                <span className="symbol-result-pair flex items-center gap-1">
-                  <strong className="group-hover:text-[var(--ak-signal-info)]">{item.base}</strong>
-                  <small className="opacity-70">/{item.quote}</small>
-                </span>
-                <span className="result-quote text-[10px] text-[var(--ak-text-secondary)]">{item.quote}</span>
-              </button>
-            ))}
+            {!showLoading && !error && items.map((item, idx) => {
+              const isSelected = idx === selectedIndex;
+              return (
+                <button
+                  className={`symbol-result w-full flex items-center justify-between p-1.5 text-left transition-colors cursor-pointer group ${
+                    isSelected
+                      ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-info)]"
+                      : "hover:bg-[var(--ak-surface-sunken)] border-l-2 border-transparent"
+                  }`}
+                  key={item.symbol}
+                  draggable
+                  onMouseEnter={() => setSelectedIndex(idx)}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "copy";
+                    event.dataTransfer.setData(WATCHLIST_DRAG_TYPE, item.symbol);
+                    event.dataTransfer.setData("text/plain", item.symbol);
+                  }}
+                  title="Click or Enter to select · drag into the watchlist to add"
+                  onClick={() => choose(item.symbol)}
+                >
+                  <span className="symbol-result-pair flex items-center gap-1">
+                    <strong className={isSelected ? "text-[var(--ak-signal-info)]" : "group-hover:text-[var(--ak-signal-info)]"}>{item.base}</strong>
+                    <small className="opacity-70">/{item.quote}</small>
+                  </span>
+                  <span className="result-quote text-[10px] text-[var(--ak-text-secondary)]">{item.quote}</span>
+                </button>
+              );
+            })}
             {!showLoading && !error && query.trim().length > 0 && items.length === 0 && (
               <div className="popover-state p-3 text-center text-xs text-[var(--ak-text-secondary)]">No pair for “{query.trim().toUpperCase()}”</div>
             )}
@@ -503,20 +553,54 @@ export function Terminal(): React.JSX.Element {
     }
   }, [setWorkspace, setDockTab]);
 
-  // Global hotkeys 1, 2, 3 to switch workspaces
+  const [showHotkeys, setShowHotkeys] = useState(false);
+  const watchlist = useWorkspaceStore((state) => state.watchlist);
+
+  // Global hotkeys: 1, 2, 3 to switch workspaces; [ ] to cycle watchlist; T to cycle timeframe; ? for HUD
   useEffect(() => {
     if (!workspaceReady) return;
     const handleKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
 
-      if (event.key === "1") setPage("terminal");
-      else if (event.key === "2") setPage("research");
-      else if (event.key === "3") setPage("replay");
+      if (event.key === "1") {
+        setPage("terminal");
+      } else if (event.key === "2") {
+        setPage("research");
+      } else if (event.key === "3") {
+        setPage("replay");
+      } else if (event.key === "?" || (event.key === "/" && event.shiftKey)) {
+        event.preventDefault();
+        setShowHotkeys((prev) => !prev);
+      } else if (event.key === "Escape") {
+        setShowHotkeys(false);
+      } else if (event.key === "[" || event.key === "]") {
+        if (watchlist.length > 0) {
+          event.preventDefault();
+          const currentIdx = watchlist.indexOf(symbol);
+          const nextIdx = event.key === "]"
+            ? (currentIdx + 1) % watchlist.length
+            : (currentIdx - 1 + watchlist.length) % watchlist.length;
+          const targetSymbol = watchlist[nextIdx >= 0 ? nextIdx : 0];
+          if (targetSymbol) {
+            useWorkspaceStore.getState().setSymbol(targetSymbol);
+          }
+        }
+      } else if (event.key.toLowerCase() === "t" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        const availableTfs = TIMEFRAMES.filter((tf) => EXCHANGE_TIMEFRAMES[exchange].includes(tf));
+        if (availableTfs.length > 0) {
+          const currentTfIdx = availableTfs.indexOf(timeframe);
+          const nextTf = availableTfs[(currentTfIdx + 1) % availableTfs.length];
+          if (nextTf) {
+            useWorkspaceStore.getState().setTimeframe(nextTf);
+          }
+        }
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setPage, workspaceReady]);
+  }, [setPage, workspaceReady, watchlist, symbol, exchange, timeframe]);
 
   const runBacktest = useCallback(async (): Promise<void> => {
     const canApply = captureWorkspaceSelection();
@@ -914,6 +998,9 @@ export function Terminal(): React.JSX.Element {
           </div>
         </div>
 
+        <Button variant="ghost" size="icon" title="Terminal shortcuts [?]" aria-label="Terminal shortcuts" onClick={() => setShowHotkeys((prev) => !prev)}>
+          <HelpCircle size={14} />
+        </Button>
         <Button variant="ghost" size="icon" title="Toggle theme" aria-label="Toggle theme" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
           {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
         </Button>
@@ -1141,8 +1228,103 @@ export function Terminal(): React.JSX.Element {
           <span>LIVE TRADING DISABLED</span>
           <span>·</span>
           <span>SQLITE LOCAL PERSISTENCE</span>
+          <span>·</span>
+          <button type="button" onClick={() => setShowHotkeys(true)} className="text-[var(--ak-signal-info)] hover:underline cursor-pointer" title="Open Hotkeys Guide">HOTKEYS [?]</button>
         </div>
       </footer>
+
+      {showHotkeys && (
+        <div className="hotkeys-modal fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs font-mono" role="dialog" aria-modal="true" aria-label="Terminal command hotkeys">
+          <div className="hotkeys-dialog w-full max-w-lg bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] p-4 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[var(--ak-border-subtle)]">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[var(--ak-signal-info)]" />
+                <strong className="text-xs tracking-wider uppercase text-[var(--ak-text-primary)]">
+                  TERMINAL COMMAND HOTKEYS
+                </strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHotkeys(false)}
+                className="text-[var(--ak-text-secondary)] hover:text-white text-xs px-1 cursor-pointer"
+                aria-label="Close shortcuts dialog"
+              >
+                ✕ ESC
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">NAVIGATION</span>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Markets</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">1</kbd>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Research</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">2</kbd>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Replay Sim</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">3</kbd>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">MARKET &amp; FEEDS</span>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Search Pair</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">/ or ⌘K</kbd>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Cycle Watchlist</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">[ / ]</kbd>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Cycle Timeframe</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">T</kbd>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">REPLAY CONTROLS</span>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Play / Pause</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Space</kbd>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Step Next Bar</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">→ or N</kbd>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Adjust Speed</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">&lt; / &gt;</kbd>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">TICKET &amp; DEPTH</span>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Pick Book Price</span>
+                  <span className="text-[10px] text-[var(--ak-signal-action)]">Click Price</span>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Command Help</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">?</kbd>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Close Dialog</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Esc</kbd>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-[var(--ak-text-secondary)] pt-1 text-center opacity-70 border-t border-[var(--ak-border-subtle)]">
+              Tactile quick-flow activated · Click outside or press Esc to return
+            </div>
+          </div>
+        </div>
+      )}
         </>
       )}
     </div>

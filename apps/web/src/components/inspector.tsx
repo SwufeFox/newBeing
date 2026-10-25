@@ -312,18 +312,29 @@ function ContextField({ label, value }: { label: string; value: string }): React
   );
 }
 
-function PaperTicket({ symbol, summary, prefilledPrice }: { symbol: string; summary: MarketSummary | null; prefilledPrice?: number | null }): React.JSX.Element {
+function PaperTicket({
+  symbol,
+  summary,
+  prefilledPrice,
+  onClearPrefilledPrice,
+}: {
+  symbol: string;
+  summary: MarketSummary | null;
+  prefilledPrice?: number | null;
+  onClearPrefilledPrice?: () => void;
+}): React.JSX.Element {
   const exchange = useWorkspaceStore((state) => state.exchange);
   const [portfolio, setPortfolio] = useState<PaperPortfolio | null>(null);
   const [previews, setPreviews] = useState<OrderPreview[]>([]);
   const [quantity, setQuantity] = useState("0.001");
+  const [sizingSide, setSizingSide] = useState<"buy" | "sell">("buy");
   const [busy, setBusy] = useState(false);
   const [resolvingPreview, setResolvingPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const mode = useWorkspaceStore((state) => state.mode);
   const number = Number(quantity);
-  const referencePrice = summary?.last ?? null;
+  const referencePrice = prefilledPrice ?? summary?.last ?? null;
   const quote = symbol.split("/")[1] ?? "USDT";
   const base = symbol.split("/")[0] ?? "BTC";
 
@@ -417,6 +428,13 @@ function PaperTicket({ symbol, summary, prefilledPrice }: { symbol: string; summ
     }
   };
 
+  const stepQuantity = (direction: -1 | 1): void => {
+    const current = Number(quantity) || 0;
+    const step = current >= 1 ? 0.1 : current >= 0.1 ? 0.01 : 0.001;
+    const next = Math.max(0.0001, Number((current + direction * step).toFixed(4)));
+    setQuantity(String(next));
+  };
+
   const activePortfolio = portfolio;
   const activePreviews = previews;
   const estimated = referencePrice !== null && Number.isFinite(number) ? number * referencePrice : null;
@@ -452,36 +470,79 @@ function PaperTicket({ symbol, summary, prefilledPrice }: { symbol: string; summ
         </div>
       </div>
 
+      {prefilledPrice !== null && prefilledPrice !== undefined && (
+        <div className="flex items-center justify-between px-2 py-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-info)] text-[10px] text-[var(--ak-signal-info)] font-mono">
+          <span>BOOK REF: ${price(prefilledPrice)} {quote}</span>
+          {onClearPrefilledPrice && (
+            <button
+              type="button"
+              onClick={onClearPrefilledPrice}
+              className="text-[var(--ak-text-secondary)] hover:text-white underline cursor-pointer"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="ticket-field flex flex-col gap-1">
         <div className="flex items-center justify-between">
           <label htmlFor="paper-qty" className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">
             QUANTITY · {base}
           </label>
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
+              className="text-[9px] px-1 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
+              title="Click to toggle between Quote (Buy) and Inventory (Sell) sizing"
+            >
+              {sizingSide === "buy" ? "BUY" : "SELL"}
+            </button>
             {([0.25, 0.5, 0.75, 1] as const).map((pct) => (
               <button
                 key={pct}
                 type="button"
-                onClick={() => applyPercent(pct, "buy")}
-                className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] transition-colors"
-                title={`Set ${pct * 100}% of available`}
+                onClick={() => applyPercent(pct, sizingSide)}
+                className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] active:scale-95 transition-all cursor-pointer"
+                title={`Set ${pct * 100}% for ${sizingSide}`}
               >
                 {pct === 1 ? "MAX" : `${pct * 100}%`}
               </button>
             ))}
           </div>
         </div>
-        <AkInput
-          id="paper-qty"
-          data-testid="paper-quantity"
-          aria-label={`QUANTITY · ${base}`}
-          type="number"
-          min="0"
-          step="0.0001"
-          value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
-          className="h-8 text-xs font-mono"
-        />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => stepQuantity(-1)}
+            className="h-8 w-7 flex items-center justify-center bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white hover:border-[var(--ak-signal-info)] active:scale-95 transition-all text-xs font-bold cursor-pointer select-none"
+            title="Step down quantity"
+            aria-label="Step down quantity"
+          >
+            −
+          </button>
+          <AkInput
+            id="paper-qty"
+            data-testid="paper-quantity"
+            aria-label={`QUANTITY · ${base}`}
+            type="number"
+            min="0"
+            step="0.0001"
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+            className="h-8 text-xs font-mono flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => stepQuantity(1)}
+            className="h-8 w-7 flex items-center justify-center bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white hover:border-[var(--ak-signal-info)] active:scale-95 transition-all text-xs font-bold cursor-pointer select-none"
+            title="Step up quantity"
+            aria-label="Step up quantity"
+          >
+            +
+          </button>
+        </div>
       </div>
 
       <div className="ticket-estimate flex items-center justify-between p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
@@ -498,6 +559,7 @@ function PaperTicket({ symbol, summary, prefilledPrice }: { symbol: string; summ
           size="sm"
           disabled={busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"}
           onClick={() => void submit("buy")}
+          onMouseEnter={() => setSizingSide("buy")}
           icon={<TrendingUp size={13} />}
           className="h-8 font-bold text-xs"
         >
@@ -508,6 +570,7 @@ function PaperTicket({ symbol, summary, prefilledPrice }: { symbol: string; summ
           size="sm"
           disabled={busy || !Number.isFinite(number) || number <= 0 || !activePortfolio || number > activePortfolio.baseBalance || mode !== "paper"}
           onClick={() => void submit("sell")}
+          onMouseEnter={() => setSizingSide("sell")}
           icon={<TrendingDown size={13} />}
           className="h-8 font-bold text-xs"
         >
@@ -807,6 +870,14 @@ function ReplayTicket({
 export function Inspector({ workspace = "terminal", summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayExecution, onReplayCommand, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
   const [paperMode, setPaperMode] = useState<"legacy" | "shared-spot">("legacy");
   const [symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
+  const [pickedPrice, setPickedPrice] = useState<number | null>(null);
+  const [priceNotice, setPriceNotice] = useState<string | null>(null);
+
+  const handlePickPrice = (p: number) => {
+    setPickedPrice(p);
+    setPriceNotice(`Price $${price(p)} applied to ticket`);
+    window.setTimeout(() => setPriceNotice(null), 2500);
+  };
 
   const tabsForWorkspace =
     workspace === "terminal" ? (["book", "trades", "strategy", "context"] as const)
@@ -846,12 +917,18 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
         </TabsList>
 
         <div className="flex-1 overflow-auto min-h-0">
-          <TabsContent value="book"><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} /></TabsContent>
-          <TabsContent value="trades"><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} /></TabsContent>
+          <TabsContent value="book"><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} onPickPrice={handlePickPrice} /></TabsContent>
+          <TabsContent value="trades"><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} onPickPrice={handlePickPrice} /></TabsContent>
           <TabsContent value="strategy"><StrategyLab onRun={onRun} running={running} /></TabsContent>
           <TabsContent value="context"><WorkspaceContext /></TabsContent>
         </div>
       </Tabs>
+
+      {priceNotice && (
+        <div className="mx-2 mt-1 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border-l-2 border-[var(--ak-signal-info)] text-[10px] text-[var(--ak-signal-info)] font-mono animate-pulse">
+          {priceNotice}
+        </div>
+      )}
 
       {replayMode ? (
         <ReplayTicket
@@ -868,7 +945,11 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
       ) : (
         selectedTab !== "strategy" && <div className="max-h-[55vh] overflow-auto">
           <label className="flex flex-col p-2 text-xs">Paper account mode<AkSelect aria-label="Paper account mode" value={paperMode} onChange={(event) => setPaperMode(event.target.value as "legacy" | "shared-spot")}><option value="legacy">Legacy pair wallet</option><option value="shared-spot">New shared spot wallet</option></AkSelect></label>
-          {paperMode === "shared-spot" ? <SharedSpotTicket key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} referencePrice={summary?.ask ?? summary?.last ?? null} /> : <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} />}
+          {paperMode === "shared-spot" ? (
+            <SharedSpotTicket key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} referencePrice={pickedPrice ?? summary?.ask ?? summary?.last ?? null} />
+          ) : (
+            <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} prefilledPrice={pickedPrice} onClearPrefilledPrice={() => setPickedPrice(null)} />
+          )}
           <PaperRecoveryPanel />
         </div>
       )}

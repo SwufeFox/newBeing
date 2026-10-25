@@ -169,7 +169,11 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
       onDrop={onPanelDrop}
     >
       <div className="panel-heading">
-        <div className="flex items-center gap-1.5"><Star size={13} className="text-[var(--ak-signal-action)]" /><span className="font-bold tracking-wider">WATCHLIST</span></div>
+        <div className="flex items-center gap-1.5">
+          <Star size={13} className="text-[var(--ak-signal-action)]" />
+          <span className="font-bold tracking-wider">WATCHLIST</span>
+          <span className="text-[9px] font-mono text-[var(--c-fg-4)] ml-1" title="Use [ and ] to cycle symbols">[ / ]</span>
+        </div>
         <div className="watchlist-head-actions">
           <span className="count-label">{watchlist.length}</span>
           <button

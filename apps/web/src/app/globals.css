@@ -422,6 +422,7 @@ button, input, select { font: inherit; color: inherit; }
   cursor: pointer;
 }
 .symbol-result:hover { background: color-mix(in srgb, var(--mode) 12%, transparent); color: var(--c-fg); border-left-color: var(--mode); }
+.symbol-result:active { transform: translateX(1.5px); }
 .symbol-result .muted { color: var(--c-fg-4); }
 .popover-state, .popover-error { padding: var(--s-3); color: var(--c-fg-3); font-size: var(--t-label); }
 .popover-error { color: var(--c-down); }
@@ -449,6 +450,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 .timeframe-selector button:first-child { border-left: 0; }
 .timeframe-selector button:hover:not(:disabled) { color: var(--c-fg); background: color-mix(in srgb, var(--mode) 14%, transparent); }
+.timeframe-selector button:active:not(:disabled) { transform: scale(0.95); }
 .timeframe-selector button.active {
   color: var(--mode);
   background: color-mix(in srgb, var(--mode) 18%, transparent);
@@ -2322,7 +2324,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .nb-button.ak-btn-variant-danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--c-down) 14%, transparent);
 }
-.nb-button:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.94); }
+.nb-button { transition: transform 60ms cubic-bezier(0.2, 0.8, 0.4, 1), filter 60ms ease; }
+.nb-button:active:not(:disabled) { transform: translateY(1.5px) scale(0.985); filter: brightness(0.92); }
 .nb-button:disabled { opacity: 0.4; cursor: not-allowed; }
 .spin { display: inline-flex; animation: nb-spin 900ms linear infinite; }
 @keyframes nb-spin { to { transform: rotate(360deg); } }
