@@ -32,7 +32,7 @@ Expired products cannot open new positions. A position awaiting official settlem
 
 The existing deterministic research and frozen Replay engine retains its spot dataset format and execution policy. Derivatives are not passed into that engine: reproducible derivatives research would also need versioned contract specifications, mark/index history, funding events and official settlement inputs. The original spot result identities are unaffected by adding the independent modules.
 
-While the shared workspace is in Replay, the derivatives HTTP boundary refuses public live reads and normal Paper commands. The check is repeated after network waits; mutations also enforce it in the storage transaction. Returning to Markets ends that restriction through the normal workspace command.
+While the shared workspace is in Replay, public market-data reads and Paper POST commands remain blocked. The accounts list and single-account GET endpoints read only the local SQLite ledger and are available as a frozen, read-only snapshot. The derivatives UI labels this snapshot as frozen and removes position navigation and Paper actions while Replay is active. Paper mutations retain their Replay checks after network waits and inside the storage transaction. Returning to Markets restores the normal derivatives workspace.
 
 ## Development fixtures
 

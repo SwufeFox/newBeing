@@ -2,17 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({
   workspace: "terminal",
-  list: vi.fn(), instrument: vi.fn(), quote: vi.fn(), candles: vi.fn(),
+  list: vi.fn(), instrument: vi.fn(), quote: vi.fn(), candles: vi.fn(), optionQuotes: vi.fn(),
 }));
 vi.mock("@newbeing/storage", () => ({ getWorkspaceState: () => ({ state: { activeWorkspace: fixture.workspace } }) }));
 vi.mock("@newbeing/market-data/derivatives", () => ({
   listDerivativeInstruments: fixture.list,
   getDerivativeInstrument: fixture.instrument,
   getDerivativeQuote: fixture.quote,
+  getDerivativeOptionQuotes: fixture.optionQuotes,
   getDerivativeCandles: fixture.candles,
 }));
 import { GET as markets } from "../src/app/api/derivatives/markets/route.js";
 import { GET as market } from "../src/app/api/derivatives/market/route.js";
+import { POST as optionQuotes } from "../src/app/api/derivatives/options/quotes/route.js";
 
 const id = "okx:perpetual:BTC-USDT-SWAP";
 const nativeInstrument = { id, venue: "okx", nativeId: "BTC-USDT-SWAP", kind: "perpetual", source: "native-api" };
@@ -24,6 +26,7 @@ beforeEach(() => {
   fixture.instrument.mockResolvedValue(nativeInstrument);
   fixture.quote.mockResolvedValue({ instrumentId: id, bid: 79999, ask: 80001, mark: 80000, timestamp: Date.now(), source: "native-api" });
   fixture.candles.mockResolvedValue([{ timestamp: 0, open: 80000, high: 80001, low: 79999, close: 80000, volume: 1 }]);
+  fixture.optionQuotes.mockResolvedValue([{ instrumentId: "deribit:option:BTC-25DEC26-80000-C", timestamp: Date.now(), bid: 0.024, ask: 0.026, mark: 0.025, source: "native-api" }]);
 });
 afterEach(() => vi.resetAllMocks());
 
@@ -43,6 +46,40 @@ describe("derivatives public HTTP boundary", () => {
     expect((await market(request(`market?instrumentId=${id}&limit=100000`))).status).toBe(400);
     expect(fixture.list).not.toHaveBeenCalled();
     expect(fixture.instrument).not.toHaveBeenCalled();
+  });
+
+  it("accepts a bounded batch of Deribit option IDs and returns exchange snapshot time", async () => {
+    const ids = ["deribit:option:BTC-25DEC26-80000-C"];
+    const response = await optionQuotes(new Request("http://localhost/api/derivatives/options/quotes", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instrumentIds: ids }),
+    }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.quotes[0].instrumentId).toBe(ids[0]);
+    expect(body.asOf).toEqual(expect.any(Number));
+    expect(fixture.optionQuotes).toHaveBeenCalledWith(ids);
+  });
+
+  it("rejects non-option and oversized quote batches before market access", async () => {
+    const post = (instrumentIds: string[]) => optionQuotes(new Request("http://localhost/api/derivatives/options/quotes", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instrumentIds }),
+    }));
+    expect((await post([id])).status).toBe(400);
+    expect((await post(["deribit:option:SOL-25DEC26-100-C"])).status).toBe(400);
+    expect((await post(Array.from({ length: 101 }, () => "deribit:option:BTC-25DEC26-80000-C"))).status).toBe(400);
+    expect(fixture.optionQuotes).not.toHaveBeenCalled();
+  });
+
+  it("blocks option batch reads before and after public requests during Replay", async () => {
+    fixture.workspace = "replay";
+    const req = () => optionQuotes(new Request("http://localhost/api/derivatives/options/quotes", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instrumentIds: ["deribit:option:BTC-25DEC26-80000-C"] }),
+    }));
+    expect((await req()).status).toBe(409);
+    expect(fixture.optionQuotes).not.toHaveBeenCalled();
+    fixture.workspace = "terminal";
+    fixture.optionQuotes.mockImplementationOnce(async () => { fixture.workspace = "replay"; return []; });
+    expect((await req()).status).toBe(409);
   });
 
   it("retains the real option quote when a provider cannot supply option candles", async () => {

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
 import type { BacktestResult, BacktestSweepResult, WorkspaceState } from "@newbeing/core";
 import { getDatabase } from "./db.js";
-import { experiments, savedSweeps, workspaceStates } from "./schema.js";
+import { experiments, savedEvaluations, savedSweeps, workspaceStates } from "./schema.js";
 import { canonicalJson, loadDatasetSnapshot } from "./snapshots.js";
 import { getWorkspaceState } from "./repositories.js";
 
@@ -37,7 +37,17 @@ export function validateResearchSweep(results: readonly BacktestResult[], sweep:
 
 /** Publish results only after the immutable input is available and verified.
  * A sweep and all of its full run results commit in one SQLite transaction. */
-export function saveResearchResults(results: readonly BacktestResult[], sweep?: BacktestSweepResult, open?: { expected: ReturnType<typeof getWorkspaceState>; state: WorkspaceState }): void {
+export interface SavedEvaluationRecord { evaluationId: string; request: string; report: string; createdAt: number }
+
+export function getSavedEvaluation(evaluationId: string): SavedEvaluationRecord | undefined {
+  return getDatabase().select().from(savedEvaluations).where(eq(savedEvaluations.evaluationId, evaluationId)).get();
+}
+
+export function listSavedEvaluations(limit = 20): SavedEvaluationRecord[] {
+  return getDatabase().select().from(savedEvaluations).orderBy(desc(savedEvaluations.createdAt)).limit(Math.max(1, Math.min(100, limit))).all();
+}
+
+export function saveResearchResults(results: readonly BacktestResult[], sweep?: BacktestSweepResult, open?: { expected: ReturnType<typeof getWorkspaceState>; state: WorkspaceState }, evaluation?: { evaluationId: string; request: string; report: string; createdAt: number }): void {
   for (const result of results) {
     if (!result.reproduction || result.reproduction.snapshotId !== result.datasetId) throw new Error("Research result requires its original snapshot.");
     const snapshot = loadDatasetSnapshot(result.datasetId);
@@ -50,6 +60,7 @@ export function saveResearchResults(results: readonly BacktestResult[], sweep?: 
     const navigate = open && current.updatedAt === open.expected.updatedAt && canonicalJson(current.state) === canonicalJson(open.expected.state);
     for (const result of results) tx.insert(experiments).values({ resultId: result.resultId, datasetId: result.datasetId, symbol: result.symbol, timeframe: result.timeframe, strategyId: result.strategyId, strategyVersion: result.strategyVersion, assumptions: canonicalJson(result.assumptions), result: canonicalJson(result), createdAt: Date.parse(result.createdAt) }).run();
     if (sweep) tx.insert(savedSweeps).values({ sweepId: sweep.sweepId, result: canonicalJson(sweep), createdAt: sweep.createdAt }).run();
+    if (evaluation) tx.insert(savedEvaluations).values(evaluation).run();
     if (navigate) {
       const payload = JSON.stringify(open.state);
       const updatedAt = Math.max(Date.now(), current.updatedAt + 1);

@@ -101,6 +101,36 @@ describe("native derivative metadata and units", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it("batches option-chain books by fixed settlement currency and maps only requested native IDs", async () => {
+    const coin = { ...option, instrument_name: "BTC-25DEC26-80000-C", base_currency: "BTC", counter_currency: "USD", settlement_currency: "BTC", instrument_type: "reversed", contract_size: 1, min_trade_amount: 0.1 };
+    const urls: URL[] = [];
+    const fetcher = mockApi((url) => {
+      urls.push(url);
+      if (url.searchParams.get("currency") === "USDC") return [
+        { instrument_name: option.instrument_name, creation_timestamp: NOW, bid_price: 1.2, ask_price: 1.3, mark_price: 1.25, last: 1.22 },
+        { instrument_name: "UNREQUESTED_USDC-25DEC26-20-P", creation_timestamp: NOW, mark_price: 99 },
+      ];
+      return [{ instrument_name: coin.instrument_name, creation_timestamp: NOW - 31_000, bid_price: 0.024, ask_price: 0.026, mark_price: 0.025 }];
+    });
+    const coinId = `deribit:option:${coin.instrument_name}`;
+    const quotes = await new NativeDerivativeMarketData({ fetch: fetcher, now: () => NOW, fixture: false })
+      .getDerivativeOptionQuotes([optionId, coinId]);
+    expect(quotes).toHaveLength(2);
+    expect(quotes[0]).toMatchObject({ instrumentId: optionId, timestamp: NOW, bid: 1.2, ask: 1.3, last: 1.22, mark: 1.25, source: "native-api" });
+    expect(quotes[1]).toMatchObject({ instrumentId: coinId, bid: 0.024, ask: 0.026, mark: 0.025, source: "native-api" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(urls.map((url) => url.searchParams.get("currency")).sort()).toEqual(["BTC", "USDC"]);
+    expect(urls.every((url) => url.pathname.endsWith("get_book_summary_by_currency") && url.searchParams.get("kind") === "option" && !url.searchParams.has("instrument_name"))).toBe(true);
+  });
+
+  it("rejects non-Deribit or unsupported-settlement batch IDs before any request", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const client = new NativeDerivativeMarketData({ fetch: fetcher, now: () => NOW, fixture: false });
+    await expect(client.getDerivativeOptionQuotes([okxId])).rejects.toThrow("identity");
+    await expect(client.getDerivativeOptionQuotes(["deribit:option:SOL-25DEC26-100-C"])).rejects.toThrow("settlement");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it("keeps coin-option premium in settlement coins per base coin", async () => {
     const coin = { ...option, instrument_name: "BTC-25DEC26-80000-C", base_currency: "BTC", counter_currency: "USD", settlement_currency: "BTC", instrument_type: "reversed", contract_size: 1, min_trade_amount: 0.1 };
     const fetcher = mockApi((url) => url.pathname.endsWith("get_instrument") ? coin : { instrument_name: coin.instrument_name, state: "open", timestamp: NOW, best_bid_price: 0.024, best_ask_price: 0.026, mark_price: 0.025, index_price: 80000, open_interest: 10, mark_iv: 50 });
@@ -207,8 +237,10 @@ describe("deterministic fixture environment", () => {
       const quote = await client.getDerivativeQuote(instrument.id);
       expect(quote.source).toBe("fixture");
       expect(await client.getDerivativeQuote(instrument.id)).toEqual(quote);
-      if (kind === "option") await expect(client.getDerivativeCandles(instrument.id, "1m", 10)).rejects.toThrow("unsupported");
-      else expect(await client.getDerivativeCandles(instrument.id, "1m", 10)).toEqual(await client.getDerivativeCandles(instrument.id, "1m", 10));
+      if (kind === "option") {
+        await expect(client.getDerivativeCandles(instrument.id, "1m", 10)).rejects.toThrow("unsupported");
+        expect(await client.getDerivativeOptionQuotes([instrument.id])).toMatchObject([{ instrumentId: instrument.id, source: "fixture" }]);
+      } else expect(await client.getDerivativeCandles(instrument.id, "1m", 10)).toEqual(await client.getDerivativeCandles(instrument.id, "1m", 10));
     }
     expect(fetcher).not.toHaveBeenCalled();
   });

@@ -191,6 +191,72 @@ export class NativeDerivativeMarketData implements DerivativeMarketData {
     return structuredClone(quote);
   }
 
+  async getDerivativeOptionQuotes(ids: string[]): Promise<DerivativeQuote[]> {
+    if (!Array.isArray(ids) || ids.length > 100) throw new Error("Derivative option quote batch must contain at most 100 IDs.");
+    const requested = new Map<string, { nativeId: string; currency: "USDC" | "BTC" | "ETH" }>();
+    for (const id of ids) {
+      const match = /^deribit:option:([A-Z0-9]+(?:_USDC)?-[A-Z0-9][A-Z0-9.-]{1,99})$/.exec(id);
+      if (!match) throw new Error("Invalid Deribit option identity.");
+      const nativeId = match[1]!;
+      const base = /^([A-Z0-9]+)(?:_USDC)?-/.exec(nativeId)?.[1];
+      const linear = !!base && nativeId.startsWith(`${base}_USDC-`);
+      const currency = linear ? "USDC" : base === "BTC" || base === "ETH" ? base : null;
+      if (!currency) throw new Error("Unsupported Deribit option settlement identity.");
+      requested.set(id, { nativeId, currency });
+    }
+    if (!requested.size) return [];
+
+    if (this.fixture) {
+      const fixtures = fixtureInstruments();
+      return [...requested.entries()].flatMap(([id]) => {
+        const instrument = fixtures.find((item) => item.id === id && item.kind === "option");
+        return instrument ? [{ ...fixtureQuote(instrument, this.now()), instrumentId: id }] : [];
+      });
+    }
+
+    const currencies = [...new Set([...requested.values()].map((item) => item.currency))];
+    const snapshots = await Promise.all(currencies.map(async (currency) => {
+      const rows = await this.read(`option-summary:${currency}`, 2_000, () =>
+        this.rows(`${DERIBIT}/get_book_summary_by_currency?currency=${currency}&kind=option`));
+      return [currency, rows] as const;
+    }));
+    const summaryById = new Map<string, NativeRow>();
+    for (const [currency, rows] of snapshots) {
+      for (const row of rows) {
+        if (typeof row.instrument_name === "string") summaryById.set(`${currency}:${row.instrument_name}`, row);
+      }
+    }
+    const positiveOrNull = (...values: unknown[]): number | null => {
+      for (const value of values) {
+        const parsed = n(value);
+        if (parsed !== null && parsed > 0) return parsed;
+      }
+      return null;
+    };
+    return [...requested.entries()].flatMap(([id, identity]) => {
+      const row = summaryById.get(`${identity.currency}:${identity.nativeId}`);
+      if (!row) return [];
+      let bid = positiveOrNull(row.best_bid_price, row.bid_price);
+      let ask = positiveOrNull(row.best_ask_price, row.ask_price);
+      if (bid !== null && ask !== null && bid > ask) { bid = null; ask = null; }
+      return [{
+        instrumentId: id,
+        timestamp: n(row.timestamp) ?? n(row.creation_timestamp) ?? 0,
+        bid,
+        ask,
+        last: positiveOrNull(row.last_price, row.last),
+        mark: positiveOrNull(row.mark_price),
+        index: positiveOrNull(row.index_price),
+        fundingRate: null,
+        nextFundingAt: null,
+        openInterest: null,
+        iv: null,
+        delta: null,
+        source: "native-api" as const,
+      }];
+    });
+  }
+
   async getDerivativeCandles(id: string, timeframe: Timeframe, limit: number): Promise<Candle[]> {
     if (!Object.hasOwn(BARS, timeframe)) throw new Error("Unsupported derivative timeframe.");
     if (!Number.isInteger(limit) || limit < 1 || limit > 300) throw new Error("Derivative candle limit must be an integer in [1, 300].");
@@ -248,4 +314,5 @@ function marketData(): NativeDerivativeMarketData { return defaultMarketData ??=
 export const listDerivativeInstruments: DerivativeMarketData["listDerivativeInstruments"] = (kind, query) => marketData().listDerivativeInstruments(kind, query);
 export const getDerivativeInstrument: DerivativeMarketData["getDerivativeInstrument"] = (id) => marketData().getDerivativeInstrument(id);
 export const getDerivativeQuote: DerivativeMarketData["getDerivativeQuote"] = (id) => marketData().getDerivativeQuote(id);
+export const getDerivativeOptionQuotes: DerivativeMarketData["getDerivativeOptionQuotes"] = (ids) => marketData().getDerivativeOptionQuotes(ids);
 export const getDerivativeCandles: DerivativeMarketData["getDerivativeCandles"] = (id, timeframe, limit) => marketData().getDerivativeCandles(id, timeframe, limit);

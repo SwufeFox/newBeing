@@ -66,5 +66,7 @@ export interface DerivativeMarketData {
   listDerivativeInstruments(kind: DerivativeKind, query?: string): Promise<DerivativeInstrument[]>;
   getDerivativeInstrument(id: string): Promise<DerivativeInstrument>;
   getDerivativeQuote(id: string): Promise<DerivativeQuote>;
+  /** Batch public option-chain snapshots, keyed by the requested native IDs. */
+  getDerivativeOptionQuotes(ids: string[]): Promise<DerivativeQuote[]>;
   getDerivativeCandles(id: string, timeframe: Timeframe, limit: number): Promise<Candle[]>;
 }

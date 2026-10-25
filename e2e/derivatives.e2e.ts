@@ -21,13 +21,32 @@ async function getOk(request: APIRequestContext, url: string) {
   throw new Error("GET " + url + " never became ok, last status " + lastStatus);
 }
 
-async function firstInstrument(request: APIRequestContext, base: string, kind: string) {
+
+type FixtureInstrument = { id: string; kind: string; nativeId: string; priceTick: number; venue: string; settle: string };
+
+async function instruments(request: APIRequestContext, base: string, kind: string): Promise<FixtureInstrument[]> {
   const response = await getOk(request, `${base}/api/derivatives/markets?kind=${kind}&query=BTC`);
-  expect(response.ok()).toBeTruthy();
   const data = await response.json();
   expect(data.source).toBe("fixture");
   expect(data.instruments.length).toBeGreaterThan(0);
-  return data.instruments[0] as { id: string; kind: string; venue: string; settle: string };
+  return data.instruments as FixtureInstrument[];
+}
+
+async function firstInstrument(request: APIRequestContext, base: string, kind: string): Promise<FixtureInstrument> {
+  return (await instruments(request, base, kind))[0]!;
+}
+
+async function seedLongPosition(request: APIRequestContext, base: string, instrument: FixtureInstrument, contracts: string, clientOrderId: string): Promise<{ bid: number; ask: number }> {
+  const opened = await post(request, base, { action: "open", instrumentId: instrument.id });
+  expect(opened.ok()).toBeTruthy();
+  const quoteResponse = await getOk(request, `${base}/api/derivatives/market?instrumentId=${encodeURIComponent(instrument.id)}`);
+  const { quote } = await quoteResponse.json();
+  const filled = await post(request, base, {
+    action: "order", instrumentId: instrument.id, clientOrderId, side: "buy", contracts, leverage: 1,
+    reduceOnly: false, limitPrice: String(Math.ceil(quote.ask / instrument.priceTick) * instrument.priceTick),
+  });
+  expect(filled.ok(), `Could not seed ${instrument.id}: ${filled.status()} ${await filled.text()}`).toBeTruthy();
+  return { bid: quote.bid, ask: quote.ask };
 }
 
 test.beforeEach(async ({ request, baseURL }) => {
@@ -35,6 +54,55 @@ test.beforeEach(async ({ request, baseURL }) => {
   const workspace = await (await request.get(`${baseURL}/api/workspace`)).json();
   const response = await request.put(`${baseURL}/api/workspace`, { data: { ...workspace.state, activeWorkspace: "terminal" }, headers: { Origin: baseURL! } });
   expect(response.ok()).toBeTruthy();
+});
+
+test("ledger navigation and Close follow the selected settlement position", async ({ page, request, baseURL }) => {
+  const base = baseURL!;
+  const future = (await instruments(request, base, "future")).find((item) => item.venue === "deribit" && item.settle === "USDC");
+  const option = (await instruments(request, base, "option")).find((item) => item.venue === "deribit" && item.settle === "USDC");
+  expect(future).toBeDefined();
+  expect(option).toBeDefined();
+  const futureQuote = await seedLongPosition(request, base, future!, "1", "e2e-ui-deribit-future");
+  const optionQuote = await seedLongPosition(request, base, option!, "0.01", "e2e-ui-deribit-option");
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Derivatives/ }).click();
+  await page.waitForURL("**/derivatives", { timeout: 120000 });
+  await expect(page.getByRole("heading", { name: "/ Derivatives" })).toBeVisible({ timeout: 60000 });
+
+  const ledgerOption = page.getByRole("button", { name: `View position ${option!.id}` });
+  await expect(ledgerOption).toBeVisible({ timeout: 60000 });
+  await ledgerOption.click();
+  const contractDetails = page.getByRole("region", { name: "Contract market data" });
+  await expect(contractDetails.getByText(option!.id, { exact: true })).toBeVisible({ timeout: 60000 });
+  await expect(page.getByRole("tab", { name: "Options", exact: true })).toHaveAttribute("aria-selected", "true");
+
+  const accountPanel = page.getByRole("region", { name: "Derivatives account" });
+  const positionsTable = accountPanel.getByRole("table").first();
+  const futureRow = positionsTable.getByRole("row").filter({ hasText: future!.id });
+  await futureRow.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(contractDetails.getByText(future!.id, { exact: true })).toBeVisible({ timeout: 60000 });
+  await expect(page.getByRole("tab", { name: "Futures", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("combobox", { name: "Order action" })).toHaveValue("close");
+  await expect(page.getByRole("textbox", { name: "Quantity in contracts" })).toHaveValue("1");
+  await page.getByRole("textbox", { name: "Price protection" }).fill(String(Math.floor(futureQuote.bid / future!.priceTick) * future!.priceTick));
+  const submit = page.getByRole("button", { name: "Submit Paper order", exact: true });
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page.getByText("Paper order filled.", { exact: true })).toBeVisible({ timeout: 60000 });
+  await expect(futureRow).toHaveCount(0);
+
+  const optionRow = positionsTable.getByRole("row").filter({ hasText: option!.id });
+  await optionRow.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(contractDetails.getByText(option!.id, { exact: true })).toBeVisible({ timeout: 60000 });
+  await expect(page.getByRole("tab", { name: "Options", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("combobox", { name: "Order action" })).toHaveValue("close");
+  await expect(page.getByRole("textbox", { name: "Quantity in contracts" })).toHaveValue("0.01");
+  await page.getByRole("textbox", { name: "Price protection" }).fill(String(Math.floor(optionQuote.bid / option!.priceTick) * option!.priceTick));
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page.getByText("Paper order filled.", { exact: true })).toBeVisible({ timeout: 60000 });
+  await expect(accountPanel.getByText("No open positions.", { exact: true })).toBeVisible();
 });
 
 test("native derivative identities, explicit capital and atomic contract/option Paper fills", async ({ request, baseURL }) => {

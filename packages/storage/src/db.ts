@@ -70,6 +70,10 @@ function migrateSchema(sqlite: Database.Database): void {
     CREATE TABLE IF NOT EXISTS saved_sweeps (
       sweep_id TEXT PRIMARY KEY, result TEXT NOT NULL, created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS saved_evaluations (
+      evaluation_id TEXT PRIMARY KEY, request TEXT NOT NULL, report TEXT NOT NULL, created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS saved_evaluations_created_at_idx ON saved_evaluations(created_at DESC);
     CREATE TABLE IF NOT EXISTS experiments (
       result_id TEXT PRIMARY KEY, dataset_id TEXT NOT NULL, symbol TEXT NOT NULL,
       timeframe TEXT NOT NULL, strategy_id TEXT NOT NULL, strategy_version TEXT NOT NULL,

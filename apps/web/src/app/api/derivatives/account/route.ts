@@ -33,8 +33,6 @@ const schema = z.discriminatedUnion("action", [
 ]);
 
 export async function GET(request: Request) {
-  const blocked = derivativeReplayRejection();
-  if (blocked) return blocked;
   try {
     const id = derivativeIdSchema.parse(new URL(request.url).searchParams.get("instrumentId"));
     // The account namespace is venue:settle, and every supported product's
@@ -45,12 +43,10 @@ export async function GET(request: Request) {
     if (!match) throw new Error("Invalid derivative identity.");
     const [, venue = "", kind = "", nativeId = ""] = match;
     const settle = venue === "okx" ? "USDT" : kind === "option" && nativeId.startsWith("BTC-") ? "BTC" : kind === "option" && nativeId.startsWith("ETH-") ? "ETH" : "USDC";
-    const lateBlock = derivativeReplayRejection();
-    if (lateBlock) return lateBlock;
     const account = getDerivativesAccount(venue as "okx" | "deribit", settle);
     return derivativeJson({ account: account ?? null, policy: DERIVATIVES_POLICY });
   } catch (error) {
-    return derivativeReplayRejection() ?? derivativeFailure(error);
+    return derivativeFailure(error);
   }
 }
 

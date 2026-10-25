@@ -2,7 +2,7 @@
 
 Implemented against the current working tree and the Paper/account-binding follow-up in `functional-architecture.md`. Paper never submits orders to an external venue. SQLite `finalizePaperFill` commits the fill fields and wallet in one immediate transaction. There is no external execution to reconcile: a persisted filled order already includes its wallet effect; created/submitted/unknown cannot be filled again during recovery.
 
-`GET /api/paper/recovery` returns every pending created/submitted/unknown intent across accounts (including unbound legacy rows), independently of recent-history limits, plus persistent recovery audits. The Paper ticket renders these records and their original account IDs. MCP workspace context exposes the same information read-only; it has no new execution, confirmation or recovery tool.
+`GET /api/paper/recovery` returns every pending created/submitted/unknown intent across accounts (including unbound legacy rows), independently of recent-history limits, plus persistent recovery audits. Both the Legacy pair wallet and New shared spot wallet show the same Recovery panel beneath the ticket, including original account IDs. Replay uses its own ticket and does not show normal Paper recovery controls. MCP workspace context exposes the same information read-only; it has no new execution, confirmation or recovery tool.
 
 `POST /api/paper/recovery` accepts exactly `{ action: "cancel", clientOrderId, actionId, reason }`. The local API Host/Origin/JSON guard applies. Prices, balances, fill claims and extra fields are rejected. Normal Paper submission and preview confirmation also reject extra fields. The UI requires a reason and retains the same action ID and reason when retrying a lost response.
 

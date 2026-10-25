@@ -40,6 +40,13 @@ export const datasetSnapshots = sqliteTable("dataset_snapshots", {
   createdAt: text("created_at").notNull(),
 });
 
+export const savedEvaluations = sqliteTable("saved_evaluations", {
+  evaluationId: text("evaluation_id").primaryKey(),
+  request: text("request").notNull(),
+  report: text("report").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
 export const savedSweeps = sqliteTable("saved_sweeps", {
   sweepId: text("sweep_id").primaryKey(),
   result: text("result").notNull(),

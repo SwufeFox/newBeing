@@ -515,8 +515,6 @@ function PaperTicket({ symbol, summary, prefilledPrice }: { symbol: string; summ
         </Button>
       </div>
 
-      <PaperRecoveryPanel />
-
       {activePreviews.map((preview) => (
         <div className="order-preview-card p-2 bg-[var(--ak-surface-sunken-2)] border-l-2 border-[var(--ak-signal-action)] space-y-1.5" key={preview.id}>
           <div className="preview-topline flex items-center justify-between">
@@ -871,6 +869,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
         selectedTab !== "strategy" && <div className="max-h-[55vh] overflow-auto">
           <label className="flex flex-col p-2 text-xs">Paper account mode<AkSelect aria-label="Paper account mode" value={paperMode} onChange={(event) => setPaperMode(event.target.value as "legacy" | "shared-spot")}><option value="legacy">Legacy pair wallet</option><option value="shared-spot">New shared spot wallet</option></AkSelect></label>
           {paperMode === "shared-spot" ? <SharedSpotTicket key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} referencePrice={summary?.ask ?? summary?.last ?? null} /> : <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} />}
+          <PaperRecoveryPanel />
         </div>
       )}
     </aside>

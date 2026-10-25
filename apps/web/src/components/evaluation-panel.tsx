@@ -39,6 +39,9 @@ interface EvaluationCandidate {
 
 interface EvaluationResponse {
   datasetId: string;
+  strategyId: string;
+  reportId?: string;
+  createdAt?: string;
   trainingDatasetId: string;
   holdoutDatasetId: string;
   trainingBoundary: EvaluationBoundary;
@@ -51,6 +54,14 @@ interface EvaluationResponse {
   evaluation: string;
   holdout: { resultId: string; metrics: EvaluationMetrics; exchange: ExchangeId; symbol: string; timeframe: Timeframe };
   resultIds: { training: string[]; holdout: string };
+}
+
+interface EvaluationHistoryItem {
+  reportId: string;
+  createdAt: string;
+  strategyId: string;
+  symbol: string;
+  holdout: { metrics: EvaluationMetrics };
 }
 
 function numericKeys(parameters: StrategyParameters): string[] {
@@ -87,10 +98,54 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const [step, setStep] = useState("5");
   const [pending, setPending] = useState<{ context: string; controller: AbortController } | null>(null);
   const [failure, setFailure] = useState<{ context: string; message: string } | null>(null);
+  const [history, setHistory] = useState<EvaluationHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historical, setHistorical] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [savedReport, setSavedReport] = useState<{
     response: EvaluationResponse; context: string; parameter: string; strategyId: string; request: string;
   } | null>(null);
   const activeRequest = useRef<AbortController | null>(null);
+  const historyOpenRequest = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    let live = true;
+    void fetch("/api/evaluations?limit=20", { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) throw new Error("Could not load evaluation history.");
+      const rows = await response.json() as typeof history;
+      if (live) { setHistory(rows); setHistoryLoading(false); setHistoryError(null); }
+    }).catch((reason: unknown) => {
+      if (live) {
+        setHistoryError(reason instanceof Error ? reason.message : "Could not load evaluation history.");
+        setHistoryLoading(false);
+      }
+    });
+    return () => { live = false; };
+  }, []);
+  useLayoutEffect(() => () => {
+    historyOpenRequest.current?.abort();
+    historyOpenRequest.current = null;
+  }, []);
+  const openHistorical = async (id: string): Promise<void> => {
+    activeRequest.current?.abort();
+    activeRequest.current = null;
+    setPending(null);
+    historyOpenRequest.current?.abort();
+    const controller = new AbortController();
+    historyOpenRequest.current = controller;
+    try {
+      const response = await fetch(`/api/evaluations/${encodeURIComponent(id)}`, { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error("Could not open saved evaluation.");
+      const saved = await response.json() as EvaluationResponse & { request: string; reportId: string; createdAt: string };
+      if (controller.signal.aborted || historyOpenRequest.current !== controller) return;
+      setSavedReport({ response: saved, context, parameter: Object.keys(saved.selectedParameters).find((key) => typeof saved.selectedParameters[key] === "number") ?? activeKey, strategyId: saved.strategyId, request: saved.request });
+      setHistorical(true);
+      setHistoryError(null);
+    } catch (reason) {
+      if (!controller.signal.aborted && historyOpenRequest.current === controller) setHistoryError(reason instanceof Error ? reason.message : "Could not open saved evaluation.");
+    } finally {
+      if (historyOpenRequest.current === controller) historyOpenRequest.current = null;
+    }
+  };
   const report = savedReport?.response ?? null;
   const reportKey = savedReport?.parameter ?? "";
 
@@ -115,10 +170,12 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   }, [context]);
 
   const run = async (): Promise<void> => {
+    historyOpenRequest.current?.abort();
+    historyOpenRequest.current = null;
     activeRequest.current?.abort();
     activeRequest.current = null;
     setPending(null);
-    if (!validDataset || !splitValid || !spotOnly) return;
+    if (keys.length === 0 || !validDataset || !splitValid || !spotOnly) return;
     const built = buildEvaluationCandidates(parameters, activeKey, from, to, step);
     if (built.error) {
       setFailure({ context, message: built.error });
@@ -152,6 +209,13 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
         throw new Error("Evaluation response was malformed.");
       }
       setSavedReport({ response: payload as EvaluationResponse, context, parameter: activeKey, strategyId: strategy?.id ?? strategyId, request });
+      setHistorical(false);
+      void fetch("/api/evaluations?limit=20", { cache: "no-store" }).then(async (historyResponse) => {
+        if (!historyResponse.ok) throw new Error("Could not refresh evaluation history.");
+        const rows = await historyResponse.json() as EvaluationHistoryItem[];
+        setHistory(rows);
+        setHistoryError(null);
+      }).catch((reason: unknown) => setHistoryError(reason instanceof Error ? reason.message : "Could not refresh evaluation history."));
     } catch (reason) {
       if (controller.signal.aborted || activeRequest.current !== controller) return;
       setFailure({ context, message: reason instanceof Error ? reason.message : "Evaluation failed." });
@@ -168,12 +232,10 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
     return report.training.reduce((best, run) => (run.result.metrics.totalReturn > best.result.metrics.totalReturn ? run : best));
   }, [report]);
 
-  if (keys.length === 0 && !report) {
-    return <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><FlaskConical size={22} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>Nothing to evaluate</strong><span>This strategy has no numeric parameter to vary.</span></div>;
-  }
-
   return (
     <div className="evaluation-panel flex flex-col gap-3 p-3 bg-[var(--ak-surface-canvas)]">
+      {keys.length > 0 ? (
+      <>
       <div className="evaluation-form flex flex-wrap items-end gap-2.5 p-2.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
         <label className="evaluation-field flex flex-col gap-1 grow min-w-[18rem]">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">DATASET (IMMUTABLE SNAPSHOT)</span>
@@ -220,19 +282,32 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
         </Button>
       </div>
 
-      <p className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80">
-        Candidates are ranked on the training window only; the chosen one is then run once on the holdout.
-        Both segments cold-start with fresh cash — this is a single chronological split, not walk-forward.
-      </p>
 
-      {!validDataset && (
+
+      <p className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80">Candidates rank on training only; the selected candidate runs once on holdout. Both segments cold-start with fresh cash.</p>
+      </>
+      ) : !report ? (
+        <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><FlaskConical size={22} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>Nothing to evaluate</strong><span>This strategy has no numeric parameter to vary. Saved evaluations remain available below.</span></div>
+      ) : null}
+      <section className="evaluation-history flex flex-col gap-1 max-h-36 overflow-auto" aria-label="Saved evaluations">
+        <strong className="text-[10px] uppercase font-mono text-[var(--ak-text-secondary)]">Recent evaluations</strong>
+        {historyError && <span role="status" className="text-xs text-[var(--ak-signal-danger)]">{historyError}</span>}
+        {history.map((item) => <button key={item.reportId} type="button" className="text-left p-1.5 border border-[var(--ak-border-subtle)] text-xs font-mono hover:bg-[var(--ak-surface-sunken)]" onClick={() => void openHistorical(item.reportId)}>
+          {new Date(item.createdAt).toLocaleString()} · {item.strategyId} · {item.symbol} · holdout {pct(item.holdout.metrics.totalReturn)}
+        </button>)}
+        {historyLoading && <span className="text-xs opacity-70">Loading saved evaluations…</span>}
+        {!historyLoading && !history.length && !historyError && <span className="text-xs opacity-70">No saved evaluations yet.</span>}
+      </section>
+
+
+      {keys.length > 0 && !validDataset && (
         <div className="evaluation-caveat flex items-center gap-2 p-2 text-xs text-[var(--ak-signal-action)] bg-yellow-950/20 border border-yellow-800/40" role="status">
           <AlertCircle size={13} className="shrink-0" />
           <span>A canonical dataset id is required. Results saved before snapshots existed cannot be evaluated — rerun the backtest to create one.</span>
         </div>
       )}
 
-      {!spotOnly && (
+      {keys.length > 0 && !spotOnly && (
         <div className="evaluation-caveat flex items-center gap-2 p-2 text-xs text-[var(--ak-signal-action)] bg-yellow-950/20 border border-yellow-800/40" role="status">
           <AlertCircle size={13} className="shrink-0" />
           <span>Evaluation runs on the spot model with shorts disabled. Switch the backtest account mode to spot in the strategy panel.</span>
@@ -248,7 +323,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       {report && (
         <>
           <p role="status" className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0">
-            {stale ? "Previous evaluation — inputs have changed. Run again for the current inputs." : "Saved evaluation for these inputs."}
+            {historical ? "Historical saved evaluation · opened from history." : stale ? "Previous evaluation — inputs have changed. Run again for the current inputs." : "Saved evaluation for these inputs."}
             {running && " New evaluation pending; showing the saved report."}
           </p>
           <details className="text-[10px] text-[var(--ak-text-secondary)] font-mono break-all">
@@ -325,7 +400,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
           </div>
 
           <p className="evaluation-ids text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80 break-all">
-            Saved · train dataset {report.trainingDatasetId.slice(0, 24)}… · holdout dataset {report.holdoutDatasetId.slice(0, 24)}… · holdout result {report.holdout.resultId} · parent {report.datasetId.slice(0, 24)}…
+            Saved · report {report.reportId ?? "—"} · train dataset {report.trainingDatasetId.slice(0, 24)}… · holdout dataset {report.holdoutDatasetId.slice(0, 24)}… · holdout result {report.holdout.resultId} · parent {report.datasetId.slice(0, 24)}…
           </p>
           <p className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-70">
             {EXCHANGE_LABELS[report.holdout.exchange]} · {report.holdout.symbol} · {report.holdout.timeframe} · strategy {savedReport?.strategyId} · selection rule {report.selectionRule}

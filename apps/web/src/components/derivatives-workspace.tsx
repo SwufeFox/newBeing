@@ -4,11 +4,12 @@ import Link from "next/link";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { AkBrackets, AkInput, AkPopover, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import type { Candle } from "@newbeing/core";
+import { CandlestickSeries, ColorType, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { DerivativeInstrument, DerivativeKind, DerivativeQuote } from "@newbeing/market-data/derivatives";
 import type { DerivativesAccount, DerivativesOrderRequest, DerivativesPosition } from "@newbeing/application/derivatives-types";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceStore } from "@/store/workspace";
-import { derivativeNumber, derivativeDate, derivativeBlockReason, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel } from "@/lib/derivatives-ui";
+import { derivativeNumber, derivativeDate, derivativeBlockReason, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale } from "@/lib/derivatives-ui";
 
 const KINDS = [["perpetual", "Perpetuals"], ["future", "Futures"], ["option", "Options"]] as const;
 
@@ -17,6 +18,11 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error ?? "Derivatives request failed.");
   return payload as T;
+}
+
+function optionQuoteNumber(value: number | null): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value.toLocaleString("en-US", { maximumSignificantDigits: 7 }) : "—";
 }
 
 function exchangeErrorMessage(error: unknown, resource: string): string {
@@ -34,7 +40,7 @@ function QuoteFreshSubmit({ instrument, quote, disabled, submitting }: {
   submitting: boolean;
 }): React.JSX.Element {
   /* Keep time state inside this tiny leaf. A stale-quote tick must not cause
-     the contracts, option chain, or candle SVG to render again. */
+     the contracts, option chain, or candlestick chart to render again. */
   const [now, setNow] = useState(0);
   useEffect(() => {
     const immediate = window.setTimeout(() => setNow(Date.now()), 0);
@@ -52,9 +58,13 @@ function QuoteFreshSubmit({ instrument, quote, disabled, submitting }: {
   </>;
 }
 
-function LocalAccountLedger({ accounts }: { accounts: DerivativesAccount[] }): React.JSX.Element {
+function LocalAccountLedger({ accounts, readOnly = false, onSelectPosition }: {
+  accounts: DerivativesAccount[];
+  readOnly?: boolean;
+  onSelectPosition?: (position: DerivativesPosition, settle: string) => void;
+}): React.JSX.Element {
   return <div className="space-y-2">
-    <p className="meta">Local Paper ledger · read only without a live quote</p>
+    <p className="meta">{readOnly ? "Frozen Replay snapshot · local SQLite · read only" : "Local Paper ledger · read only without a live quote"}</p>
     {accounts.map((entry) => <details key={entry.id} className="derivatives-details" open={accounts.length === 1}>
       <summary className="flex items-center justify-between gap-3">
         <span>{entry.venue.toUpperCase()} / {entry.settle}</span>
@@ -72,7 +82,9 @@ function LocalAccountLedger({ accounts }: { accounts: DerivativesAccount[] }): R
               <table className="derivatives-table">
                 <thead><tr>{["Instrument", "Side", "Qty", "Entry", "Margin"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
                 <tbody>{entry.positions.map((position) => <tr key={`${position.instrumentId}:${position.side}`}>
-                  <td className="max-w-0 truncate" title={position.instrumentId}>{position.instrumentId}</td>
+                  <td className="max-w-0 truncate" title={position.instrumentId}>
+                    {readOnly || !onSelectPosition ? position.instrumentId : <button type="button" className="max-w-full truncate text-left text-[var(--c-accent)] underline decoration-dotted underline-offset-2 hover:opacity-80" aria-label={`View position ${position.instrumentId}`} onClick={() => onSelectPosition(position, entry.settle)}>{position.instrumentId}</button>}
+                  </td>
                   <td>{position.side}</td><td>{position.quantity}</td><td>{position.entryPrice}</td><td>{position.margin} · {position.leverage}x</td>
                 </tr>)}</tbody>
               </table>
@@ -93,7 +105,7 @@ function LocalAccountLedger({ accounts }: { accounts: DerivativesAccount[] }): R
         </details>
       </div>
     </details>)}
-    <p className="derivatives-ticket-note">Balances and history are local. Orders stay disabled until exchange metadata and a fresh quote are available.</p>
+    <p className="derivatives-ticket-note">{readOnly ? "Position navigation and Paper actions are disabled in Replay; this snapshot is read only." : "Balances and history are local. Select a position to load its contract; orders stay disabled until exchange metadata and a fresh quote are available."}</p>
   </div>;
 }
 
@@ -110,36 +122,82 @@ function EngineModel(): React.JSX.Element {
   </AkPopover>;
 }
 
-/** Sparse series stay sparse: real OHLC candles, no gap filling. Each bar maps
- * to one x slot in arrival order, so missing intervals simply do not appear.
- * Memoized: 150 bars ≈ 300 SVG nodes that must not re-render on clock ticks. */
 const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): React.JSX.Element {
-  const lows = bars.map((bar) => bar.low);
-  const highs = bars.map((bar) => bar.high);
-  const min = Math.min(...lows), max = Math.max(...highs);
-  const span = max - min || 1;
-  const W = 640, H = 200, PAD = 8, CHART_H = H - 18;
-  const slot = (W - PAD * 2) / bars.length;
-  const bodyW = Math.max(1.5, Math.min(11, slot * 0.62));
-  const y = (price: number) => PAD + (1 - (price - min) / span) * (CHART_H - PAD * 2);
-  return <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-48" role="img" aria-label="Contract OHLC candles, 1 hour">
-    <title>Contract OHLC · 1h · sparse series preserved</title>
-    {bars.map((bar, index) => {
-      const cx = PAD + slot * index + slot / 2;
-      const up = bar.close >= bar.open;
-      const color = up ? "var(--c-up)" : "var(--c-down)";
-      const bodyTop = y(Math.max(bar.open, bar.close));
-      const bodyBottom = y(Math.min(bar.open, bar.close));
-      return <g key={bar.timestamp} stroke={color} fill={color}>
-        <line x1={cx} x2={cx} y1={y(bar.high)} y2={y(bar.low)} strokeWidth="1" />
-        <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={Math.max(1, bodyBottom - bodyTop)} strokeWidth="0" />
-      </g>;
-    })}
-    <text x={PAD} y={H - 5} fill="var(--c-fg-4)" fontSize="9" fontFamily="var(--f-display)">{derivativeDate(bars[0]?.timestamp)}</text>
-    <text x={W - PAD} y={H - 5} fill="var(--c-fg-4)" fontSize="9" fontFamily="var(--f-display)" textAnchor="end">{derivativeDate(bars.at(-1)?.timestamp)}</text>
-  </svg>;
-});
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const fittedRef = useRef(false);
+  const theme = useWorkspaceStore((state) => state.theme);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const dark = theme === "dark";
+    const chart = createChart(container, {
+      autoSize: false,
+      width: container.clientWidth,
+      height: container.clientHeight,
+      layout: {
+        background: { type: ColorType.Solid, color: dark ? "#0d1117" : "#ffffff" },
+        textColor: dark ? "#8b949e" : "#64748b",
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: dark ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
+        horzLines: { color: dark ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
+      },
+      rightPriceScale: { borderColor: dark ? "rgba(139,148,158,0.18)" : "rgba(100,116,139,0.20)" },
+      timeScale: { borderColor: dark ? "rgba(139,148,158,0.18)" : "rgba(100,116,139,0.20)", timeVisible: true, secondsVisible: false },
+    });
+    const series = chart.addSeries(CandlestickSeries, {
+      upColor: "#1fb180",
+      downColor: "#ea525e",
+      borderUpColor: "#1fb180",
+      borderDownColor: "#ea525e",
+      wickUpColor: "#1fb180",
+      wickDownColor: "#ea525e",
+    });
+    chartRef.current = chart;
+    fittedRef.current = false;
+    seriesRef.current = series;
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      chart.applyOptions({ width: Math.floor(entry.contentRect.width), height: Math.floor(entry.contentRect.height) });
+    });
+    resizeObserver.observe(container);
+    return () => {
+      resizeObserver.disconnect();
+      chart.remove();
+      chartRef.current = null;
+      seriesRef.current = null;
+    };
+  }, [theme]);
+
+  useEffect(() => {
+    const uniqueBars = new Map<number, Candle>();
+    for (const bar of bars) {
+      const time = Math.floor(bar.timestamp / 1000);
+      if (Number.isFinite(time)) uniqueBars.set(time, bar);
+    }
+    const data = [...uniqueBars.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([time, bar]) => ({
+        time: time as UTCTimestamp,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+      }));
+    seriesRef.current?.setData(data);
+    if (data.length > 0 && !fittedRef.current) {
+      chartRef.current?.timeScale().fitContent();
+      fittedRef.current = true;
+    }
+  }, [bars, theme]);
+
+  return <div ref={containerRef} className="h-48 w-full" role="img" aria-label="Contract OHLC candles, 1 hour" />;
+});
 export function DerivativesWorkspace(): React.JSX.Element {
   const globalWorkspace = useWorkspaceStore((state) => state.activeWorkspace);
   const [remoteReplay, setRemoteReplay] = useState<boolean | null>(null);
@@ -164,7 +222,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [quantity, setQuantity] = useState("");
   const [leverage, setLeverage] = useState("1");
   const [maximumPrice, setMaximumPrice] = useState("");
-  const [chainExpiry, setChainExpiry] = useState<number | null>(null);
+  const [chainKey, setChainKey] = useState<string | null>(null);
+  const [optionQuoteData, setOptionQuoteData] = useState<{ key: string; quotes: Record<string, DerivativeQuote>; staleIds: string[]; error: string | null }>({ key: "", quotes: {}, staleIds: [], error: null });
   /* The account list is a local SQLite snapshot, independent of market data.
      The clock that gates order freshness lives in QuoteFreshSubmit, a leaf. */
   const pendingOrder = useRef<DerivativesOrderRequest | null>(null);
@@ -197,7 +256,6 @@ export function DerivativesWorkspace(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    if (blocked) return;
     const controller = new AbortController();
     void readJson<{ accounts: DerivativesAccount[] }>("/api/derivatives/accounts", { signal: controller.signal })
       .then((data) => { setLedgerAccounts(data.accounts); setLedgerError(null); })
@@ -271,12 +329,31 @@ export function DerivativesWorkspace(): React.JSX.Element {
     setMaximumPrice(""); setQuantity(""); setNotice(null); pendingOrder.current = null;
   }
   function changeKind(next: DerivativeKind): void {
-    setKind(next); setItems([]); setListLoading(true); select(""); setSide("long"); setLeverage("1"); setAction("open"); setChainExpiry(null);
+    setKind(next); setItems([]); setListLoading(true); select(""); setSide("long"); setLeverage("1"); setAction("open"); setChainKey(null);
   }
-  // A close order must reuse the position's terms; the engine rejects mismatches,
-  // so pre-filling removes the most common avoidable rejection.
+  function selectPosition(position: DerivativesPosition, settle?: string): void {
+    // A settlement account can contain several contracts, and Deribit USDC
+    // accounts can mix dated futures and options. Any ledger jump must switch
+    // the whole workspace to that exact native contract.
+    if (position.kind !== kind) {
+      setKind(position.kind);
+      setItems([]);
+      setListLoading(true);
+      setChainKey(null);
+      setSide("long"); setLeverage("1"); setAction("open");
+    }
+    if (position.kind === "option" && position.expiry !== null) {
+      const nativeId = position.instrumentId.split(":").slice(2).join(":");
+      const base = nativeId.split(/[-_]/, 1)[0];
+      const settlement = settle ?? account?.settle;
+      if (base && settlement) setChainKey(`${position.expiry}:${base}:${settlement}`);
+    }
+    select(position.instrumentId);
+  }
   function beginClose(position: DerivativesPosition): void {
-    setAction("close"); setSide(position.side === "short" ? "short" : "long"); setLeverage(String(position.leverage)); setQuantity(position.quantity);
+    // Pre-fill the exact position terms so a close is ready after its own quote loads.
+    selectPosition(position, account?.settle);
+    setAction("close"); setSide(position.side); setLeverage(String(position.leverage)); setQuantity(position.quantity);
     pendingOrder.current = null; setNotice(null);
   }
   // Render-time validation uses the quote's timestamp. The submit handler and
@@ -317,9 +394,83 @@ export function DerivativesWorkspace(): React.JSX.Element {
      list refetch, so the chain is keyed to that, not to clock ticks. */
   const chain = useMemo(() => (kind === "option" ? derivativeOptionChain(items) : []), [kind, items]);
   const activeChain = useMemo(
-    () => chain.find((entry) => entry.expiry === chainExpiry) ?? chain[0] ?? null,
-    [chain, chainExpiry],
+    () => chain.find((entry) => entry.key === chainKey) ?? chain[0] ?? null,
+    [chain, chainKey],
   );
+  const optionQuoteIds = useMemo(
+    () => activeChain ? activeChain.rows.flatMap((row) => [row.call?.id, row.put?.id].filter((id): id is string => !!id)) : [],
+    [activeChain],
+  );
+  const optionQuoteKey = optionQuoteIds.join("|");
+  const currentOptionQuoteData = optionQuoteData.key === optionQuoteKey ? optionQuoteData : null;
+  const optionQuotes = currentOptionQuoteData?.quotes ?? {};
+  const staleOptionQuoteIds = useMemo(() => new Set(currentOptionQuoteData?.staleIds ?? []), [currentOptionQuoteData]);
+  const optionQuoteError = currentOptionQuoteData?.error ?? null;
+
+  useEffect(() => {
+    if (blocked || kind !== "option" || optionQuoteIds.length === 0) return;
+    let disposed = false;
+    let inFlight = false;
+    let retryTimer = 0;
+    let delay = 5000;
+    const controller = new AbortController();
+
+    const schedule = () => {
+      retryTimer = window.setTimeout(() => {
+        if (disposed || controller.signal.aborted) return;
+        if (document.hidden) { schedule(); return; }
+        void refresh();
+      }, delay);
+    };
+    const refresh = async () => {
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
+      try {
+        const data = await readJson<{ quotes: DerivativeQuote[]; asOf: number }>("/api/derivatives/options/quotes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instrumentIds: optionQuoteIds }),
+          signal: controller.signal,
+        });
+        if (!disposed) {
+          const asOf = Number.isFinite(data.asOf) ? data.asOf : Date.now();
+          setOptionQuoteData({
+            key: optionQuoteKey,
+            quotes: Object.fromEntries(data.quotes.map((item) => [item.instrumentId, item])),
+            staleIds: data.quotes.filter((item) => derivativeQuoteSnapshotIsStale(item, asOf)).map((item) => item.instrumentId),
+            error: null,
+          });
+        }
+        delay = 5000;
+      } catch (error) {
+        if (!disposed && !controller.signal.aborted) {
+          setOptionQuoteData({ key: optionQuoteKey, quotes: {}, staleIds: [], error: exchangeErrorMessage(error, "option-chain quotes") });
+        }
+        delay = Math.min(delay * 2, 60_000);
+      } finally {
+        inFlight = false;
+        if (!disposed && !controller.signal.aborted) schedule();
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        setOptionQuoteData((current) => current.key === optionQuoteKey ? { ...current, staleIds: optionQuoteIds } : current);
+        return;
+      }
+      if (inFlight) return;
+      window.clearTimeout(retryTimer);
+      void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void refresh();
+    return () => {
+      disposed = true;
+      controller.abort();
+      window.clearTimeout(retryTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [blocked, kind, optionQuoteIds, optionQuoteKey, revision]);
+
 
   return <div className="derivatives-shell font-mono">
     <header className="derivatives-topbar">
@@ -368,12 +519,12 @@ export function DerivativesWorkspace(): React.JSX.Element {
         <AkTag variant={quote?.source === "fixture" ? "danger" : "default"}>
           {quote?.source === "fixture" ? "FIXTURE · TEST DATA" : quote ? "PUBLIC REALTIME" : "NO QUOTE"}
         </AkTag>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Refresh</Button>
+        {!blocked && <Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Refresh</Button>}
       </div>
     </div>
 
     {blocked && <div role="status" className="derivatives-banner">
-      <span>Derivatives Paper is unavailable during Replay. Return to Markets in the main terminal first; these tabs do not leave Replay.</span>
+      <span>Live derivative markets and Paper actions are paused during Replay. The local Paper ledger remains available below as a read-only snapshot. Return to Markets in the main terminal to resume.</span>
       <Link href="/" className="underline">Open main terminal</Link>
     </div>}
 
@@ -388,7 +539,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
           aria-selected={kind === value}
           aria-controls="derivatives-panel"
           className={'workspace-tab relative px-3 py-1 text-xs font-mono font-bold tracking-wider uppercase border border-transparent ' + (kind === value ? "active text-[var(--c-accent)] bg-[var(--c-surface-3)] border-[var(--c-accent)]" : "text-[var(--c-fg-2)] hover:text-white")}
-          disabled={busy}
+          disabled={busy || blocked}
           onClick={() => changeKind(value as DerivativeKind)}
         >
           {label}
@@ -406,17 +557,25 @@ export function DerivativesWorkspace(): React.JSX.Element {
           <span className="num">{blocked ? "—" : listLoading ? "…" : String(items.length).padStart(2, "0")}</span>
         </div>
         <div className="p-2 border-b border-[var(--c-line)]">
-          <AkInput aria-label="Search derivatives" placeholder="Search contracts" value={query} disabled={busy} onChange={(event) => setQuery(event.target.value)} />
+          <AkInput aria-label="Search derivatives" placeholder="Search contracts" value={query} disabled={busy || blocked} onChange={(event) => setQuery(event.target.value)} />
         </div>
-        {kind === "option" && chain.length > 0 && <div className="flex flex-wrap gap-1 p-2 border-b border-[var(--c-line)]" role="group" aria-label="Expiry">
+        {!blocked && kind === "option" && chain.length > 0 && <div className="flex flex-wrap gap-1 p-2 border-b border-[var(--c-line)]" role="group" aria-label="Expiry and settlement">
           {chain.map((entry) => (
-            <button key={entry.expiry} type="button" disabled={busy}
-              className={'px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider border ' + ((activeChain?.expiry === entry.expiry) ? "text-[var(--c-accent)] border-[var(--c-accent)] bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)]" : "text-[var(--c-fg-3)] border-[var(--c-line)] hover:text-[var(--c-fg)]")}
-              aria-pressed={activeChain?.expiry === entry.expiry}
-              onClick={() => setChainExpiry(entry.expiry)}>
-              {derivativeExpiryLabel(entry.expiry)}
+            <button key={entry.key} type="button" disabled={busy}
+              className={'px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider border ' + ((activeChain?.key === entry.key) ? "text-[var(--c-accent)] border-[var(--c-accent)] bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)]" : "text-[var(--c-fg-3)] border-[var(--c-line)] hover:text-[var(--c-fg)]")}
+              aria-pressed={activeChain?.key === entry.key}
+              onClick={() => { setOptionQuoteData({ key: "", quotes: {}, staleIds: [], error: null }); setChainKey(entry.key); }}>
+              {derivativeExpiryLabel(entry.expiry)} · {entry.base}/{entry.settle}
             </button>
           ))}
+        </div>}
+        {kind === "option" && activeChain && !blocked && <div className="space-y-1 border-b border-[var(--c-line)] px-2 py-1.5">
+          <p className="meta">{activeChain.base}/{activeChain.settle} · premium per base · B / mark / A reference</p>
+          {optionQuoteError && <div role="alert" className="space-y-1 text-[var(--c-down)] text-[10px]">
+            <p>{optionQuoteError}</p>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Retry chain quotes</Button>
+          </div>}
+          {!optionQuoteError && optionQuoteIds.length > 0 && !currentOptionQuoteData && <p role="status" className="text-[var(--c-fg-4)] text-[10px]">Loading batch reference quotes…</p>}
         </div>}
         <div className="derivatives-list">
           {blocked ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">Live data hidden while Paper is disabled.</p>
@@ -429,13 +588,19 @@ export function DerivativesWorkspace(): React.JSX.Element {
                         const option = row[right];
                         if (!option) return <div key={right} className="min-h-[44px]" aria-label={"No " + right + " at this strike"} />;
                         const strikeTag = right === "call" ? "C" : "P";
+                        const chainQuote = optionQuotes[option.id];
+                        const quoteStale = staleOptionQuoteIds.has(option.id);
                         return (
                           <button key={right} type="button"
                             className={'derivatives-row !border-b-0 ' + (selectedId === option.id ? "selected" : "") + (right === "call" ? " border-r border-[var(--c-line-soft)]" : "")}
                             disabled={busy} aria-current={selectedId === option.id} onClick={() => select(option.id)}>
-                            <span className="min-w-0">
+                            <span className="min-w-0 flex-1">
                               <strong className="truncate">{derivativeNumber(row.strike)} <span className="text-[var(--c-accent)]">{strikeTag}</span></strong>
                               <small>{option.settle} · {option.linear ? "Linear" : "Coin"}</small>
+                              <span className="num block truncate text-[9px] leading-tight" title={chainQuote ? `Exchange snapshot ${derivativeDate(chainQuote.timestamp)} · reference only` : "No public book snapshot"}>
+                                {quoteStale && <b className="text-[var(--c-down)]">STALE · </b>}
+                                B {optionQuoteNumber(chainQuote?.bid ?? null)} · M {optionQuoteNumber(chainQuote?.mark ?? null)} · A {optionQuoteNumber(chainQuote?.ask ?? null)}
+                              </span>
                             </span>
                           </button>
                         );
@@ -496,16 +661,18 @@ export function DerivativesWorkspace(): React.JSX.Element {
 
         <section className="derivatives-panel" aria-label="Derivatives account">
           <div className="derivatives-panel-head">
-            <span>Paper account {instrument ? `· ${instrument.venue.toUpperCase()} / ${instrument.settle}` : ""}</span>
-            {!blocked && <Button size="sm" variant="outline" onClick={() => setLedgerRevision((n) => n + 1)}>Refresh ledger</Button>}
+            <span>{blocked ? "Frozen Replay ledger snapshot" : `Paper account ${instrument ? `· ${instrument.venue.toUpperCase()} / ${instrument.settle}` : ""}`}</span>
+            <Button size="sm" variant="outline" disabled={ledgerAccounts === null} onClick={() => setLedgerRevision((n) => n + 1)}>{blocked ? "Refresh snapshot" : "Refresh ledger"}</Button>
           </div>
           <div className="derivatives-panel-body">
-            {blocked ? <p className="text-[var(--c-fg-4)] text-[11px]">Account balances, positions and order history are hidden while Paper is disabled.</p>
-              : ledgerError ? <p role="alert" className="text-[var(--c-down)] text-[11px]">Local account ledger unavailable: {ledgerError}</p>
-                : ledgerAccounts === null ? <p className="text-[var(--c-fg-4)] text-[11px]">Loading local accounts…</p>
-                  : account ? null
-                    : ledgerAccounts.length ? <LocalAccountLedger accounts={ledgerAccounts} />
-                      : <p className="text-[var(--c-fg-4)] text-[11px]">No local derivatives accounts. Open one after a contract is available.</p>}
+            {ledgerError ? <p role="alert" className="text-[var(--c-down)] text-[11px]">Local account ledger unavailable: {ledgerError}</p>
+              : ledgerAccounts === null ? <p className="text-[var(--c-fg-4)] text-[11px]">Loading local accounts…</p>
+                : blocked ? ledgerAccounts.length
+                  ? <LocalAccountLedger accounts={ledgerAccounts} readOnly />
+                  : <p className="text-[var(--c-fg-4)] text-[11px]">No local derivatives Paper accounts are stored yet.</p>
+                : account ? null
+                  : ledgerAccounts.length ? <LocalAccountLedger accounts={ledgerAccounts} onSelectPosition={selectPosition} />
+                    : <p className="text-[var(--c-fg-4)] text-[11px]">No local derivatives accounts. Open one after a contract is available.</p>}
             {blocked ? null
               : account ? <>
                       <dl className="derivatives-account-grid">
