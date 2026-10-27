@@ -8,6 +8,7 @@ import { SweepPanel } from "@/components/sweep-panel";
 import { EvaluationPanel } from "@/components/evaluation-panel";
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
+import { captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
@@ -254,7 +255,7 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
   );
 }
 
-function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, replayError }: { result: BacktestResult | null; onOpenStrategy: () => void; onStartReplay: (result: BacktestResult) => void; replayBusy: boolean; replayError: string | null }): React.JSX.Element {
+function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, replayError, selectionRequestRef }: { result: BacktestResult | null; onOpenStrategy: () => void; onStartReplay: (result: BacktestResult) => void; replayBusy: boolean; replayError: string | null; selectionRequestRef: React.MutableRefObject<number> }): React.JSX.Element {
   const [filter, setFilter] = useState<"all" | "long" | "short" | "win" | "loss">("all");
   const [rerunning, setRerunning] = useState(false);
   const setBacktest = useWorkspaceStore((state) => state.setBacktest);
@@ -284,11 +285,13 @@ function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, repla
   });
 
   const rerunBacktest = async (): Promise<void> => {
+    const requestId = ++selectionRequestRef.current;
+    const canApply = captureWorkspaceSelection();
     setRerunning(true);
     try {
       const response = await fetch(`/api/backtests/${encodeURIComponent(result.resultId)}/rerun`, { method: "POST" });
       const payload: unknown = await response.json();
-      if (response.ok && typeof payload === "object" && payload !== null && "resultId" in payload) {
+      if (response.ok && typeof payload === "object" && payload !== null && "resultId" in payload && requestId === selectionRequestRef.current && canApply() && useWorkspaceStore.getState().backtest === result) {
         setBacktest(payload as BacktestResult);
       }
     } catch {
@@ -480,6 +483,7 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
   if (items.length === 0) return <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><Clock3 size={18} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>No saved experiments</strong><span>Each completed backtest is stored in local SQLite.</span></div>;
 
   const assumptionsKey = (item: BacktestResult): string => JSON.stringify([
+    item.assumptions.accountMode,
     item.assumptions.initialCapital,
     item.assumptions.positionFraction,
     item.assumptions.feeRate,
@@ -488,9 +492,9 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
     item.assumptions.stopLossPct,
     item.assumptions.takeProfitPct,
   ]);
-  const groupKey = (item: BacktestResult): string => [item.exchange, item.symbol, item.timeframe, item.engineVersion, assumptionsKey(item)].join("|");
-  const comparable = comparison?.length ? comparison.filter((item) => groupKey(item) === groupKey(comparison[0]!)) : [];
-  const excluded = comparison?.filter((item) => !comparable.includes(item)) ?? [];
+  const groupKey = (item: BacktestResult): string => JSON.stringify([item.datasetId, item.exchange, item.symbol, item.timeframe, item.engineVersion, assumptionsKey(item)]);
+  const comparable = comparison ?? [];
+  const incompatible = comparable.length > 0 && (!/^sha256:[a-f0-9]{64}$/.test(comparable[0]!.datasetId) || comparable.some((item) => groupKey(item) !== groupKey(comparable[0]!)));
 
   return (
     <div className="p-3 font-mono text-xs space-y-3">
@@ -516,7 +520,13 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
                     aria-label={`Select ${item.resultId} for comparison`}
                     type="checkbox"
                     checked={selectedIds.includes(item.resultId)}
-                    onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, item.resultId] : current.filter((id) => id !== item.resultId))}
+                    disabled={loadingComparison}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setComparison(null);
+                      setComparisonError(null);
+                      setSelectedIds((current) => checked ? [...current, item.resultId] : current.filter((id) => id !== item.resultId));
+                    }}
                   />
                 </td>
                 <td className="p-1.5 text-[10px] text-[var(--ak-text-secondary)]" onClick={() => onSelect(item.resultId)}>{new Date(item.createdAt).toLocaleString()}</td>
@@ -554,9 +564,11 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
       {comparison && (
         <section aria-label="Backtest comparison" className="comparison-panel p-2.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-2">
           <h3 className="text-xs font-bold text-[var(--ak-signal-info)] uppercase tracking-wider">
-            {comparable.length > 0 ? `Comparable group · ${EXCHANGE_LABELS[comparable[0]!.exchange]} · ${comparable[0]!.symbol} · ${comparable[0]!.timeframe}` : "Comparable group"}
+            {incompatible ? "Selected results are not comparable" : comparable.length > 0 ? `Comparable group · ${EXCHANGE_LABELS[comparable[0]!.exchange]} · ${comparable[0]!.symbol} · ${comparable[0]!.timeframe}` : "Comparable group"}
           </h3>
-          {comparable.length < 2 ? (
+          {incompatible ? (
+            <p role="alert" className="text-[11px] text-[var(--ak-signal-danger)]">Cannot compare the selected results: they must share a known dataset, venue, symbol, timeframe, engine version, and fixed assumptions. Selected result IDs: {comparable.map((item) => item.resultId).join(", ")}.</p>
+          ) : comparable.length < 2 ? (
             <p className="text-[11px] text-[var(--ak-text-secondary)] leading-relaxed">
               Results are grouped by venue, symbol, timeframe, engine version, and fixed assumptions.
             </p>
@@ -631,22 +643,35 @@ export function BottomDock({
   const [paper, setPaper] = useState<PaperPayload | null>(null);
   const [paperError, setPaperError] = useState<string | null>(null);
 
+  const selectionRequestRef = useRef(0);
   const selectResult = (resultId: string): void => {
+    const requestId = ++selectionRequestRef.current;
+    const canApply = captureWorkspaceSelection();
+    const initial = useWorkspaceStore.getState();
+    const initialBacktest = initial.backtest;
+    const initialActiveId = initial.activeBacktestId;
     void fetch(`/api/backtests/${encodeURIComponent(resultId)}`, { cache: "no-store" }).then(async (response) => {
       const payload: unknown = await response.json();
+      if (requestId !== selectionRequestRef.current || !canApply() || useWorkspaceStore.getState().backtest !== initialBacktest || useWorkspaceStore.getState().activeBacktestId !== initialActiveId) return;
       if (!response.ok) throw new Error("Backtest result could not be loaded.");
       setBacktest(payload as BacktestResult);
       setTab("backtest");
-    }).catch((error: unknown) => setPaperError(error instanceof Error ? error.message : "Could not load result."));
+    }).catch((error: unknown) => { if (requestId === selectionRequestRef.current && canApply() && useWorkspaceStore.getState().backtest === initialBacktest && useWorkspaceStore.getState().activeBacktestId === initialActiveId) setPaperError(error instanceof Error ? error.message : "Could not load result."); });
   };
 
   useEffect(() => {
     if (replayMode || !activeBacktestId || result?.resultId === activeBacktestId) return;
+    const requestId = selectionRequestRef.current;
+    let disposed = false;
     void fetch(`/api/backtests/${encodeURIComponent(activeBacktestId)}`, { cache: "no-store" }).then(async (response) => {
       const payload: unknown = await response.json();
-      if (response.ok) setBacktest(payload as BacktestResult);
+      const current = useWorkspaceStore.getState();
+      // Restoring the already-selected ID must survive unrelated tab changes,
+      // but never apply an old response after leaving its workspace.
+      if (!disposed && requestId === selectionRequestRef.current && current.activeWorkspace === workspace && current.activeBacktestId === activeBacktestId && current.backtest === result && response.ok) setBacktest(payload as BacktestResult);
     }).catch(() => undefined);
-  }, [activeBacktestId, result?.resultId, setBacktest, replayMode]);
+    return () => { disposed = true; };
+  }, [activeBacktestId, result, setBacktest, replayMode, workspace]);
 
   useEffect(() => {
     if (replayMode) return;
@@ -748,7 +773,7 @@ export function BottomDock({
           replayMode ? (
             <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are revealed.</span></div>
           ) : (
-            <BacktestView result={result} onOpenStrategy={() => setInspectorTab("strategy")} onStartReplay={onStartReplay} replayBusy={replayBusy} replayError={replayError} />
+            <BacktestView result={result} selectionRequestRef={selectionRequestRef} onOpenStrategy={() => setInspectorTab("strategy")} onStartReplay={onStartReplay} replayBusy={replayBusy} replayError={replayError} />
           )
         )}
         {activeTab === "sweep" && workspace === "research" && (

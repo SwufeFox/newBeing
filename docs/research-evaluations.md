@@ -1,6 +1,6 @@
 # Single-holdout research evaluations
 
-`POST /api/evaluations` evaluates a previously saved immutable dataset snapshot. The request accepts only `datasetId`, `strategyId`, `candidates`, `config`, and `splitIndex`. It does not accept candles, instrument overrides, strategy definitions, or executable source. `strategyId` must name a registered built-in.
+`POST /api/evaluations` evaluates a previously saved immutable dataset snapshot. The request accepts `datasetId`, `strategyId`, `candidates`, `config`, `splitIndex`, and an optional `sweepParameter`. The optional string identifies the scanned parameter for display, is preserved in the original request, and does not change evaluation calculations. Requests without it remain supported. The endpoint does not accept candles, instrument overrides, strategy definitions, or executable source. `strategyId` must name a registered built-in.
 
 ```json
 {

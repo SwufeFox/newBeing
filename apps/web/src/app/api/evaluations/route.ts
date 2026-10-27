@@ -18,6 +18,7 @@ const requestSchema = z.object({
     stopLossPct: z.number().finite().positive().lt(1).optional(), takeProfitPct: z.number().finite().positive().lt(10).optional(),
   }).strict(),
   splitIndex: z.number().int().min(2),
+  sweepParameter: z.string().min(1).max(120).optional(),
 }).strict();
 
 export async function GET(request: Request): Promise<NextResponse> {

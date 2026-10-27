@@ -74,6 +74,25 @@ function label(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (first) => first.toUpperCase());
 }
 
+function reportParameter(request: string, training: EvaluationCandidate[]): string | null {
+  let declared: string | null = null;
+  try {
+    const parsed: unknown = JSON.parse(request);
+    if (typeof parsed === "object" && parsed !== null && "sweepParameter" in parsed && typeof parsed.sweepParameter === "string" && parsed.sweepParameter) declared = parsed.sweepParameter;
+  } catch { /* Older reports may not have a readable request. */ }
+  if (training.length === 1) return declared && Object.hasOwn(training[0]!.parameters, declared) && typeof training[0]!.parameters[declared] === "number" ? declared : null;
+  if (training.length < 2) return null;
+  const keys = new Set(training.flatMap((candidate) => Object.keys(candidate.parameters)));
+  const varied = [...keys].filter((key) => training.some((candidate) => candidate.parameters[key] !== training[0]?.parameters[key]));
+  if (varied.length !== 1 || (declared !== null && declared !== varied[0])) return null;
+  const key = varied[0]!;
+  return training.every((candidate) => Object.hasOwn(candidate.parameters, key) && typeof candidate.parameters[key] === "number") ? key : null;
+}
+
+function formatParameters(parameters: StrategyParameters): string {
+  return Object.entries(parameters).map(([key, value]) => `${label(key)} = ${String(value)}`).join(", ");
+}
+
 function pct(value: number): string {
   return `${value >= 0 ? "+" : "−"}${(Math.abs(value) * 100).toFixed(2)}%`;
 }
@@ -103,23 +122,38 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const [historical, setHistorical] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [savedReport, setSavedReport] = useState<{
-    response: EvaluationResponse; context: string; parameter: string; strategyId: string; request: string;
+    response: EvaluationResponse; context: string; parameter: string | null; strategyId: string; request: string;
   } | null>(null);
   const activeRequest = useRef<AbortController | null>(null);
   const historyOpenRequest = useRef<AbortController | null>(null);
+  const historyRequest = useRef(0);
+  const historyLive = useRef(false);
+  const loadHistory = async (requestId: number, refresh = false): Promise<void> => {
+    try {
+      const response = await fetch("/api/evaluations?limit=20", { cache: "no-store" });
+      if (!response.ok) throw new Error(refresh ? "Could not refresh evaluation history." : "Could not load evaluation history.");
+      const rows = await response.json() as EvaluationHistoryItem[];
+      if (!historyLive.current || requestId !== historyRequest.current) return;
+      setHistory(rows);
+      setHistoryError(null);
+    } catch (reason) {
+      if (!historyLive.current || requestId !== historyRequest.current) return;
+      setHistoryError(reason instanceof Error ? reason.message : "Could not load evaluation history.");
+    } finally {
+      if (historyLive.current && requestId === historyRequest.current) setHistoryLoading(false);
+    }
+  };
   useLayoutEffect(() => {
-    let live = true;
-    void fetch("/api/evaluations?limit=20", { cache: "no-store" }).then(async (response) => {
-      if (!response.ok) throw new Error("Could not load evaluation history.");
-      const rows = await response.json() as typeof history;
-      if (live) { setHistory(rows); setHistoryLoading(false); setHistoryError(null); }
-    }).catch((reason: unknown) => {
-      if (live) {
-        setHistoryError(reason instanceof Error ? reason.message : "Could not load evaluation history.");
-        setHistoryLoading(false);
-      }
-    });
-    return () => { live = false; };
+    historyLive.current = true;
+    const requestId = ++historyRequest.current;
+    const timer = window.setTimeout(() => {
+      if (historyLive.current && requestId === historyRequest.current) void loadHistory(requestId);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      historyLive.current = false;
+      historyRequest.current += 1;
+    };
   }, []);
   useLayoutEffect(() => () => {
     historyOpenRequest.current?.abort();
@@ -137,7 +171,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       if (!response.ok) throw new Error("Could not open saved evaluation.");
       const saved = await response.json() as EvaluationResponse & { request: string; reportId: string; createdAt: string };
       if (controller.signal.aborted || historyOpenRequest.current !== controller) return;
-      setSavedReport({ response: saved, context, parameter: Object.keys(saved.selectedParameters).find((key) => typeof saved.selectedParameters[key] === "number") ?? activeKey, strategyId: saved.strategyId, request: saved.request });
+      setSavedReport({ response: saved, context, parameter: reportParameter(saved.request, saved.training), strategyId: saved.strategyId, request: saved.request });
       setHistorical(true);
       setHistoryError(null);
     } catch (reason) {
@@ -166,6 +200,8 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
     return () => {
       activeRequest.current?.abort();
       activeRequest.current = null;
+      historyOpenRequest.current?.abort();
+      historyOpenRequest.current = null;
     };
   }, [context]);
 
@@ -189,6 +225,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       candidates: built.candidates,
       config: { ...config, accountMode: "spot", allowShorts: false },
       splitIndex: split,
+      sweepParameter: activeKey,
     });
     setPending({ context, controller });
     setFailure(null);
@@ -210,12 +247,8 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       }
       setSavedReport({ response: payload as EvaluationResponse, context, parameter: activeKey, strategyId: strategy?.id ?? strategyId, request });
       setHistorical(false);
-      void fetch("/api/evaluations?limit=20", { cache: "no-store" }).then(async (historyResponse) => {
-        if (!historyResponse.ok) throw new Error("Could not refresh evaluation history.");
-        const rows = await historyResponse.json() as EvaluationHistoryItem[];
-        setHistory(rows);
-        setHistoryError(null);
-      }).catch((reason: unknown) => setHistoryError(reason instanceof Error ? reason.message : "Could not refresh evaluation history."));
+      setHistoryLoading(true);
+      void loadHistory(++historyRequest.current, true);
     } catch (reason) {
       if (controller.signal.aborted || activeRequest.current !== controller) return;
       setFailure({ context, message: reason instanceof Error ? reason.message : "Evaluation failed." });
@@ -327,14 +360,14 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             {running && " New evaluation pending; showing the saved report."}
           </p>
           <details className="text-[10px] text-[var(--ak-text-secondary)] font-mono break-all">
-            <summary>Saved evaluation request · {savedReport?.strategyId} · {label(reportKey)}</summary>
+            <summary>Saved evaluation request · {savedReport?.strategyId} · {reportKey ? label(reportKey) : "Scan parameter undetermined"}</summary>
             {savedReport?.request}
           </details>
           <div className="evaluation-verdict grid grid-cols-2 md:grid-cols-4 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
             <div className="evaluation-verdict-cell flex flex-col">
               <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">SELECTED ON TRAIN</span>
               <strong className="text-xs text-[var(--ak-signal-success)] font-mono font-bold">
-                {label(reportKey)} = {String(report.selectedParameters[reportKey])}
+                {reportKey ? `${label(reportKey)} = ${String(report.selectedParameters[reportKey])}` : formatParameters(report.selectedParameters)}
               </strong>
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
@@ -367,7 +400,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             <table className="data-table evaluation-table w-full text-xs">
               <thead>
                 <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] font-mono uppercase text-left">
-                  <th className="p-1.5">{label(reportKey)}</th>
+                  <th className="p-1.5">{reportKey ? label(reportKey) : "Parameters (scan parameter undetermined)"}</th>
                   <th className="p-1.5">TRAIN RETURN</th>
                   <th className="p-1.5">MAX DD</th>
                   <th className="p-1.5">SHARPE</th>
@@ -381,7 +414,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                   return (
                     <tr key={candidate.result.resultId} className={`border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors ${isSelected ? "is-best bg-[var(--ak-surface-raised)]" : ""}`}>
                       <td className="mono p-1.5 font-bold flex items-center gap-1.5">
-                        <span>{String(candidate.parameters[reportKey])}</span>
+                        <span>{reportKey ? String(candidate.parameters[reportKey]) : formatParameters(candidate.parameters)}</span>
                         {isSelected && <AkTag variant="advanced" className="text-[9px] px-1 py-0 h-3.5 leading-none">PICKED</AkTag>}
                       </td>
                       <td className={`p-1.5 font-mono font-bold ${candidate.result.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
