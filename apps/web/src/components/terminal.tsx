@@ -343,11 +343,11 @@ function MarketSummaryBar({ summary, error, replayMode, replayPrice, subject, on
     <div className={`summary-strip flex items-center gap-4 text-xs font-mono ${error && summary ? "stale opacity-75" : ""}`}>
       <div className="summary-price flex items-baseline gap-2">
         <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">{replayMode ? "CURSOR" : "LAST"}</span>
-        <strong className="text-base font-bold text-[var(--ak-text-primary)]">
+        <strong className="text-base font-bold text-[var(--ak-text-primary)] tabular-nums">
           <Decoded className="decoded-price" value={last} trigger={subject} />
         </strong>
         {!replayMode && (
-          <AkTag variant={typeof change === "number" ? (isPositive ? "default" : "danger") : "neutral"} className="text-[10px] px-1 py-0 h-4">
+          <AkTag variant={typeof change === "number" ? (isPositive ? "default" : "danger") : "neutral"} className="text-[10px] px-1 py-0 h-4 tabular-nums">
             <Decoded value={changeText} trigger={`${subject}|chg`} />
           </AkTag>
         )}
@@ -357,15 +357,15 @@ function MarketSummaryBar({ summary, error, replayMode, replayPrice, subject, on
         <div className="hidden md:flex items-center gap-4 text-[11px] text-[var(--ak-text-secondary)] border-l border-[var(--ak-border-subtle)] pl-4">
           <div>
             <span className="text-[9px] uppercase block opacity-70">24H HIGH</span>
-            <strong className="text-[var(--ak-text-primary)] font-normal"><Decoded value={formatPrice(summary?.high24h)} trigger={`${subject}|hi`} /></strong>
+            <strong className="text-[var(--ak-text-primary)] font-normal tabular-nums"><Decoded value={formatPrice(summary?.high24h)} trigger={`${subject}|hi`} /></strong>
           </div>
           <div>
             <span className="text-[9px] uppercase block opacity-70">24H LOW</span>
-            <strong className="text-[var(--ak-text-primary)] font-normal"><Decoded value={formatPrice(summary?.low24h)} trigger={`${subject}|lo`} /></strong>
+            <strong className="text-[var(--ak-text-primary)] font-normal tabular-nums"><Decoded value={formatPrice(summary?.low24h)} trigger={`${subject}|lo`} /></strong>
           </div>
           <div>
             <span className="text-[9px] uppercase block opacity-70">24H VOL</span>
-            <strong className="text-[var(--ak-text-primary)] font-normal">
+            <strong className="text-[var(--ak-text-primary)] font-normal tabular-nums">
               <Decoded value={typeof summary?.quoteVolume24h === "number" ? `${(summary.quoteVolume24h / 1_000_000).toFixed(2)}M` : "—"} trigger={`${subject}|vol`} />
             </strong>
           </div>
@@ -1092,7 +1092,8 @@ export function Terminal(): React.JSX.Element {
       <div className="market-heading p-3 bg-[var(--ak-surface-canvas)] border-b border-[var(--ak-border-strong)] flex flex-wrap items-center justify-between gap-4" id="workspace-home">
         <div className="market-identity flex items-center gap-3 font-mono">
           <div className="flex flex-col">
-            <span className="market-eyebrow text-[9px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold">
+            <span className="market-eyebrow text-[9px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold flex items-center gap-1.5">
+              <span className="text-[var(--ak-signal-info)] opacity-70 font-mono">{"//"}</span>
               {EXCHANGE_LABELS[exchange]} · SPOT TRADING
             </span>
             <div className="market-title flex items-baseline gap-1 text-xl font-bold">
@@ -1154,10 +1155,12 @@ export function Terminal(): React.JSX.Element {
           {workspace === "replay" && <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />}
 
           <div className="rail-facts space-y-1 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[10px]">
-            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">ACTIVE PAIR</span><strong>{symbol}</strong></div>
-            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">TIMEFRAME</span><strong>{timeframe}</strong></div>
-            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">VENUE</span><strong>{EXCHANGE_LABELS[exchange]}</strong></div>
+            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">ACTIVE PAIR</span><strong className="font-mono">{symbol}</strong></div>
+            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">TIMEFRAME</span><strong className="font-mono">{timeframe}</strong></div>
+            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">VENUE</span><strong className="font-mono">{EXCHANGE_LABELS[exchange]}</strong></div>
             <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">EXECUTION</span><strong className="text-[var(--ak-signal-info)]">PAPER SIM</strong></div>
+            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">STORAGE</span><strong className="text-[var(--ak-text-secondary)]">SQLITE 3 · WAL</strong></div>
+            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">MATH ENGINE</span><strong className="text-[var(--ak-text-secondary)]">DECIMAL.JS</strong></div>
           </div>
         </div>
 

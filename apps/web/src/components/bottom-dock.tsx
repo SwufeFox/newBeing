@@ -240,11 +240,11 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
                     {order.side.toUpperCase()}
                   </AkTag>
                 </td>
-                <td className="p-2 font-mono">{order.quantity}</td>
+                <td className="p-2 font-mono tabular-nums">{order.quantity}</td>
                 <td className="p-2">
                   <span className={`status-pill status-${order.status} uppercase font-bold text-[10px]`}>{order.status}</span>
                 </td>
-                <td className="p-2 font-mono">{order.fillPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+                <td className="p-2 font-mono tabular-nums">{order.fillPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
                 <td className="p-2 mono text-[10px] text-[var(--ak-text-secondary)]">{order.clientOrderId}</td>
               </tr>
             );

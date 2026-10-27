@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Clock3, FastForward, LoaderCircle, Pause, Play, SkipForward, Square, RotateCcw } from "lucide-react";
 import type { ReplayConfig, ReplaySession, Timeframe } from "@newbeing/core";
-import { AkButton, AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum } from "@swufefox/ak-ui-react";
+import { AkButton, AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkProgress } from "@swufefox/ak-ui-react";
 
 interface ReplayControlsProps {
   symbol: string;
@@ -198,7 +198,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               )}
             </div>
 
-            <div className="replay-actions nb-button ak-btn-size-sm flex items-center gap-2">
+            <div className="replay-actions flex items-center gap-2">
               <AkButton
                 variant={playing ? "default" : "action"}
                 disabled={busy || session.status !== "active"}
@@ -222,13 +222,25 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 Step <span className="opacity-60 text-[10px] ml-1">[→]</span>
               </AkButton>
 
-              <div className="flex items-center gap-1 bg-[var(--ak-surface-canvas)] px-2 py-0.5 border border-[var(--ak-border)] text-xs" title="Speed shortcuts: < and >">
-                <FastForward size={12} className="text-[var(--ak-signal-info)]" />
+              <div className="flex items-center gap-1.5 bg-[var(--ak-surface-canvas)] px-2 py-0.5 border border-[var(--ak-border)] text-xs" title="Speed shortcuts: < and >">
+                <FastForward size={11} className="text-[var(--ak-signal-info)]" />
+                <div className="flex gap-0.5">
+                  {[0.5, 1, 2, 5].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => onSpeedChange(s)}
+                      className={`px-1 py-0.5 text-[10px] font-mono transition-transform active:scale-95 ${speed === s ? "text-[var(--ak-signal-info)] font-bold bg-[var(--ak-surface-sunken)]" : "text-[var(--ak-text-secondary)] opacity-70 hover:opacity-100"}`}
+                    >
+                      {s}×
+                    </button>
+                  ))}
+                </div>
                 <select
                   aria-label="Replay speed"
                   value={speed}
                   onChange={(event) => onSpeedChange(Number(event.target.value))}
-                  className="nb-select bg-transparent text-xs font-mono outline-none cursor-pointer"
+                  className="nb-select bg-transparent text-[11px] font-mono outline-none cursor-pointer border-l border-[var(--ak-border-subtle)] pl-1 ml-0.5"
                   title="Speed shortcuts: < and >"
                 >
                   <option value={0.5}>0.5×</option>
@@ -257,6 +269,26 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               >
                 New session
               </AkButton>
+            </div>
+          </div>
+
+          <div className="pt-1.5 border-t border-[var(--ak-border-subtle)] flex items-center gap-3">
+            <div className="flex-1">
+              <AkProgress
+                label="Timeline revealed"
+                min={0}
+                max={Math.max(limit + 50, session.bars.length + 10)}
+                value={session.bars.length}
+                valueLabel={`${session.bars.length} / ${Math.max(limit + 50, session.bars.length + 10)} bars`}
+                size="sm"
+              />
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-mono text-[var(--ak-text-secondary)] shrink-0">
+              <span>{Math.max(0, session.bars.length - limit)} STEPPED</span>
+              <span>·</span>
+              <span className={session.status === "active" ? "text-[var(--ak-signal-success)] font-semibold" : "text-[var(--ak-text-disabled)]"}>
+                {session.status.toUpperCase()}
+              </span>
             </div>
           </div>
         </div>
