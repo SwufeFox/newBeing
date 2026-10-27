@@ -493,6 +493,7 @@ function PaperTicket({
           <div className="flex items-center gap-1">
             <button
               type="button"
+              aria-label="Toggle sizing side"
               onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
               className="text-[9px] px-1 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
               title="Click to toggle between Quote (Buy) and Inventory (Sell) sizing"

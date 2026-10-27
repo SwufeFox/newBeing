@@ -143,7 +143,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
   return (
     <div className="p-3 space-y-2.5 text-xs border-t border-[var(--ak-border-subtle)] font-mono" data-testid="shared-spot-ticket" data-loaded={readState === "ready"}>
       <div className="flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
-        <strong className="text-[11px] uppercase tracking-wider text-[var(--ak-signal-info)]">Shared Spot · {exchange} · {quote}</strong>
+        <strong className="text-[11px] uppercase tracking-wider text-[var(--ak-signal-info)]">Shared spot · {exchange} · {quote}</strong>
         {readState !== "loading" && (
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void readAccount()} className="h-6 text-[10px] px-2">
             Refresh shared account
@@ -168,8 +168,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
           <div className="grid grid-cols-2 gap-1.5 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[10px]">
             {Object.entries(account.balances).map(([asset, balance]) => (
               <div key={asset} className="flex flex-col">
-                <span className="text-[var(--ak-text-secondary)] font-bold">{asset}</span>
-                <span>{balance.total} · <span className="opacity-70">res: {balance.reserved}</span></span>
+                <span className="text-[var(--ak-text-secondary)] font-bold">{asset}: {balance.total} · reserved {balance.reserved}</span>
               </div>
             ))}
           </div>
