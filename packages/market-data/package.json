@@ -16,6 +16,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },
-  "dependencies": { "ccxt": "4.5.85", "@newbeing/core": "workspace:*" },
-  "devDependencies": { "vitest": "^5.0.3", "typescript": "5.9.3" }
+  "dependencies": { "ccxt": "4.5.89", "@newbeing/core": "workspace:*" },
+  "devDependencies": { "vitest": "^5.0.5", "typescript": "5.9.3" }
 }

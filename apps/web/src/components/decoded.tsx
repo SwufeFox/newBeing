@@ -129,7 +129,6 @@ export function Decoded({
 
     // Data landed. Show it this frame — no minimum wait, no settle.
     showNow(value);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, trigger]);
 
   useEffect(() => stopRoll, []);

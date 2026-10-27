@@ -367,6 +367,53 @@ export function DerivativesWorkspace(): React.JSX.Element {
   function changeKind(next: DerivativeKind): void {
     setKind(next); setItems([]); setListLoading(true); select(""); setSide("long"); setLeverage("1"); setAction("open"); setChainKey(null);
   }
+
+  const changeKindRef = useRef(changeKind);
+  changeKindRef.current = changeKind;
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (blocked) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      if (event.altKey && event.key === "1") {
+        event.preventDefault();
+        changeKindRef.current("perpetual");
+      } else if (event.altKey && event.key === "2") {
+        event.preventDefault();
+        changeKindRef.current("future");
+      } else if (event.altKey && event.key === "3") {
+        event.preventDefault();
+        changeKindRef.current("option");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [blocked]);
+
+  const stepContracts = (direction: -1 | 1): void => {
+    const current = Number(quantity) || 0;
+    const step = instrument?.quantityStep ?? (current >= 1 ? 1 : 0.01);
+    const next = Math.max(instrument?.minContracts ?? step, Number((current + direction * step).toFixed(4)));
+    setQuantity(String(next));
+  };
+
+  const sizeDerivativesBudget = (fraction: number): void => {
+    if (!account || !instrument || !quote) return;
+    const avail = Number(account.available) || 0;
+    const refPrice = Number(quote.mark || quote.bid || maximumPrice) || 0;
+    if (avail <= 0 || refPrice <= 0) return;
+    const lev = Number(leverage) || 1;
+    const cSize = instrument.contractSize || 1;
+    const marginPerContract = (cSize * refPrice) / lev;
+    if (marginPerContract <= 0) return;
+    const budget = avail * fraction;
+    const step = instrument.quantityStep || 1;
+    const contracts = Math.floor((budget / marginPerContract) / step) * step;
+    if (contracts > 0) {
+      setQuantity(String(Number(contracts.toFixed(4))));
+    }
+  };
   function selectPosition(position: DerivativesPosition, settle?: string): void {
     // A settlement account can contain several contracts, and Deribit USDC
     // accounts can mix dated futures and options. Any ledger jump must switch
@@ -778,18 +825,109 @@ export function DerivativesWorkspace(): React.JSX.Element {
                 </AkSelect>
               </label>
               <label className="field">
-                <span>Quantity (contracts)</span>
-                <AkInput aria-label="Quantity in contracts" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                <div className="flex items-center justify-between">
+                  <span>Quantity (contracts)</span>
+                  {instrument && (
+                    <span className="text-[10px] text-[var(--c-fg-4)]">step {derivativeNumber(instrument.quantityStep)}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="flex-1">
+                    <AkInput aria-label="Quantity in contracts" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy || blocked || !account}
+                    onClick={() => stepContracts(-1)}
+                    aria-label="Decrease contracts"
+                    className="px-2.5 py-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken-2)] active:scale-95 text-xs text-[var(--ak-text-primary)] font-mono select-none"
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || blocked || !account}
+                    onClick={() => stepContracts(1)}
+                    aria-label="Increase contracts"
+                    className="px-2.5 py-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken-2)] active:scale-95 text-xs text-[var(--ak-text-primary)] font-mono select-none"
+                  >
+                    +
+                  </button>
+                </div>
+                {account && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className="text-[9px] text-[var(--c-fg-4)] uppercase mr-1">Size:</span>
+                    {[0.25, 0.5, 0.75, 1].map((fraction) => (
+                      <button
+                        key={fraction}
+                        type="button"
+                        disabled={busy || blocked}
+                        onClick={() => sizeDerivativesBudget(fraction)}
+                        className="flex-1 py-0.5 px-1 bg-[var(--ak-surface-sunken)] border border-[var(--c-line)] hover:border-[var(--c-accent)] active:scale-95 text-[10px] font-mono text-[var(--c-fg-2)] transition-transform"
+                      >
+                        {fraction === 1 ? "MAX" : `${fraction * 100}%`}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </label>
               <label className="field">
                 <span>Isolated leverage</span>
                 <AkSelect aria-label="Isolated leverage" value={leverage} onChange={(event) => setLeverage(event.target.value)}>
                   {Array.from({ length: kind === "option" ? 1 : 20 }, (_, n) => <option key={n + 1} value={n + 1}>{n + 1}x</option>)}
                 </AkSelect>
+                {kind !== "option" && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className="text-[9px] text-[var(--c-fg-4)] mr-1">Preset:</span>
+                    {[1, 2, 5, 10, 20].map((lev) => (
+                      <button
+                        key={lev}
+                        type="button"
+                        disabled={busy || blocked}
+                        onClick={() => setLeverage(String(lev))}
+                        className={`flex-1 py-0.5 text-[10px] font-mono border transition-transform active:scale-95 ${Number(leverage) === lev ? "border-[var(--c-accent)] text-[var(--c-accent)] bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)] font-bold" : "border-[var(--c-line)] text-[var(--c-fg-3)] hover:text-[var(--c-fg)]"}`}
+                      >
+                        {lev}x
+                      </button>
+                    ))}
+                  </div>
+                )}
               </label>
               <label className="field">
                 <span>{(action === "open") === (side === "long") ? "Buy ceiling" : "Sell floor"} ({instrument?.settle ?? "settle"}/base)</span>
                 <AkInput aria-label="Price protection" inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} />
+                {quote && (
+                  <div className="flex items-center gap-1 mt-1 text-[10px]">
+                    <span className="text-[9px] text-[var(--c-fg-4)] mr-1">Fill:</span>
+                    <button
+                      type="button"
+                      disabled={busy || blocked}
+                      onClick={() => setMaximumPrice(String(quote.bid))}
+                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-up)] font-mono text-[10px] active:scale-95 transition-transform"
+                      title="Fill with current native bid"
+                    >
+                      Bid {derivativeNumber(quote.bid)}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || blocked}
+                      onClick={() => setMaximumPrice(String(quote.mark))}
+                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-fg-2)] font-mono text-[10px] active:scale-95 transition-transform"
+                      title="Fill with current mark price"
+                    >
+                      Mark {derivativeNumber(quote.mark)}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || blocked}
+                      onClick={() => setMaximumPrice(String(quote.ask))}
+                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-down)] font-mono text-[10px] active:scale-95 transition-transform"
+                      title="Fill with current native ask"
+                    >
+                      Ask {derivativeNumber(quote.ask)}
+                    </button>
+                  </div>
+                )}
               </label>
               <p className="derivatives-ticket-note">{action === "close" ? "Reduce only. Use the existing position side and leverage; quantity cannot exceed that position." : "Immediate local fill at native bid / ask within your price protection."}</p>
               {instrument && quote

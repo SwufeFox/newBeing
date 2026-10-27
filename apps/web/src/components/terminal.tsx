@@ -1383,10 +1383,30 @@ export function Terminal(): React.JSX.Element {
               </div>
 
               <div className="space-y-1.5">
+                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">DERIVATIVES WORKSPACE</span>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Perpetuals</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Alt+1</kbd>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Dated Futures</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Alt+2</kbd>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Options Chain</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Alt+3</kbd>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
                 <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">TICKET &amp; DEPTH</span>
                 <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
                   <span className="text-[var(--ak-text-secondary)]">Pick Book Price</span>
                   <span className="text-[10px] text-[var(--ak-signal-action)]">Click Price</span>
+                </div>
+                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">Step Quantity</span>
+                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">- / +</kbd>
                 </div>
                 <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
                   <span className="text-[var(--ak-text-secondary)]">Command Help</span>
