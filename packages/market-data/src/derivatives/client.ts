@@ -288,7 +288,7 @@ export class NativeDerivativeMarketData implements DerivativeMarketData {
         }
         bars.sort((a, b) => a.timestamp - b.timestamp);
         // The last bucket can still be forming; drop it rather than filling gaps.
-        if (bars.length > 1 && end - bars[bars.length - 1]!.timestamp < interval) bars.pop();
+        if (bars.length > 0 && end - bars[bars.length - 1]!.timestamp < interval) bars.pop();
         return bars.slice(-limit);
       }
       const rows = await this.api(`${OKX}/market/candles?instId=${encodeURIComponent(instrument.nativeId)}&bar=${BARS[timeframe]}&limit=${limit}`);

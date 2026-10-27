@@ -58,6 +58,41 @@ function QuoteFreshSubmit({ instrument, quote, disabled, submitting }: {
   </>;
 }
 
+function OptionSnapshot({ quote, stale }: { quote: DerivativeQuote | undefined; stale: boolean }): React.JSX.Element {
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const update = () => setNow(Date.now());
+    update();
+    if (!quote) return;
+    const delay = Math.max(0, quote.timestamp + 30_001 - Date.now());
+    const timer = window.setTimeout(update, Math.min(delay, 2_147_483_647));
+    return () => window.clearTimeout(timer);
+  }, [quote]);
+  const isStale = stale || (now > 0 && !!quote && derivativeQuoteSnapshotIsStale(quote, now));
+  return <span className="num block truncate text-[9px] leading-tight" title={quote ? `Exchange snapshot ${derivativeDate(quote.timestamp)} · reference only` : "No public book snapshot"}>
+    {isStale && <b className="text-[var(--c-down)]">STALE · </b>}
+    B {optionQuoteNumber(quote?.bid ?? null)} · M {optionQuoteNumber(quote?.mark ?? null)} · A {optionQuoteNumber(quote?.ask ?? null)}
+  </span>;
+}
+
+function PositionRow({ position, quote, busy, onClose }: { position: DerivativesPosition; quote: DerivativeQuote | null; busy: boolean; onClose: (position: DerivativesPosition) => void }): React.JSX.Element {
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const update = () => setNow(Date.now());
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const matchingQuote = quote?.instrumentId === position.instrumentId && now > 0 && Number.isFinite(quote.timestamp) && quote.timestamp > 0 && now >= quote.timestamp && now - quote.timestamp <= 15_000 ? quote : null;
+  const unrealized = derivativeUnrealized(position, matchingQuote?.mark ?? null, now);
+  return <tr>
+    <td className="max-w-0 truncate" title={position.instrumentId}>{position.instrumentId}</td>
+    <td>{position.side}</td><td>{position.quantity}</td><td>{position.entryPrice}</td><td>{position.margin} · {position.leverage}x</td>
+    <td className={unrealized == null ? "" : unrealized < 0 ? "down" : unrealized > 0 ? "up" : ""}>{unrealized === null ? "—" : `${unrealized > 0 ? "+" : ""}${unrealized}`}</td>
+    <td>{position.expiry !== null && now > 0 && position.expiry <= now ? <span className="meta">Frozen</span> : <Button size="sm" variant="outline" disabled={busy} onClick={() => onClose(position)}>Close</Button>}</td>
+  </tr>;
+}
+
 function LocalAccountLedger({ accounts, readOnly = false, onSelectPosition }: {
   accounts: DerivativesAccount[];
   readOnly?: boolean;
@@ -325,8 +360,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
   }, [selectedId, revision, blocked]);
 
   function select(id: string): void {
+    if (id === selectedId) return;
     setSelectedId(id); setMarket(null); setMarketError(null); setBars([]); setCandleError(null);
-    setMaximumPrice(""); setQuantity(""); setNotice(null); pendingOrder.current = null;
+    setMaximumPrice(""); setQuantity(""); setNotice(null);
   }
   function changeKind(next: DerivativeKind): void {
     setKind(next); setItems([]); setListLoading(true); select(""); setSide("long"); setLeverage("1"); setAction("open"); setChainKey(null);
@@ -354,7 +390,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
     // Pre-fill the exact position terms so a close is ready after its own quote loads.
     selectPosition(position, account?.settle);
     setAction("close"); setSide(position.side); setLeverage(String(position.leverage)); setQuantity(position.quantity);
-    pendingOrder.current = null; setNotice(null);
+    setNotice(null);
   }
   // Render-time validation uses the quote's timestamp. The submit handler and
   // QuoteFreshSubmit recheck against the wall clock without ticking this tree.
@@ -444,7 +480,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
         delay = 5000;
       } catch (error) {
         if (!disposed && !controller.signal.aborted) {
-          setOptionQuoteData({ key: optionQuoteKey, quotes: {}, staleIds: [], error: exchangeErrorMessage(error, "option-chain quotes") });
+          setOptionQuoteData((current) => current.key === optionQuoteKey
+            ? { ...current, error: exchangeErrorMessage(error, "option-chain quotes") }
+            : { key: optionQuoteKey, quotes: {}, staleIds: [], error: exchangeErrorMessage(error, "option-chain quotes") });
         }
         delay = Math.min(delay * 2, 60_000);
       } finally {
@@ -564,7 +602,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
             <button key={entry.key} type="button" disabled={busy}
               className={'px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider border ' + ((activeChain?.key === entry.key) ? "text-[var(--c-accent)] border-[var(--c-accent)] bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)]" : "text-[var(--c-fg-3)] border-[var(--c-line)] hover:text-[var(--c-fg)]")}
               aria-pressed={activeChain?.key === entry.key}
-              onClick={() => { setOptionQuoteData({ key: "", quotes: {}, staleIds: [], error: null }); setChainKey(entry.key); }}>
+              onClick={() => { if (activeChain?.key !== entry.key) { setOptionQuoteData({ key: "", quotes: {}, staleIds: [], error: null }); setChainKey(entry.key); } }}>
               {derivativeExpiryLabel(entry.expiry)} · {entry.base}/{entry.settle}
             </button>
           ))}
@@ -597,10 +635,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                             <span className="min-w-0 flex-1">
                               <strong className="truncate">{derivativeNumber(row.strike)} <span className="text-[var(--c-accent)]">{strikeTag}</span></strong>
                               <small>{option.settle} · {option.linear ? "Linear" : "Coin"}</small>
-                              <span className="num block truncate text-[9px] leading-tight" title={chainQuote ? `Exchange snapshot ${derivativeDate(chainQuote.timestamp)} · reference only` : "No public book snapshot"}>
-                                {quoteStale && <b className="text-[var(--c-down)]">STALE · </b>}
-                                B {optionQuoteNumber(chainQuote?.bid ?? null)} · M {optionQuoteNumber(chainQuote?.mark ?? null)} · A {optionQuoteNumber(chainQuote?.ask ?? null)}
-                              </span>
+                              <OptionSnapshot quote={chainQuote} stale={quoteStale} />
                             </span>
                           </button>
                         );
@@ -686,22 +721,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                           : <div className="derivatives-table-scroll mt-2 border border-[var(--c-line)]">
                             <table className="derivatives-table">
                               <thead><tr>{["Instrument", "Side", "Qty", "Entry", "Margin", "uPnL", ""].map((label) => <th key={label}>{label}</th>)}</tr></thead>
-                              <tbody>{account.positions.map((position) => {
-                                // Quote-time, not wall-clock: a frozen/expired
-                                // verdict only needs to be right at the last
-                                // fetch landing, which is when mark came in.
-                                const asOf = quote?.timestamp ?? position.expiry ?? 0;
-                                const unrealized = derivativeUnrealized(position, quote?.mark ?? null, asOf);
-                                return <tr key={`${position.instrumentId}:${position.side}`}>
-                                  <td className="max-w-0 truncate" title={position.instrumentId}>{position.instrumentId}</td>
-                                  <td>{position.side}</td>
-                                  <td>{position.quantity}</td>
-                                  <td>{position.entryPrice}</td>
-                                  <td>{position.margin} · {position.leverage}x</td>
-                                  <td className={unrealized == null ? "" : unrealized < 0 ? "down" : unrealized > 0 ? "up" : ""}>{unrealized === null ? "—" : `${unrealized > 0 ? "+" : ""}${unrealized}`}</td>
-                                  <td>{position.expiry !== null && position.expiry <= asOf ? <span className="meta">Frozen</span> : <Button size="sm" variant="outline" disabled={busy} onClick={() => beginClose(position)}>Close</Button>}</td>
-                                </tr>;
-                              })}</tbody>
+                              <tbody>{account.positions.map((position) => <PositionRow key={`${position.instrumentId}:${position.side}`} position={position} quote={quote} busy={busy} onClose={beginClose} />)}</tbody>
                             </table>
                           </div>}
                       </div>
