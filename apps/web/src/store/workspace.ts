@@ -20,6 +20,10 @@ export interface WorkspaceStore extends WorkspaceState {
   backtest: BacktestResult | null;
   syncUpdatedAt: number;
   workspaceReady: boolean;
+  replayConfirmedJson: string | null;
+  replaySyncError: string | null;
+  replayRetry: number;
+  retryReplaySync: () => void;
   setWorkspaceReady: (workspaceReady: boolean) => void;
   setExchange: (exchange: ExchangeId) => void;
   setSymbol: (symbol: string) => void;
@@ -58,6 +62,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   backtest: null,
   syncUpdatedAt: 0,
   workspaceReady: false,
+  replayConfirmedJson: null,
+  replaySyncError: null,
+  replayRetry: 0,
+  retryReplaySync: () => set((state) => ({ replayRetry: state.replayRetry + 1, replaySyncError: null })),
   setWorkspaceReady: (workspaceReady) => set({ workspaceReady }),
   setSymbol: (symbol) => set({ symbol, visibleRange: { from: null, to: null } }),
   /* Switching venues keeps the session intact. Every venue can now serve
@@ -164,6 +172,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
     syncUpdatedAt: state.syncUpdatedAt,
   }),
 }));
+
+export function replayIdentity(state: WorkspaceState): string {
+  return JSON.stringify([state.activeWorkspace, state.activeReplayId, state.exchange, state.symbol, state.timeframe, state.mode]);
+}
 
 export function toSharedWorkspaceState(state: WorkspaceStore): WorkspaceState {
   return {

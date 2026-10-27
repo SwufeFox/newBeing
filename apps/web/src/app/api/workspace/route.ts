@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { DEFAULT_WORKSPACE_STATE, EXCHANGE_TIMEFRAMES, type WorkspaceState } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES, type WorkspaceState } from "@newbeing/core";
 import { getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
 import { symbolForExchange } from "@/lib/exchanges";
 
@@ -32,7 +32,7 @@ export async function GET(): Promise<NextResponse> {
   try {
     return NextResponse.json(getWorkspaceState(), { headers: { "Cache-Control": "no-store" } });
   } catch {
-    return NextResponse.json({ state: DEFAULT_WORKSPACE_STATE, updatedAt: 0 });
+    return NextResponse.json({ error: "Workspace could not be loaded." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }
 

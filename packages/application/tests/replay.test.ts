@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { advanceReplaySession, closeDatabaseForTests, createConfiguredReplaySession, getReplayExecution } from "@newbeing/storage";
+import { advanceReplaySession, closeDatabaseForTests, createConfiguredReplaySession, createReplaySession, getReplayExecution } from "@newbeing/storage";
 import { executePendingReplayOrder, executeReplayOrder } from "../src/replay.js";
 
 let directory: string;
@@ -22,6 +22,7 @@ function configure() {
 }
 describe("versioned Replay service contracts", () => {
   it("retains legacy immediate fills and exact retries", () => {
+    createReplaySession({ id: input.sessionId, exchange: "binance", symbol: input.symbol, timeframe: "1m", startAt: 60_000, cursor: 0, bars: [{ timestamp: 0, open: 100, high: 110, low: 90, close: 100, volume: 1 }], status: "active", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" });
     const result = executeReplayOrder(input);
     expect(result.order.status).toBe("filled");
     expect(result.portfolio.quoteBalance).toBeCloseTo(9899.9);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { resolvePaperPreview } from "@newbeing/application";
-import { getOrderPreview, getWorkspaceState } from "@newbeing/storage";
+import { getOrderPreview, getWorkspaceState, PaperReplayBlockedError } from "@newbeing/storage";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
 export const runtime = "nodejs";
@@ -26,6 +26,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const status = pending ? 202 : result.order?.status === "filled" ? (result.deduplicated ? 200 : 201) : 422;
     return NextResponse.json(result, { status });
   } catch (error) {
+    if (error instanceof PaperReplayBlockedError) return NextResponse.json({ error: "Normal Paper preview confirmation is disabled during Replay." }, { status: 409 });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not confirm this Paper preview." }, { status: 422 });
   }
 }

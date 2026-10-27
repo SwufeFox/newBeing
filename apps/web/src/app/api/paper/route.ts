@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { SIMULATION_PRECISION } from "@newbeing/core";
 import { executePaperOrder } from "@newbeing/application";
-import { getPaperPortfolio, listPaperOrders, paperAccountId, getWorkspaceState } from "@newbeing/storage";
+import { getPaperPortfolio, listPaperOrders, paperAccountId, getWorkspaceState, PaperReplayBlockedError } from "@newbeing/storage";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
 export const runtime = "nodejs";
@@ -64,6 +64,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const status = result.deduplicated ? 200 : result.order.status === "filled" ? 201 : result.order.status === "unknown" ? 202 : 422;
     return NextResponse.json({ ...result, simulationPrecision: SIMULATION_PRECISION, reference: "public bid/ask, falling back to last; simulation only" }, { status });
   } catch (error) {
+    if (error instanceof PaperReplayBlockedError) return NextResponse.json({ error: "Normal Paper orders are disabled during Replay; use the replay ticket at the revealed bar close." }, { status: 409 });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Paper order failed." }, { status: 422 });
   }
 }

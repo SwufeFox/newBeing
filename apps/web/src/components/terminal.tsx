@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { applyReplaySelection, captureReplaySelection, captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
-import { useWorkspaceStore } from "@/store/workspace";
+import { replayIdentity, useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import {
   EXCHANGE_TIMEFRAMES,
@@ -49,6 +49,53 @@ import { AkBrackets, AkCorner, AkTag, AkStatus, AkDisplay, AkBilingual, AkNum } 
 
 const TIMEFRAMES: readonly Timeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
 const EMPTY_REPLAY_BARS: readonly Candle[] = [];
+
+// This cache also survives component remounts when sessionStorage is unavailable.
+const replayOrderRequests = new Map<string, string | null>();
+const REPLAY_ORDER_STORAGE_PREFIX = "newbeing:replay-order:v1:";
+
+function replayOrderRequestId(key: string): string {
+  const cached = replayOrderRequests.get(key);
+  if (cached) return cached;
+
+  if (cached !== null && typeof window !== "undefined") {
+    try {
+      const raw = window.sessionStorage.getItem(REPLAY_ORDER_STORAGE_PREFIX + key);
+      const stored: unknown = raw ? JSON.parse(raw) : null;
+      if (typeof stored === "object" && stored !== null && "key" in stored && stored.key === key
+        && "requestId" in stored && typeof stored.requestId === "string"
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(stored.requestId)) {
+        replayOrderRequests.set(key, stored.requestId);
+        return stored.requestId;
+      }
+    } catch {
+      // Storage may be blocked, unavailable, or contain invalid JSON.
+    }
+  }
+
+  const requestId = globalThis.crypto.randomUUID();
+  replayOrderRequests.set(key, requestId);
+  if (typeof window !== "undefined") {
+    try {
+      window.sessionStorage.setItem(REPLAY_ORDER_STORAGE_PREFIX + key, JSON.stringify({ key, requestId }));
+    } catch {
+      // Keep the request ID in memory when persistence is unavailable.
+    }
+  }
+  return requestId;
+}
+
+function clearReplayOrderRequest(key: string, requestId: string): void {
+  if (replayOrderRequests.get(key) !== requestId) return;
+  replayOrderRequests.set(key, null);
+  if (typeof window !== "undefined") {
+    try {
+      window.sessionStorage.removeItem(REPLAY_ORDER_STORAGE_PREFIX + key);
+    } catch {
+      // The in-memory tombstone prevents reuse during this page's lifetime.
+    }
+  }
+}
 
 const RAIL_NOTES: Record<WorkspaceState["activeWorkspace"], string> = {
   terminal: "Live quotes, depth stream, and paper execution ticket.",
@@ -513,6 +560,9 @@ function RailReplayState({ session, playing, speed }: { session: ReplaySession |
 }
 
 export function Terminal(): React.JSX.Element {
+  const replayConfirmed = useWorkspaceStore((state) => state.replayConfirmedJson === replayIdentity(state));
+  const replaySyncError = useWorkspaceStore((state) => state.replaySyncError);
+  const retryReplaySync = useWorkspaceStore((state) => state.retryReplaySync);
   const workspaceReady = useWorkspaceStore((state) => state.workspaceReady);
   const exchange = useWorkspaceStore((state) => state.exchange);
   const [workspace, setWorkspace, symbol, timeframe, theme, setTheme, layout, setLayout, visibleRange, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
@@ -793,10 +843,10 @@ export function Terminal(): React.JSX.Element {
   }, [stepReplay]);
 
   useEffect(() => {
-    if (!replayPlaying) return;
+    if (!replayPlaying || workspace !== "replay" || !replayConfirmed) return;
     const timer = window.setInterval(() => { void replayStepRef.current(); }, Math.max(100, Math.round(1_000 / replaySpeed)));
     return () => window.clearInterval(timer);
-  }, [replayPlaying, replaySpeed]);
+  }, [replayPlaying, replaySpeed, replayConfirmed, workspace]);
 
   const finishReplay = async (): Promise<void> => {
     if (!replaySession || replayBusyRef.current) return;
@@ -833,27 +883,44 @@ export function Terminal(): React.JSX.Element {
   };
 
   const replayCommand = async (command: Record<string, unknown>): Promise<void> => {
-    if (!replaySession || replayBusyRef.current) return;
-    const canApply = captureReplaySelection(replaySession.id);
+    if (!replaySession || replayBusyRef.current || useWorkspaceStore.getState().activeReplayId !== replaySession.id) {
+      throw new Error("Replay session is not ready.");
+    }
+    const sessionId = replaySession.id;
+    const canApply = captureReplaySelection(sessionId);
     replayBusyRef.current = true;
     setReplayBusy(true);
     setReplayPlaying(false);
     setReplayError(null);
     try {
-      const response = await fetch(`/api/replay/${encodeURIComponent(replaySession.id)}`, {
+      const response = await fetch(`/api/replay/${encodeURIComponent(sessionId)}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...command, expectedRevision: replayExecution?.revision }),
       });
       const payload: unknown = await response.json();
-      if (!canApply()) return;
       if (!response.ok) {
-        if (response.status === 409) await refreshReplay(replaySession.id);
+        if (response.status === 409 && canApply()) await refreshReplay(sessionId);
         throw new Error(typeof payload === "object" && payload !== null && "error" in payload ? String(payload.error) : "Replay action failed.");
       }
-      await refreshReplay(replaySession.id);
-    } catch (error) {
+      const parsed = parseReplayEnvelope(payload);
+      if (!parsed || parsed.session.id !== sessionId || !parsed.execution) throw new Error("Replay action response was malformed.");
+      if (command.action === "order" && !parsed.execution.orders.some((order) => order.clientOrderId === `replay-${sessionId}-${command.requestId}`)) {
+        throw new Error("Replay order outcome could not be confirmed.");
+      }
       if (!canApply()) return;
-      setReplayError(error instanceof Error ? error.message : "Replay action failed. Reload before retrying.");
+      // A read started before this command must not overwrite its newer snapshot.
+      replayRefreshRef.current += 1;
+      setReplaySession(parsed.session);
+      setReplayExecution(parsed.execution);
+      setReplayPortfolio(parsed.portfolio ?? null);
+      setReplayOrders(parsed.orders ?? []);
+    } catch (error) {
+      if (canApply()) {
+        const message = error instanceof Error ? error.message : "Replay action failed.";
+        setReplayError(command.action === "order"
+          ? `${message} Order outcome may be unknown. Do not refresh; retry in this tab with the same order parameters.`
+          : message);
+      }
       throw error;
     } finally {
       replayBusyRef.current = false;
@@ -862,7 +929,14 @@ export function Terminal(): React.JSX.Element {
   };
 
   const placeReplayOrder = async (side: "buy" | "sell", quantity: number, options?: Partial<ReplayOrderInput>): Promise<void> => {
-    await replayCommand({ action: "order", requestId: globalThis.crypto.randomUUID(), ...options, side, quantity });
+    if (!replaySession || replayBusyRef.current || useWorkspaceStore.getState().activeReplayId !== replaySession.id) {
+      throw new Error("Replay session is not ready.");
+    }
+    const order = { side, quantity, type: options?.type ?? "market", price: options?.price, stopLoss: options?.stopLoss, takeProfit: options?.takeProfit };
+    const key = JSON.stringify([replaySession.id, order]);
+    const requestId = replayOrderRequestId(key);
+    await replayCommand({ action: "order", ...order, requestId });
+    clearReplayOrderRequest(key, requestId);
   };
 
   const resetReplay = (): void => {
@@ -922,6 +996,12 @@ export function Terminal(): React.JSX.Element {
       <WorkspaceSync />
       {!workspaceReady ? (
         <div role="status" className="p-3 text-xs font-mono text-[var(--ak-text-secondary)]">Loading local workspace…</div>
+      ) : workspace === "replay" && !replayConfirmed ? (
+        <div className="p-3 text-xs font-mono text-[var(--ak-text-secondary)]">
+          <p role={replaySyncError ? "alert" : "status"}>{replaySyncError ?? "Waiting for the server to confirm Replay…"}</p>
+          {replaySyncError && <button className="mr-3 underline" onClick={retryReplaySync}>Retry</button>}
+          <button className="underline" onClick={() => setPage("terminal")}>Cancel and return to Markets</button>
+        </div>
       ) : (
         <>
       <header className="topbar flex items-center gap-2 px-3 bg-[var(--ak-surface-canvas)] border-b border-[var(--ak-border-strong)] z-20">

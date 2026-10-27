@@ -219,6 +219,19 @@ function paperOrderFromRow(row: typeof paperOrders.$inferSelect): PaperOrder | u
   };
 }
 
+export class PaperReplayBlockedError extends Error {
+  constructor() {
+    super("Normal Paper operations are disabled during Replay.");
+    this.name = "PaperReplayBlockedError";
+  }
+}
+
+function assertPaperMutationAllowed(accountId: string | null | undefined): void {
+  if (!accountId?.startsWith("paper:replay:") && getWorkspaceState().state.activeWorkspace === "replay") {
+    throw new PaperReplayBlockedError();
+  }
+}
+
 export interface BeginPaperIntentResult {
   order: PaperOrder;
   portfolio: PaperPortfolio;
@@ -241,6 +254,7 @@ export function beginPaperIntent(input: Pick<PaperOrder, "clientOrderId" | "symb
       if (!accountRow) throw new Error("Paper account could not be read.");
       return { order: existing, portfolio: portfolioFromRow(accountRow), deduplicated: true };
     }
+    assertPaperMutationAllowed(accountId);
     const initial: PaperPortfolio = { quoteBalance: 10_000, baseBalance: 0, averageEntryPrice: null, realizedPnl: 0, feeRate: 0.001 };
     tx.insert(paperAccounts).values({ id: accountId, ...initial, updatedAt: Date.now() }).onConflictDoNothing().run();
     const accountRow = tx.select().from(paperAccounts).where(eq(paperAccounts.id, accountId)).get();
@@ -252,13 +266,16 @@ export function beginPaperIntent(input: Pick<PaperOrder, "clientOrderId" | "symb
 }
 
 export function markPaperIntentSubmitted(clientOrderId: string): PaperOrder {
-  const db = getDatabase();
-  db.update(paperOrders).set({ status: "submitted" })
-    .where(and(eq(paperOrders.clientOrderId, clientOrderId), eq(paperOrders.status, "created"))).run();
-  const row = db.select().from(paperOrders).where(eq(paperOrders.clientOrderId, clientOrderId)).get();
-  const order = row ? paperOrderFromRow(row) : undefined;
-  if (!order) throw new Error("Paper order intent could not be submitted.");
-  return order;
+  return getDatabase().transaction((tx) => {
+    const row = tx.select().from(paperOrders).where(eq(paperOrders.clientOrderId, clientOrderId)).get();
+    const order = row ? paperOrderFromRow(row) : undefined;
+    if (!row || !order) throw new Error("Paper order intent could not be submitted.");
+    if (order.status !== "created") return order;
+    assertPaperMutationAllowed(row.accountId);
+    tx.update(paperOrders).set({ status: "submitted" })
+      .where(and(eq(paperOrders.clientOrderId, clientOrderId), eq(paperOrders.status, "created"))).run();
+    return { ...order, status: "submitted" };
+  }, { behavior: "immediate" });
 }
 
 export function markPaperIntentUnknown(clientOrderId: string): PaperOrder {
@@ -291,6 +308,13 @@ export function finalizePaperFill(clientOrderId: string, fillPrice: number, acco
     if (!accountRow) throw new Error("Paper account not found.");
     const portfolio = portfolioFromRow(accountRow);
     if (order.status !== "submitted") return { order, portfolio, deduplicated: true };
+    // Serialize the workspace check with both Replay activation and wallet writes.
+    // Replay-owned accounts retain their existing execution behavior.
+    if (!resolvedAccountId.startsWith("paper:replay:") && getWorkspaceState().state.activeWorkspace === "replay") {
+      tx.update(paperOrders).set({ status: "unknown" })
+        .where(and(eq(paperOrders.clientOrderId, clientOrderId), eq(paperOrders.status, "submitted"))).run();
+      return { order: { ...order, status: "unknown" }, portfolio, deduplicated: false, error: "Paper fill is disabled during Replay." };
+    }
     try {
       const fill = fillPaperOrder(order, portfolio, fillPrice);
       tx.update(paperAccounts).set({ ...fill.portfolio, updatedAt: Date.now() }).where(eq(paperAccounts.id, resolvedAccountId)).run();
@@ -398,7 +422,10 @@ function asOrderPreview(row: typeof orderPreviews.$inferSelect): OrderPreview | 
 export function saveOrderPreview(preview: OrderPreview): void {
   quantityUnits(preview.quantity);
   if (!preview.exchange || preview.accountId !== paperAccountId(preview.symbol, preview.exchange)) throw new Error("New previews require a proven venue/account binding.");
-  getDatabase().insert(orderPreviews).values({ ...preview }).run();
+  getDatabase().transaction((tx) => {
+    assertPaperMutationAllowed(preview.accountId);
+    tx.insert(orderPreviews).values({ ...preview }).run();
+  }, { behavior: "immediate" });
 }
 
 export function getOrderPreview(id: string): OrderPreview | undefined {
@@ -436,6 +463,7 @@ export function claimOrderPreview(id: string, action: "confirm" | "dismiss", now
     if (preview.status !== "prepared") {
       return { preview, claimed: false, order: preview.orderId ? getPaperOrder(preview.orderId) : undefined };
     }
+    assertPaperMutationAllowed(preview.accountId);
     const expiresAt = Date.parse(preview.expiresAt);
     const status = !Number.isFinite(expiresAt) || expiresAt <= now ? "expired" : action === "dismiss" ? "dismissed" : "confirmed";
     if (status !== "confirmed") {

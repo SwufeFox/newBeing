@@ -99,6 +99,7 @@ function paperDependencies(request: ExecutePaperOrderRequest, marketAdapter: Exc
     markSubmitted: markPaperIntentSubmitted,
     fetchReferencePrice: async (symbol, side) => {
       const ticker = await marketAdapter.fetchSummary(symbol);
+      if (ticker.symbol !== symbol.trim().toUpperCase()) throw new Error("Market quote symbol does not match the paper order.");
       const reference = side === "buy" ? (ticker.ask ?? ticker.last) : (ticker.bid ?? ticker.last);
       if (reference === null || reference <= 0) throw new Error("Ticker did not contain a valid bid, ask or last price.");
       return { price: reference, timestamp: ticker.timestamp };
