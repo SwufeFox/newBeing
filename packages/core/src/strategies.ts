@@ -147,23 +147,39 @@ const movingAverageCrossover: StrategyDefinition = {
     const allowShorts = boolean(parameters, "allowShorts", false);
     const closes = new Array<number>(slowPeriod);
     let count = 0;
-    const average = (period: number): number | null => {
-      if (count < period) return null;
+    let fastSum = 0;
+    let slowSum = 0;
+    let maxAbsClose = 0;
+    const exactAverage = (period: number): number => {
       const firstSequence = count - period;
       let sum = 0;
       for (let offset = 0; offset < period; offset += 1) {
-        const value = closes[(firstSequence + offset) % slowPeriod];
-        if (value === undefined) return null;
-        sum += value;
+        sum += closes[(firstSequence + offset) % slowPeriod]!;
       }
       return sum / period;
     };
     return {
       next(candle) {
-        closes[count % slowPeriod] = candle.close;
-        count += 1;
         if (fastPeriod >= slowPeriod) return "flat";
-        return movingAverageSignal(average(fastPeriod), average(slowPeriod), allowShorts);
+        const slot = count % slowPeriod;
+        const expiredSlow = count >= slowPeriod ? closes[slot]! : 0;
+        closes[slot] = candle.close;
+        fastSum += candle.close;
+        slowSum += candle.close - expiredSlow;
+        maxAbsClose = Math.max(maxAbsClose, Math.abs(candle.close));
+        count += 1;
+        if (count > fastPeriod) fastSum -= closes[(count - fastPeriod - 1) % slowPeriod]!;
+        if (count < slowPeriod) return "flat";
+
+        const fast = fastSum / fastPeriod;
+        const slow = slowSum / slowPeriod;
+        // Rolling sums change floating-point addition order. Recompute the exact
+        // window sums only when accumulated rounding error could affect the crossover.
+        const uncertainty = 64 * Number.EPSILON * count * maxAbsClose;
+        if (Math.abs(fast - slow) <= uncertainty) {
+          return movingAverageSignal(exactAverage(fastPeriod), exactAverage(slowPeriod), allowShorts);
+        }
+        return movingAverageSignal(fast, slow, allowShorts);
       },
     };
   },

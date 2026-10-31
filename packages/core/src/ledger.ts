@@ -13,7 +13,7 @@ export function decimal(value: number): Decimal {
 
 function representable(value: Decimal): number {
   const result = value.toNumber();
-  if (!Number.isFinite(result) || !decimal(result).equals(value)) throw new LedgerValidationError("Ledger value cannot be represented by the numeric storage protocol.");
+  if (!Number.isFinite(result) || result.toString() !== value.toString()) throw new LedgerValidationError("Ledger value cannot be represented by the numeric storage protocol.");
   return result;
 }
 
