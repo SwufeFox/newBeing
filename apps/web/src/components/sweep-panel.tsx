@@ -16,16 +16,19 @@ interface SweepRunMetrics {
   winRate: number;
   profitFactor: number | null;
   tradeCount: number;
+  totalFees: number;
   finalEquity: number;
 }
-
 interface SweepRun {
   value: number;
+  resultId: string;
   metrics: SweepRunMetrics;
+  segment?: { start: number; end: number; datasetId: string };
 }
 
 export interface SweepResult {
   sweepId: string;
+  mode?: "full-sample" | "walk-forward";
   exchange: ExchangeId;
   symbol: string;
   timeframe: Timeframe;
@@ -37,7 +40,22 @@ export interface SweepResult {
   parameters: StrategyParameters;
   datasetId: string;
   bars: number;
-  createdAt: string;
+  createdAt?: string;
+  walkForward?: {
+    mode: "walk-forward";
+    boundaries: { train50: number; train60: number; train70: number; train80: number; total: number };
+    folds: Array<{ trainEnd: number; validationStart: number; validationEnd: number; trainStartTimestamp: number; trainEndTimestamp: number; validationStartTimestamp: number; validationEndTimestamp: number; candidateValue: number; trainingResultId: string; validationResultId: string; trainingMetrics: SweepRunMetrics; validationMetrics: SweepRunMetrics }>;
+    selectionRule: "training-totalReturn-desc/parameter-value-asc";
+    finalTrainingStartTimestamp: number;
+    finalTrainingEndTimestamp: number;
+    finalTestStartTimestamp: number;
+    finalTestEndTimestamp: number;
+    finalCandidateValue: number;
+    finalTrainingResultId: string;
+    finalTestResultId: string;
+    finalTrainingMetrics: SweepRunMetrics;
+    finalTestMetrics: SweepRunMetrics;
+  };
 }
 
 interface SweepPanelProps {
@@ -63,9 +81,13 @@ function label(key: string): string {
 }
 
 function pct(value: number): string {
+  if (!Number.isFinite(value)) return "—";
   return `${value >= 0 ? "+" : "−"}${(Math.abs(value) * 100).toFixed(2)}%`;
 }
 
+function timeRange(start: number, end: number): string {
+  return `${new Date(start).toLocaleString()} – ${new Date(end).toLocaleString()}`;
+}
 export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters, config }: SweepPanelProps): React.JSX.Element {
   const strategy = STRATEGIES.find((item) => item.id === strategyId) ?? STRATEGIES[0];
   const keys = useMemo(() => sweepableKeys(strategy?.defaults ?? {}), [strategy]);
@@ -75,12 +97,17 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   const [from, setFrom] = useState("5");
   const [to, setTo] = useState("30");
   const [step, setStep] = useState("5");
+  const [mode, setMode] = useState<"full-sample" | "walk-forward">("full-sample");
+
   const [result, setResult] = useState<SweepResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [appliedVal, setAppliedVal] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const activeKey = keys.includes(parameter) ? parameter : (keys[0] ?? "");
+  const walkForwardReport = result?.walkForward;
+  const showWalkForward = result ? Boolean(walkForwardReport) : mode === "walk-forward";
 
   const run = async (): Promise<void> => {
     setRunning(true);
@@ -100,6 +127,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
           from: Number(from),
           to: Number(to),
           step: Number(step),
+          mode,
           limit: 600,
         }),
       });
@@ -124,11 +152,15 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   const applyParameter = (val: number): void => {
     setStrategyParameters({ ...parameters, [activeKey]: val });
     setAppliedVal(val);
-    window.setTimeout(() => setAppliedVal(null), 1800);
+    setNotice(`Applied ${label(activeKey)} = ${val} to strategy`);
+    window.setTimeout(() => {
+      setAppliedVal(null);
+      setNotice(null);
+    }, 2200);
   };
 
   const stats = useMemo(() => {
-    if (!result || result.runs.length === 0) return null;
+    if (!result || result.walkForward || result.runs.length === 0) return null;
     const returns = result.runs.map((r) => r.metrics.totalReturn);
     const best = result.runs.reduce((a, b) => (b.metrics.totalReturn > a.metrics.totalReturn ? b : a));
     const worst = result.runs.reduce((a, b) => (b.metrics.totalReturn < a.metrics.totalReturn ? b : a));
@@ -155,6 +187,13 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   return (
     <div className="sweep-panel flex flex-col gap-3 p-3 bg-[var(--ak-surface-canvas)]">
       <div className="sweep-form flex flex-wrap items-end gap-2.5 p-2.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+        <label className="sweep-field flex flex-col gap-1">
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">MODE</span>
+          <AkSelect className="select-input h-7 text-xs font-bold" value={mode} onChange={(event) => setMode(event.target.value as "full-sample" | "walk-forward")}>
+            <option value="full-sample">Full sample · in-sample</option>
+            <option value="walk-forward">Walk-forward</option>
+          </AkSelect>
+        </label>
         <label className="sweep-field flex flex-col gap-1">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">PARAMETER</span>
           <AkSelect className="select-input h-7 text-xs font-bold" value={activeKey} onChange={(event) => setParameter(event.target.value)}>
@@ -187,9 +226,61 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
       </div>
 
       <p className="sweep-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80">
-        Every value runs against one candle set — {EXCHANGE_LABELS[exchange]} · {symbol} · {timeframe} — outcomes are deterministic and comparable.
-        {result && ` ${result.bars} bars, ${result.values.length} runs, dataset ${result.datasetId.slice(0, 24)}…`}
+        {showWalkForward
+          ? "Walk-forward selects on each expanding training prefix, then evaluates the next interval. The final 20% is reserved for one final test."
+          : "Full-sample results are in-sample and do not measure out-of-sample performance."}
+        {` ${EXCHANGE_LABELS[exchange]} · ${symbol} · ${timeframe}`}
+        {result && ` · ${result.bars} bars · ${result.values.length} candidate values · ${result.runs.length} backtest runs · dataset ${result.datasetId.slice(0, 24)}…`}
       </p>
+
+      {walkForwardReport && (
+        <section className="space-y-2 rounded border border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken)] p-2 text-xs">
+          <p className="m-0 text-[var(--ak-text-secondary)]">Training prefixes expand from the start. Each segment cold-starts. These are historical observations, not independent statistical evidence or a future-performance guarantee. After viewing the final test, retuning against it means it is no longer untouched.</p>
+          <p className="m-0 font-mono">Bar boundaries: 0 / {walkForwardReport.boundaries.train50} / {walkForwardReport.boundaries.train60} / {walkForwardReport.boundaries.train70} / {walkForwardReport.boundaries.train80} / {walkForwardReport.boundaries.total}</p>
+          <p className="m-0">Selection: highest training total return; ties choose the lowest parameter value. Rule: <code>{walkForwardReport.selectionRule}</code>.</p>
+          {walkForwardReport.folds.map((fold, index) => {
+            const candidates = result!.runs.filter((run) => run.segment?.start === 0 && run.segment.end === fold.trainEnd);
+            return <details key={fold.validationResultId} className="rounded border border-[var(--ak-border-subtle)] p-1.5">
+              <summary className="cursor-pointer font-semibold">Fold {index + 1} · train [0, {fold.trainEnd}) · validation [{fold.validationStart}, {fold.validationEnd}) · chosen {label(result!.parameter)}={fold.candidateValue} · validation {pct(fold.validationMetrics.totalReturn)}</summary>
+              <p className="my-1">Training bars: {timeRange(fold.trainStartTimestamp, fold.trainEndTimestamp)}. Validation bars: {timeRange(fold.validationStartTimestamp, fold.validationEndTimestamp)}.</p>
+              <p className="m-0">Selected training return {pct(fold.trainingMetrics.totalReturn)}; validation max drawdown {pct(-fold.validationMetrics.maxDrawdown)}, {fold.validationMetrics.tradeCount} trades, fees {fold.validationMetrics.totalFees.toFixed(2)}.</p>
+              <p className="m-0 font-mono text-[9px]">Selected training {fold.trainingResultId} → validation {fold.validationResultId}</p>
+              <div className="mt-1 max-h-40 overflow-auto">
+                <table className="data-table w-full text-[10px]">
+                  <thead><tr><th>TRAIN CANDIDATE</th><th>RETURN</th><th>MAX DD</th><th>TRADES</th><th>FEES</th><th>RESULT</th></tr></thead>
+                  <tbody>{candidates.map((candidate) => <tr key={candidate.resultId} className={candidate.resultId === fold.trainingResultId ? "font-bold" : ""}>
+                    <td>{candidate.value}{candidate.resultId === fold.trainingResultId ? " · selected" : ""}</td>
+                    <td>{pct(candidate.metrics.totalReturn)}</td><td>{pct(-candidate.metrics.maxDrawdown)}</td><td>{candidate.metrics.tradeCount}</td><td>{candidate.metrics.totalFees.toFixed(2)}</td><td className="font-mono">{candidate.resultId}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            </details>;
+          })}
+          <div className="rounded border border-[var(--ak-border-subtle)] p-1.5">
+            <p className="m-0 font-semibold">Final test [{walkForwardReport.boundaries.train80}, {walkForwardReport.boundaries.total}) · {timeRange(walkForwardReport.finalTestStartTimestamp, walkForwardReport.finalTestEndTimestamp)}</p>
+            <p className="m-0">{label(result!.parameter)}={walkForwardReport.finalCandidateValue}; return {pct(walkForwardReport.finalTestMetrics.totalReturn)}, max drawdown {pct(-walkForwardReport.finalTestMetrics.maxDrawdown)}, {walkForwardReport.finalTestMetrics.tradeCount} trades, fees {walkForwardReport.finalTestMetrics.totalFees.toFixed(2)}.</p>
+            <p className="m-0 font-mono text-[9px]">Final fit bars {timeRange(walkForwardReport.finalTrainingStartTimestamp, walkForwardReport.finalTrainingEndTimestamp)} · training {walkForwardReport.finalTrainingResultId} → test {walkForwardReport.finalTestResultId}</p>
+            <Button size="sm" variant="outline" className="mt-1 h-6 text-[10px]" onClick={() => applyParameter(walkForwardReport.finalCandidateValue)}>
+              Apply final candidate
+            </Button>
+          </div>
+          {(() => {
+            const candidates = result!.runs.filter((run) => run.segment?.start === 0 && run.segment.end === walkForwardReport.boundaries.train80);
+            return <details className="rounded border border-[var(--ak-border-subtle)] p-1.5">
+              <summary className="cursor-pointer font-semibold">Final fit candidate results ({candidates.length})</summary>
+              <div className="mt-1 max-h-40 overflow-auto">
+                <table className="data-table w-full text-[10px]">
+                  <thead><tr><th>FINAL TRAIN CANDIDATE</th><th>RETURN</th><th>MAX DD</th><th>TRADES</th><th>FEES</th><th>RESULT</th></tr></thead>
+                  <tbody>{candidates.map((candidate) => <tr key={candidate.resultId} className={candidate.resultId === walkForwardReport.finalTrainingResultId ? "font-bold" : ""}>
+                    <td>{candidate.value}{candidate.resultId === walkForwardReport.finalTrainingResultId ? " · selected" : ""}</td>
+                    <td>{pct(candidate.metrics.totalReturn)}</td><td>{pct(-candidate.metrics.maxDrawdown)}</td><td>{candidate.metrics.tradeCount}</td><td>{candidate.metrics.totalFees.toFixed(2)}</td><td className="font-mono">{candidate.resultId}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            </details>;
+          })()}
+        </section>
+      )}
 
       {error && (
         <div className="error-inline p-2 text-xs text-[var(--ak-signal-danger)] bg-red-950/20 border border-red-800/40">
@@ -201,29 +292,29 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
         <div className="sweep-verdict grid grid-cols-2 md:grid-cols-5 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
           <div className="sweep-verdict-cell flex flex-col">
             <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">BEST VALUE</span>
-            <strong className="text-xs text-[var(--ak-signal-success)] font-mono font-bold">
+            <strong className="text-xs text-[var(--ak-signal-success)] font-mono font-bold tabular-nums">
               {label(result.parameter)} = {stats.best.value} ({pct(stats.best.metrics.totalReturn)})
             </strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
             <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">WORST VALUE</span>
-            <strong className="text-xs text-[var(--ak-signal-danger)] font-mono font-bold">
+            <strong className="text-xs text-[var(--ak-signal-danger)] font-mono font-bold tabular-nums">
               {label(result.parameter)} = {stats.worst.value} ({pct(stats.worst.metrics.totalReturn)})
             </strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
             <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">SPREAD</span>
-            <strong className="text-xs font-mono font-bold">{(stats.spread * 100).toFixed(2)} pts</strong>
+            <strong className="text-xs font-mono font-bold tabular-nums">{(stats.spread * 100).toFixed(2)} pts</strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
             <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">PROFITABLE RUNS</span>
-            <strong className={`text-xs font-mono font-bold ${stats.profitable > 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-text-secondary)]"}`}>
+            <strong className={`text-xs font-mono font-bold tabular-nums ${stats.profitable > 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-text-secondary)]"}`}>
               {stats.profitable} / {stats.total}
             </strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
             <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">DISTINCT OUTCOMES</span>
-            <strong className={`text-xs font-mono font-bold ${stats.collapsed > 0 ? "text-[var(--ak-text-secondary)]" : ""}`}>
+            <strong className={`text-xs font-mono font-bold tabular-nums ${stats.collapsed > 0 ? "text-[var(--ak-text-secondary)]" : ""}`}>
               {stats.distinct} / {stats.total}
             </strong>
           </div>
@@ -242,7 +333,17 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
         </div>
       )}
 
-      {result && (
+      {notice && (
+        <div className="text-[10px] text-[var(--ak-signal-info)] font-mono px-2 py-1 bg-[var(--ak-surface-sunken-2)] border-l-2 border-[var(--ak-signal-info)] animate-pulse flex items-center justify-between">
+          <span className="font-bold flex items-center gap-1.5">
+            <Check size={11} className="text-[var(--ak-signal-success)]" />
+            {notice}
+          </span>
+          <span className="text-[9px] text-[var(--ak-text-secondary)] opacity-70">Strategy Lab updated</span>
+        </div>
+      )}
+
+      {result && !result.walkForward && (
         <div className="sweep-table-scroll overflow-auto max-h-80 border border-[var(--ak-border-subtle)]">
           <table className="data-table sweep-table w-full text-xs">
             <thead>
@@ -264,25 +365,25 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
                 const isApplied = appliedVal === entry.value;
                 return (
                   <tr
-                    key={entry.value}
+                    key={entry.resultId || entry.value}
                     className={`border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors ${isBest ? "is-best bg-[var(--ak-surface-raised)]" : ""}`}
                   >
                     <td className="mono p-1.5 font-bold flex items-center gap-1.5">
-                      <span>{entry.value}</span>
+                      <span className="tabular-nums">{entry.value}</span>
                       {isBest && <AkTag variant="advanced" className="text-[9px] px-1 py-0 h-3.5 leading-none">BEST</AkTag>}
                     </td>
-                    <td className={`p-1.5 font-mono font-bold ${entry.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
+                    <td className={`p-1.5 font-mono tabular-nums font-bold ${entry.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                       {entry.metrics.totalReturn >= 0 ? <TrendingUp size={11} className="inline mr-1" /> : <TrendingDown size={11} className="inline mr-1" />}
                       {pct(entry.metrics.totalReturn)}
                     </td>
-                    <td className="negative p-1.5 font-mono text-[var(--ak-signal-danger)]">
+                    <td className="negative p-1.5 font-mono tabular-nums text-[var(--ak-signal-danger)]">
                       −{(entry.metrics.maxDrawdown * 100).toFixed(2)}%
                     </td>
-                    <td className="p-1.5 font-mono">{entry.metrics.sharpeRatio === null ? "—" : entry.metrics.sharpeRatio.toFixed(2)}</td>
-                    <td className="p-1.5 font-mono">{(entry.metrics.winRate * 100).toFixed(1)}%</td>
-                    <td className="p-1.5 font-mono">{entry.metrics.profitFactor === null ? "—" : entry.metrics.profitFactor.toFixed(2)}</td>
-                    <td className="p-1.5 font-mono">{entry.metrics.tradeCount}</td>
-                    <td className="mono p-1.5 font-mono">{entry.metrics.finalEquity.toFixed(2)}</td>
+                    <td className="p-1.5 font-mono tabular-nums">{entry.metrics.sharpeRatio === null ? "—" : entry.metrics.sharpeRatio.toFixed(2)}</td>
+                    <td className="p-1.5 font-mono tabular-nums">{(entry.metrics.winRate * 100).toFixed(1)}%</td>
+                    <td className="p-1.5 font-mono tabular-nums">{entry.metrics.profitFactor === null ? "—" : entry.metrics.profitFactor.toFixed(2)}</td>
+                    <td className="p-1.5 font-mono tabular-nums">{entry.metrics.tradeCount}</td>
+                    <td className="mono p-1.5 font-mono tabular-nums">{entry.metrics.finalEquity.toFixed(2)}</td>
                     <td className="p-1.5 text-right">
                       <Button
                         size="sm"

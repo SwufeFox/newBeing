@@ -9,6 +9,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     if (!await validateRerunBody(request)) return NextResponse.json({ error: "Saved reruns accept no input overrides." }, { status: 400 });
     const { id } = await context.params;
-    return NextResponse.json(rerunBacktestSweep(id), { status: 201, headers: { "Cache-Control": "no-store" } });
+    const result = rerunBacktestSweep(id);
+    const report = { ...result, mode: result.mode ?? (result.walkForward ? "walk-forward" : "full-sample") };
+    return NextResponse.json(report, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) { return researchFailure(error); }
 }

@@ -29,15 +29,20 @@ const requestSchema = z.object({
   from: z.number().finite(),
   to: z.number().finite(),
   step: z.number().finite().positive(),
+  mode: z.enum(["full-sample", "walk-forward"]).optional(),
   limit: z.number().int().min(50).max(1000).optional(),
 });
 
+function sweepReport(sweep: Awaited<ReturnType<typeof runBacktestSweep>>) {
+  const mode = sweep.mode ?? (sweep.walkForward ? "walk-forward" : "full-sample");
+  return { ...sweep, mode };
+}
 export async function GET(request: Request): Promise<NextResponse> {
   const guard = researchReadGuard();
   if (guard) return guard;
   const limit = z.coerce.number().int().min(1).max(100).safeParse(new URL(request.url).searchParams.get("limit") ?? 20);
   if (!limit.success) return NextResponse.json({ error: "Invalid sweep limit." }, { status: 400 });
-  return NextResponse.json({ items: listSavedSweeps(limit.data) }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ items: listSavedSweeps(limit.data).map(sweepReport) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -76,11 +81,12 @@ export async function POST(request: Request): Promise<NextResponse> {
         from: parsed.data.from,
         to: parsed.data.to,
         step: parsed.data.step,
+        mode: parsed.data.mode ?? "full-sample",
         ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
       },
       { marketAdapter: getWebMarketAdapter(exchange) },
     );
-    return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(sweepReport(result), { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sweep failed.";
     logEvent("warn", "sweep.failed", { message });

@@ -104,8 +104,41 @@ export interface ResearchReproduction {
   implementationHash: string;
 }
 
+export interface WalkForwardFold {
+  trainEnd: number;
+  validationStart: number;
+  validationEnd: number;
+  trainStartTimestamp: number;
+  trainEndTimestamp: number;
+  validationStartTimestamp: number;
+  validationEndTimestamp: number;
+  candidateValue: number;
+  trainingResultId: string;
+  validationResultId: string;
+  trainingMetrics: BacktestMetrics;
+  validationMetrics: BacktestMetrics;
+}
+
+export interface WalkForwardReport {
+  mode: "walk-forward";
+  boundaries: { train50: number; train60: number; train70: number; train80: number; total: number };
+  selectionRule: "training-totalReturn-desc/parameter-value-asc";
+  finalTrainingStartTimestamp: number;
+  finalTrainingEndTimestamp: number;
+  finalTestStartTimestamp: number;
+  finalTestEndTimestamp: number;
+  folds: WalkForwardFold[];
+  finalCandidateValue: number;
+  finalTrainingResultId: string;
+  finalTestResultId: string;
+  finalTrainingMetrics: BacktestMetrics;
+  finalTestMetrics: BacktestMetrics;
+}
+
 export interface BacktestSweepResult {
   sweepId: string;
+  /** Absent on older records; they are interpreted as full-sample sweeps. */
+  mode?: "full-sample" | "walk-forward";
   exchange: ExchangeId;
   symbol: string;
   timeframe: Timeframe;
@@ -116,7 +149,7 @@ export interface BacktestSweepResult {
   values: number[];
   /** Absent means legacy input-only IDs; reruns compare the full saved outputs. */
   outcomeVersion?: 2;
-  runs: Array<{ value: number; resultId: string; outcomeId: string; metrics: BacktestMetrics }>;
+  runs: Array<{ value: number; resultId: string; outcomeId: string; metrics: BacktestMetrics; segment?: { start: number; end: number; datasetId: string; reproduction: ResearchReproduction } }>;
   parameters: StrategyParameters;
   config: BacktestConfig;
   datasetId: string;
@@ -124,6 +157,7 @@ export interface BacktestSweepResult {
   createdAt: string;
   reproduction: ResearchReproduction;
   rerunOf?: string;
+  walkForward?: WalkForwardReport;
 }
 
 export interface BacktestResult {
