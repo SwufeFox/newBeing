@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
-import { CcxtSpotAdapter, coalesceRequest, completedBarsThrough, findCandleGaps, getExchangeAdapter, mergeCandles, nextCompletedBarAfter, reconnectDelayMs, removeFormingCandles } from "../src/index.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CcxtSpotAdapter, coalesceRequest, completedBarsThrough, findCandleGaps, getExchangeAdapter, mergeCandles, nextCompletedBarAfter, reconnectDelayMs, removeFormingCandles, resetRequestFailures } from "../src/index.js";
 import type { Candle, ExchangeId } from "@newbeing/core";
 
 const candle = (timestamp: number, close: number): Candle => ({ timestamp, open: close, high: close, low: close, close, volume: 1 });
+
+beforeEach(() => {
+  resetRequestFailures();
+});
 
 describe("public spot exchange registry", () => {
   it.each(["binance", "coinbaseexchange", "kraken", "okx"] as const)("creates a CCXT adapter for %s", (id) => {
@@ -77,8 +81,7 @@ describe("public spot exchange registry", () => {
 
     const first = adapter.fetchOHLCV("BTC/USDT", "1m", 100);
     const second = adapter.fetchOHLCV("BTC/USDT", "1m", 100);
-    await Promise.resolve();
-    expect(fetchCalls).toBe(1);
+    await vi.waitFor(() => expect(fetchCalls).toBe(1));
     resolveRows([[0, 1.5, 1.5, 1.5, 1.5, 10]]);
     const expected = { timestamp: 0, open: 1.5, high: 1.5, low: 1.5, close: 1.5, volume: 10 };
     await expect(Promise.all([first, second])).resolves.toEqual([[expected], [expected]]);
@@ -106,10 +109,24 @@ describe("market data normalization", () => {
   });
 
   it("clears a rejected in-flight request so callers can retry", async () => {
-    let calls = 0;
-    await expect(coalesceRequest("venue|retry", async () => { calls += 1; throw new Error("offline"); })).rejects.toThrow("offline");
-    await expect(coalesceRequest("venue|retry", async () => { calls += 1; return "recovered"; })).resolves.toBe("recovered");
-    expect(calls).toBe(2);
+    vi.useFakeTimers();
+    try {
+      const callback = vi.fn(async () => {
+        throw new Error("offline");
+      });
+      await expect(coalesceRequest("venue|retry", callback)).rejects.toThrow("offline");
+      expect(callback).toHaveBeenCalledOnce();
+
+      const blockedCallback = vi.fn(async () => "unexpected");
+      await expect(coalesceRequest("venue|retry", blockedCallback)).rejects.toThrow("offline");
+      expect(blockedCallback).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(coalesceRequest("venue|retry", async () => "recovered")).resolves.toBe("recovered");
+      expect(callback).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("deduplicates websocket updates and uses the incoming value for the same bucket", () => {

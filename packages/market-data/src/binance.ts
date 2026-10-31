@@ -25,7 +25,21 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
     if (!EXCHANGE_IDS.includes(id)) throw new Error(`Unsupported exchange: ${id}`);
     this.id = id;
     const Exchange = ccxt[id] as typeof ccxt.binance;
-    this.exchange = new Exchange({ enableRateLimit: true, options: { defaultType: "spot", adjustForTimeDifference: true }, timeout: 12_000 });
+    /* 6s, not 12s: a venue that cannot answer exchangeInfo is down for this
+       poll either way, and a shorter ceiling keeps one bad poll from stacking
+       multiple in-flight callers behind a single hanging socket. */
+    this.exchange = new Exchange({ enableRateLimit: true, options: { defaultType: "spot", adjustForTimeDifference: true }, timeout: 6_000 });
+  }
+
+  /* Every read path needs the venue's market metadata, and each one used to
+     trigger its own exchangeInfo attempt. Coalescing under one key means a
+     failing venue produces one attempt (plus a short backoff) instead of one
+     per call site per poll. */
+  private loadMarkets(): Promise<Record<string, MarketInterface>> {
+    return coalesceRequest(`${this.id}|markets`, async () => {
+      const markets = await this.exchange.loadMarkets();
+      return markets as Record<string, MarketInterface>;
+    });
   }
 
   getConnectorMetadata() {
@@ -39,7 +53,7 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
   }
 
   async getInstrument(symbol: string) {
-    await this.exchange.loadMarkets();
+    await this.loadMarkets();
     const market = this.exchange.market(validSymbol(symbol));
     if (!market.spot || !market.id) throw new Error("A native spot instrument is required.");
     return { id: instrumentId(this.id, market.id), venue: this.id, nativeId: market.id, symbol: market.symbol, base: market.base, quote: market.quote, marketType: "spot" as const, active: market.active !== false,
@@ -48,7 +62,7 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
   }
 
   async searchSymbols(query: string, limit = 60): Promise<MarketSymbol[]> {
-    const markets: Record<string, MarketInterface | undefined> = await this.exchange.loadMarkets();
+    const markets: Record<string, MarketInterface | undefined> = await this.loadMarkets();
     const normalized = query.trim().toUpperCase().replace(/[^A-Z0-9/]/g, "");
     return Object.values(markets)
       .filter((market): market is MarketInterface => market !== undefined)
@@ -74,7 +88,7 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
     const safeLimit = Math.max(2, Math.min(1000, Number.isFinite(limit) ? Math.floor(limit) : 500));
     const key = `${this.id}|ohlcv|${normalized}|${timeframe}|${since ?? "latest"}|${safeLimit}`;
     return coalesceRequest(key, async () => {
-      await this.exchange.loadMarkets();
+      await this.loadMarkets();
       /* CCXT 4.5.85 implements deterministic OHLCV pagination for Coinbase
          (300 candles per request) and Kraken (720). Keep the requested total
          limit and let that implementation page, including when `since` is set. */
@@ -92,7 +106,7 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
   async fetchSummary(symbol: string): Promise<MarketSummary> {
     const normalized = validSymbol(symbol);
     const ticker = await coalesceRequest(`${this.id}|ticker|${normalized}`, async () => {
-      await this.exchange.loadMarkets();
+      await this.loadMarkets();
       return this.exchange.fetchTicker(normalized);
     });
     /* Some venues (Kraken) return a ticker with no timestamp at all. Downstream
@@ -118,7 +132,7 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
   async fetchSummaries(symbols: readonly string[]): Promise<MarketSummary[]> {
     const normalized = [...new Set(symbols.map(validSymbol))].slice(0, 40);
     if (normalized.length === 0) return [];
-    await this.exchange.loadMarkets();
+    await this.loadMarkets();
     if (!this.exchange.has.fetchTickers) return Promise.all(normalized.map((symbol) => this.fetchSummary(symbol)));
     const tickers = await this.exchange.fetchTickers(normalized);
     return normalized.flatMap((symbol) => {
@@ -129,14 +143,14 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
 
   async fetchOrderBook(symbol: string, limit = 20): Promise<OrderBookSnapshot> {
     const normalized = validSymbol(symbol);
-    await this.exchange.loadMarkets();
+    await this.loadMarkets();
     const book: CcxtOrderBook = await this.exchange.fetchOrderBook(normalized, Math.max(5, Math.min(100, limit)));
     return { symbol: normalized, timestamp: finiteOrNull(book.timestamp), bids: book.bids.map(([price, amount]) => ({ price: price ?? 0, amount: amount ?? 0 })), asks: book.asks.map(([price, amount]) => ({ price: price ?? 0, amount: amount ?? 0 })) };
   }
 
   async fetchRecentTrades(symbol: string, limit = 20): Promise<RecentTrade[]> {
     const normalized = validSymbol(symbol);
-    await this.exchange.loadMarkets();
+    await this.loadMarkets();
     const trades = await this.exchange.fetchTrades(normalized, undefined, Math.max(5, Math.min(100, limit)));
     return trades.flatMap((trade: CcxtTrade) => {
       if (typeof trade.timestamp !== "number" || typeof trade.price !== "number" || typeof trade.amount !== "number" || ![trade.timestamp, trade.price, trade.amount].every(Number.isFinite)) return [];
