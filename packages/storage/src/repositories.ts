@@ -83,6 +83,24 @@ export function saveWorkspaceState(state: WorkspaceState): number {
   return updatedAt;
 }
 
+export interface WorkspaceWriteResult { committed: boolean; updatedAt: number }
+
+/** Conditional workspace write: commits only while the stored row still carries
+ *  expectedUpdatedAt (0 = no row yet), inside the same immediate transaction the
+ *  Paper guards read. A writer that read version N cannot commit over version
+ *  N+1 written by someone else in between — a late or retried request is
+ *  rejected with the current version instead of blindly overwriting. */
+export function saveWorkspaceStateIfVersion(state: WorkspaceState, expectedUpdatedAt: number): WorkspaceWriteResult {
+  return getDatabase().transaction(() => {
+    const current = getWorkspaceState();
+    if (current.updatedAt !== expectedUpdatedAt) return { committed: false, updatedAt: current.updatedAt };
+    const updatedAt = Math.max(Date.now(), current.updatedAt + 1);
+    getDatabase().insert(workspaceStates).values({ id: 1, payload: JSON.stringify(state), updatedAt })
+      .onConflictDoUpdate({ target: workspaceStates.id, set: { payload: JSON.stringify(state), updatedAt } }).run();
+    return { committed: true, updatedAt };
+  }, { behavior: "immediate" });
+}
+
 export function listStoredStrategies(): StoredStrategy[] {
   return getDatabase().select().from(strategies).orderBy(desc(strategies.updatedAt)).all().map((row) => ({
     id: row.id,
@@ -143,14 +161,24 @@ export function saveExperiment(result: BacktestResult): void {
 export function getExperiment(resultId: string): BacktestResult | undefined {
   const row = getDatabase().select({ result: experiments.result }).from(experiments)
     .where(eq(experiments.resultId, resultId)).get();
-  if (!row) return undefined;
-  return JSON.parse(row.result) as BacktestResult;
+  if (!row?.result) return undefined;
+  try {
+    return JSON.parse(row.result) as BacktestResult;
+  } catch {
+    return undefined;
+  }
 }
 
 export function listExperiments(limit = 20): BacktestResult[] {
   return getDatabase().select({ result: experiments.result }).from(experiments)
     .orderBy(desc(experiments.createdAt)).limit(Math.max(1, Math.min(100, limit))).all()
-    .map((row) => JSON.parse(row.result) as BacktestResult);
+    .flatMap((row) => {
+      try {
+        return row.result ? [JSON.parse(row.result) as BacktestResult] : [];
+      } catch {
+        return [];
+      }
+    });
 }
 
 /* Account ids are namespaced per venue. The Binance namespace is deliberately

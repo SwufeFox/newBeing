@@ -9,6 +9,27 @@ interface WorkspaceEnvelope {
   updatedAt: number;
 }
 
+const PENDING_WORKSPACE_NAVIGATION_KEY = "newbeing:pending-workspace-navigation";
+type WorkspaceNavigationTarget = "terminal" | "research" | "replay";
+
+export function queueWorkspaceNavigation(target: WorkspaceNavigationTarget): void {
+  try {
+    window.sessionStorage.setItem(PENDING_WORKSPACE_NAVIGATION_KEY, target);
+  } catch {
+    // Navigation still proceeds if session storage is unavailable.
+  }
+}
+
+function consumeWorkspaceNavigation(): WorkspaceNavigationTarget | null {
+  try {
+    const target = window.sessionStorage.getItem(PENDING_WORKSPACE_NAVIGATION_KEY);
+    window.sessionStorage.removeItem(PENDING_WORKSPACE_NAVIGATION_KEY);
+    return target === "terminal" || target === "research" || target === "replay" ? target : null;
+  } catch {
+    return null;
+  }
+}
+
 async function readRemote(): Promise<WorkspaceEnvelope | null> {
   try {
     const response = await fetch("/api/workspace", { cache: "no-store", signal: AbortSignal.timeout(10_000) });
@@ -51,19 +72,51 @@ export function WorkspaceSync(): null {
       const stateJson = JSON.stringify(sentState);
       const sentIdentity = replayIdentity(sentState);
       const sentIdentityRevision = identityRevision;
+      /* Optimistic concurrency: commit only if the server row is still at the
+         version this tab last read. A stale request that hung in the browser
+         and lands later is rejected instead of overwriting newer state, so a
+         retry does not have to wait for the old request to finish. */
+      const expectedVersion = lastServerTime;
       const timeout = setTimeout(() => {
         const current = useWorkspaceStore.getState();
         if (!stopped && sentIdentityRevision === identityRevision && current.activeWorkspace === "replay" && current.replayConfirmedJson !== sentIdentity) {
-          useWorkspaceStore.setState({ replaySyncError: "The server request is still pending. Retry will wait for it to finish; you can cancel the switch." });
+          useWorkspaceStore.setState({ replaySyncError: "The server request timed out and will be retried automatically. You can cancel the switch." });
         }
       }, 10_000);
       try {
         const response = await fetch("/api/workspace", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: stateJson,
+          body: JSON.stringify({ ...sentState, expectedUpdatedAt: expectedVersion }),
+          // A hung write must settle so the next attempt can run. If the server
+          // actually committed before the abort, its version moved ahead and the
+          // retry gets a 409 carrying the authoritative state, so the late
+          // arrival can no longer overwrite anything.
+          signal: AbortSignal.timeout(10_000),
         });
-        if (!response.ok) throw new Error(`Workspace sync failed (${response.status}).`);
+        if (!response.ok) {
+          if (response.status === 409) {
+            // The server rejected this write as stale. Adopt its authoritative
+            // state; the local change that lost simply becomes unsynced and the
+            // next local edit (or an explicit retry) resends against the new
+            // version. No waiting on the losing request is required.
+            try {
+              const conflict = (await response.json()) as WorkspaceEnvelope & { error: string };
+              lastServerTime = Math.max(lastServerTime, conflict.updatedAt);
+              lastSyncedJson = JSON.stringify(conflict.state);
+              if (sentIdentityRevision === identityRevision) {
+                const store = useWorkspaceStore.getState();
+                if (store.activeWorkspace !== "replay" || replayIdentity(store) === replayIdentity(conflict.state)) {
+                  store.setFromRemote(conflict.state, conflict.updatedAt);
+                } else {
+                  useWorkspaceStore.setState({ replaySyncError: "The server changed the requested Replay state. Retry or cancel the switch." });
+                }
+              }
+            } catch { /* A malformed conflict body still counts as a failed write. */ }
+            return;
+          }
+          throw new Error(`Workspace sync failed (${response.status}).`);
+        }
         const envelope = (await response.json()) as WorkspaceEnvelope;
         if (stopped) return;
         const serverJson = JSON.stringify(envelope.state);
@@ -126,7 +179,17 @@ export function WorkspaceSync(): null {
       }
       ready = true;
       useWorkspaceStore.getState().setWorkspaceReady(true);
+      const pendingWorkspace = consumeWorkspaceNavigation();
+      if (pendingWorkspace) {
+        const store = useWorkspaceStore.getState();
+        store.setWorkspace(pendingWorkspace);
+        if (pendingWorkspace === "research") {
+          store.setInspectorTab("strategy");
+          store.setDockTab("backtest");
+        }
+      }
       poll = setInterval(() => {
+        if (typeof document !== "undefined" && document.hidden) return;
         const readRevision = revision;
         if (isSending || currentJson() !== lastSyncedJson) return;
         void (async () => {
@@ -156,12 +219,7 @@ export function WorkspaceSync(): null {
       if (!ready || stopped) return;
       if (state.replayRetry !== previous.replayRetry) {
         if (debounce) clearTimeout(debounce);
-        if (isSending) {
-          pendingSend = true;
-          useWorkspaceStore.setState({ replaySyncError: "Retry is queued until the pending server request finishes. You can cancel the switch." });
-        } else {
-          void sendState();
-        }
+        void sendState();
         return;
       }
       if (stateJson === previousJson) return;

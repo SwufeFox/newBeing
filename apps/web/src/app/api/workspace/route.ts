@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { EXCHANGE_TIMEFRAMES, type WorkspaceState } from "@newbeing/core";
-import { getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
+import { getWorkspaceState, saveWorkspaceState, saveWorkspaceStateIfVersion } from "@newbeing/storage";
 import { symbolForExchange } from "@/lib/exchanges";
 
 export const runtime = "nodejs";
@@ -27,6 +27,9 @@ const stateSchema = z.object({
     bottomHeight: z.number().min(150).max(480),
   }),
 });
+/* Optimistic concurrency: the client echoes the version it last read. Absent
+   means an unconditional write, preserving older MCP/caller behaviour. */
+const envelopeSchema = stateSchema.extend({ expectedUpdatedAt: z.number().int().nonnegative().optional() });
 
 export async function GET(): Promise<NextResponse> {
   try {
@@ -44,14 +47,15 @@ export async function PUT(request: Request): Promise<NextResponse> {
     } catch {
       return NextResponse.json({ error: "Invalid JSON in request body." }, { status: 400 });
     }
-    const parsed = stateSchema.safeParse(body);
+    const parsed = envelopeSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid workspace state." }, { status: 400 });
+    const { expectedUpdatedAt, ...parsedState } = parsed.data;
     const state: WorkspaceState = {
-      ...parsed.data,
+      ...parsedState,
       /* Absorb the retired "backtest" workspace. Done here rather than rejected
          so an old snapshot heals on its first write instead of wedging the
          client's sync loop. */
-      activeWorkspace: parsed.data.activeWorkspace === "backtest" ? "research" : parsed.data.activeWorkspace,
+      activeWorkspace: parsedState.activeWorkspace === "backtest" ? "research" : parsedState.activeWorkspace,
     };
     /* Re-denominate on the server too. The client sends its own symbol, and a
        stale or hand-written client could otherwise persist a pair the venue
@@ -64,8 +68,22 @@ export async function PUT(request: Request): Promise<NextResponse> {
     /* No venue/workspace gate: every supported venue can serve backtests and
        replays. The only per-venue rule left is that the venue must actually
        publish the requested timeframe (checked above). */
-    const updatedAt = saveWorkspaceState(state);
-    return NextResponse.json({ state, updatedAt }, { headers: { "Cache-Control": "no-store" } });
+    if (expectedUpdatedAt === undefined) {
+      const updatedAt = saveWorkspaceState(state);
+      return NextResponse.json({ state, updatedAt }, { headers: { "Cache-Control": "no-store" } });
+    }
+    const result = saveWorkspaceStateIfVersion(state, expectedUpdatedAt);
+    if (result.committed) {
+      return NextResponse.json({ state, updatedAt: result.updatedAt }, { headers: { "Cache-Control": "no-store" } });
+    }
+    /* Version conflict: another writer (another tab, a late retried request, or
+       Replay activation) moved the row first. 409 carries the authoritative
+       state so the caller can reconcile instead of blind-overwriting. */
+    const current = getWorkspaceState();
+    return NextResponse.json(
+      { error: "Workspace was changed by another writer; reload before retrying.", state: current.state, updatedAt: current.updatedAt },
+      { status: 409, headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Workspace persistence failed.";
     return NextResponse.json({ error: message }, { status: 500 });
