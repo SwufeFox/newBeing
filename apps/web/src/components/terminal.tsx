@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Fragment, memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ChevronDown,
@@ -9,6 +10,8 @@ import {
   LayoutDashboard,
   LoaderCircle,
   Moon,
+  PanelLeft,
+  PanelLeftClose,
   Search,
   Sun,
   X,
@@ -29,7 +32,7 @@ import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { applyReplaySelection, captureReplaySelection, captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
-import { replayIdentity, useWorkspaceStore } from "@/store/workspace";
+import { replayIdentity, useWorkspaceStore, type DockTab, type InspectorTab } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import {
   EXCHANGE_TIMEFRAMES,
@@ -45,7 +48,7 @@ import {
   type WorkspaceState,
 } from "@newbeing/core";
 import type { MarketSummary, MarketSymbol } from "@newbeing/market-data/types";
-import { AkBrackets, AkCorner, AkTag, AkStatus, AkDisplay, AkBilingual, AkNum } from "@swufefox/ak-ui-react";
+import { AkBrackets, AkCorner, AkTag, AkStatus, AkDisplay, AkBilingual, AkNum, AkDialog, AkNotice, AkSpinner, AkGlow } from "@swufefox/ak-ui-react";
 
 const TIMEFRAMES: readonly Timeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
 const EMPTY_REPLAY_BARS: readonly Candle[] = [];
@@ -160,7 +163,7 @@ function useSummary(symbol: string, exchange: WorkspaceState["exchange"], enable
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), exchange === "binance" ? 5_000 : 15_000);
+    const timer = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, exchange === "binance" ? 5_000 : 15_000);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [symbol, exchange, enabled, key, retryToken]);
 
@@ -168,6 +171,20 @@ function useSummary(symbol: string, exchange: WorkspaceState["exchange"], enable
     ...(enabled && snapshot?.key === key ? { summary: snapshot.summary, error: snapshot.error } : { summary: null, error: null }),
     retry: () => setRetryToken((current) => current + 1),
   };
+}
+
+function isTypingActive(event: KeyboardEvent): boolean {
+  const target = event.target as HTMLElement | null;
+  if (!target) return false;
+  return (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT" ||
+    Boolean(target.closest?.("input, textarea, select")) ||
+    target.isContentEditable ||
+    Boolean(target.closest?.(".monaco-editor")) ||
+    Boolean(target.closest?.("[contenteditable='true']"))
+  );
 }
 
 function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.Element {
@@ -183,9 +200,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
   // Global hotkey to open search: `/` or `Ctrl+K`
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (disabled) return;
-      const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      if (disabled || isTypingActive(event)) return;
 
       if (event.key === "/" || (event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey))) {
         event.preventDefault();
@@ -293,7 +308,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
               <span>{EXCHANGE_LABELS[exchange].toUpperCase()} · SPOT MARKETS</span>
               <span className="text-[9px] opacity-60">↑/↓ NAV · ↵ CHOOSE</span>
             </div>
-            {showLoading && <div className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><LoaderCircle className="spin" size={13} />Searching…</div>}
+            {showLoading && <div className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><AkSpinner color="#18d1ff" label="Searching" /><span>Searching…</span></div>}
             {error && <div className="popover-error p-2 text-xs text-[var(--ak-signal-danger)]">{error}</div>}
             {!showLoading && !error && items.map((item, idx) => {
               const isSelected = idx === selectedIndex;
@@ -333,41 +348,82 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
   );
 }
 
-function MarketSummaryBar({ summary, error, replayMode, replayPrice, subject, onRetry }: { summary: MarketSummary | null; error: string | null; replayMode: boolean; replayPrice: number | null; subject: string; onRetry: () => void }): React.JSX.Element {
+const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replayMode, replayPrice, subject, onRetry }: { summary: MarketSummary | null; error: string | null; replayMode: boolean; replayPrice: number | null; subject: string; onRetry: () => void }): React.JSX.Element {
   const change = summary?.changePct24h;
-  const last = formatPrice(replayMode ? replayPrice : summary?.last);
-  const changeText = typeof change === "number" ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "—";
-  const isPositive = typeof change === "number" && change >= 0;
+  const currentPrice = replayMode ? replayPrice : summary?.last;
+  const last = formatPrice(currentPrice);
+  const changeValid = typeof change === "number" && Number.isFinite(change);
+  const changeText = changeValid ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "—";
+  const isPositive = changeValid && change >= 0;
+
+  const prevPriceRef = useRef<number | null>(null);
+  const [flash, setFlash] = useState<"up" | "down" | null>(null);
+
+  useEffect(() => {
+    if (typeof currentPrice === "number" && prevPriceRef.current !== null && prevPriceRef.current !== currentPrice) {
+      setFlash(currentPrice > prevPriceRef.current ? "up" : "down");
+      const timer = window.setTimeout(() => setFlash(null), 850);
+      prevPriceRef.current = currentPrice;
+      return () => window.clearTimeout(timer);
+    }
+    if (typeof currentPrice === "number") {
+      prevPriceRef.current = currentPrice;
+    }
+  }, [currentPrice]);
 
   return (
     <div className={`summary-strip flex items-center gap-4 text-xs font-mono ${error && summary ? "stale opacity-75" : ""}`}>
       <div className="summary-price flex items-baseline gap-2">
-        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">{replayMode ? "CURSOR" : "LAST"}</span>
-        <strong className="text-base font-bold text-[var(--ak-text-primary)] tabular-nums">
-          <Decoded className="decoded-price" value={last} trigger={subject} />
-        </strong>
+        <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">{replayMode ? "CURSOR" : "LAST"}</span>
+        {typeof currentPrice === "number" && Number.isFinite(currentPrice) ? (
+          <strong className={`text-2xl font-extrabold text-[var(--ak-text-primary)] tabular-nums tracking-tight transition-all duration-150 ${flash === "up" ? "price-flash-up" : flash === "down" ? "price-flash-down" : ""}`}>
+            <Decoded className="decoded-price" value={last} trigger={subject} />
+          </strong>
+        ) : (
+          <span className="text-2xl font-extrabold font-mono text-[var(--ak-text-secondary)] opacity-30 tabular-nums tracking-tight animate-pulse select-none">
+            --.---
+          </span>
+        )}
         {!replayMode && (
-          <AkTag variant={typeof change === "number" ? (isPositive ? "default" : "danger") : "neutral"} className="text-[10px] px-1 py-0 h-4 tabular-nums">
-            <Decoded value={changeText} trigger={`${subject}|chg`} />
-          </AkTag>
+          changeValid ? (
+            <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold tabular-nums rounded-[2px] transition-all ${isPositive ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-[0_0_8px_rgba(70,196,124,0.15)]" : "bg-rose-500/15 text-rose-400 border border-rose-500/30 shadow-[0_0_8px_rgba(227,59,59,0.15)]"}`}>
+              <Decoded value={changeText} trigger={`${subject}|chg`} />
+            </span>
+          ) : (
+            <span className="text-[10px] font-mono font-bold text-[var(--ak-text-secondary)] opacity-30 select-none">
+              --.--%
+            </span>
+          )
         )}
       </div>
 
       {!replayMode && (
-        <div className="hidden md:flex items-center gap-4 text-[11px] text-[var(--ak-text-secondary)] border-l border-[var(--ak-border-subtle)] pl-4">
-          <div>
-            <span className="text-[9px] uppercase block opacity-70">24H HIGH</span>
-            <strong className="text-[var(--ak-text-primary)] font-normal tabular-nums"><Decoded value={formatPrice(summary?.high24h)} trigger={`${subject}|hi`} /></strong>
+        <div className="summary-stats hidden lg:flex items-center gap-2 pl-3">
+          <div className="summary-pod">
+            <span className="uppercase tracking-wider block opacity-70">24H HIGH</span>
+            {summary?.high24h != null && Number.isFinite(summary.high24h) ? (
+              <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatPrice(summary.high24h)} trigger={`${subject}|hi`} /></strong>
+            ) : (
+              <span className="text-xs font-mono text-[var(--ak-text-secondary)] opacity-30 select-none">--</span>
+            )}
           </div>
-          <div>
-            <span className="text-[9px] uppercase block opacity-70">24H LOW</span>
-            <strong className="text-[var(--ak-text-primary)] font-normal tabular-nums"><Decoded value={formatPrice(summary?.low24h)} trigger={`${subject}|lo`} /></strong>
+          <div className="summary-pod">
+            <span className="uppercase tracking-wider block opacity-70">24H LOW</span>
+            {summary?.low24h != null && Number.isFinite(summary.low24h) ? (
+              <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatPrice(summary.low24h)} trigger={`${subject}|lo`} /></strong>
+            ) : (
+              <span className="text-xs font-mono text-[var(--ak-text-secondary)] opacity-30 select-none">--</span>
+            )}
           </div>
-          <div>
-            <span className="text-[9px] uppercase block opacity-70">24H VOL</span>
-            <strong className="text-[var(--ak-text-primary)] font-normal tabular-nums">
-              <Decoded value={typeof summary?.quoteVolume24h === "number" ? `${(summary.quoteVolume24h / 1_000_000).toFixed(2)}M` : "—"} trigger={`${subject}|vol`} />
-            </strong>
+          <div className="summary-pod">
+            <span className="uppercase tracking-wider block opacity-70">24H VOL</span>
+            {summary?.quoteVolume24h != null && Number.isFinite(summary.quoteVolume24h) ? (
+              <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs">
+                <Decoded value={`${(summary.quoteVolume24h / 1_000_000).toFixed(2)}M`} trigger={`${subject}|vol`} />
+              </strong>
+            ) : (
+              <span className="text-xs font-mono text-[var(--ak-text-secondary)] opacity-30 select-none">--</span>
+            )}
           </div>
         </div>
       )}
@@ -384,7 +440,7 @@ function MarketSummaryBar({ summary, error, replayMode, replayPrice, subject, on
       </div>
     </div>
   );
-}
+});
 
 function DragHandle({ direction, onDelta, style }: { direction: "horizontal" | "vertical"; onDelta: (delta: number) => void; style?: React.CSSProperties }): React.JSX.Element {
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -560,14 +616,15 @@ function RailReplayState({ session, playing, speed }: { session: ReplaySession |
 }
 
 export function Terminal(): React.JSX.Element {
+  const router = useRouter();
   const replayConfirmed = useWorkspaceStore((state) => state.replayConfirmedJson === replayIdentity(state));
   const replaySyncError = useWorkspaceStore((state) => state.replaySyncError);
   const retryReplaySync = useWorkspaceStore((state) => state.retryReplaySync);
   const workspaceReady = useWorkspaceStore((state) => state.workspaceReady);
   const exchange = useWorkspaceStore((state) => state.exchange);
-  const [workspace, setWorkspace, symbol, timeframe, theme, setTheme, layout, setLayout, visibleRange, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
+  const [workspace, setWorkspace, symbol, timeframe, theme, setTheme, layout, setLayout, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
     state.activeWorkspace, state.setWorkspace, state.symbol, state.timeframe, state.theme, state.setTheme, state.layout, state.setLayout,
-    state.visibleRange, state.setVisibleRange, state.setBacktest, state.setDockTab, state.selectedStrategyId, state.strategyParameters, state.backtestConfig,
+    state.setVisibleRange, state.setBacktest, state.setDockTab, state.selectedStrategyId, state.strategyParameters, state.backtestConfig,
     state.activeReplayId, state.setActiveReplayId,
   ]));
 
@@ -604,14 +661,15 @@ export function Terminal(): React.JSX.Element {
   }, [setWorkspace, setDockTab]);
 
   const [showHotkeys, setShowHotkeys] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const watchlist = useWorkspaceStore((state) => state.watchlist);
+  const runBacktestRef = useRef<() => void>(() => {});
 
-  // Global hotkeys: 1, 2, 3 to switch workspaces; [ ] to cycle watchlist; T to cycle timeframe; ? for HUD
+  // Global hotkeys: 1, 2, 3 workspaces; [ ] watchlist; T timeframe; D cycle dock; I cycle inspector; B/Ctrl+Enter backtest; ? HUD; \ sidebar
   useEffect(() => {
     if (!workspaceReady) return;
     const handleKeyDown = (event: KeyboardEvent): void => {
-      const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      if (isTypingActive(event)) return;
 
       if (event.key === "1") {
         setPage("terminal");
@@ -619,11 +677,19 @@ export function Terminal(): React.JSX.Element {
         setPage("research");
       } else if (event.key === "3") {
         setPage("replay");
+      } else if (event.key === "4") {
+        if (useWorkspaceStore.getState().activeWorkspace === "replay") {
+          setPage("terminal");
+        }
+        router.push("/derivatives");
       } else if (event.key === "?" || (event.key === "/" && event.shiftKey)) {
         event.preventDefault();
         setShowHotkeys((prev) => !prev);
       } else if (event.key === "Escape") {
         setShowHotkeys(false);
+      } else if (event.key === "\\" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b")) {
+        event.preventDefault();
+        setSidebarOpen((prev) => !prev);
       } else if (event.key === "[" || event.key === "]") {
         if (watchlist.length > 0) {
           event.preventDefault();
@@ -641,16 +707,71 @@ export function Terminal(): React.JSX.Element {
         const availableTfs = TIMEFRAMES.filter((tf) => EXCHANGE_TIMEFRAMES[exchange].includes(tf));
         if (availableTfs.length > 0) {
           const currentTfIdx = availableTfs.indexOf(timeframe);
-          const nextTf = availableTfs[(currentTfIdx + 1) % availableTfs.length];
+          const nextIdx = event.shiftKey
+            ? (currentTfIdx - 1 + availableTfs.length) % availableTfs.length
+            : (currentTfIdx + 1) % availableTfs.length;
+          const nextTf = availableTfs[nextIdx >= 0 ? nextIdx : 0];
           if (nextTf) {
             useWorkspaceStore.getState().setTimeframe(nextTf);
           }
+        }
+      } else if (event.key.toLowerCase() === "d" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        const currentWorkspace = useWorkspaceStore.getState().activeWorkspace;
+        const currentDockTab = useWorkspaceStore.getState().dockTab;
+        const tabs: readonly DockTab[] = currentWorkspace === "terminal" || currentWorkspace === "replay"
+          ? ["positions", "orders"]
+          : ["backtest", "sweep", "evaluate", "history", "logs"];
+        const currentIdx = tabs.indexOf(currentDockTab);
+        const nextIdx = event.shiftKey
+          ? (currentIdx - 1 + tabs.length) % tabs.length
+          : (currentIdx + 1) % tabs.length;
+        const nextTab = tabs[nextIdx >= 0 ? nextIdx : 0];
+        if (nextTab) {
+          useWorkspaceStore.getState().setDockTab(nextTab);
+        }
+      } else if (event.key.toLowerCase() === "i" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        const currentWorkspace = useWorkspaceStore.getState().activeWorkspace;
+        const currentInspectorTab = useWorkspaceStore.getState().inspectorTab;
+        const tabs: readonly InspectorTab[] = currentWorkspace === "replay"
+          ? ["context"]
+          : ["book", "trades", "strategy", "context"];
+        const currentIdx = tabs.indexOf(currentInspectorTab);
+        const nextIdx = event.shiftKey
+          ? (currentIdx - 1 + tabs.length) % tabs.length
+          : (currentIdx + 1) % tabs.length;
+        const nextTab = tabs[nextIdx >= 0 ? nextIdx : 0];
+        if (nextTab) {
+          useWorkspaceStore.getState().setInspectorTab(nextTab);
+        }
+      } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        const currentWorkspace = useWorkspaceStore.getState().activeWorkspace;
+        if (currentWorkspace === "research") {
+          runBacktestRef.current();
+        } else if (currentWorkspace === "terminal" || currentWorkspace === "replay") {
+          window.dispatchEvent(new CustomEvent("newbeing:hotkey-buy"));
+        }
+      } else if (event.key.toLowerCase() === "b" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        const currentWorkspace = useWorkspaceStore.getState().activeWorkspace;
+        if (currentWorkspace === "research") {
+          runBacktestRef.current();
+        } else if (currentWorkspace === "terminal" || currentWorkspace === "replay") {
+          window.dispatchEvent(new CustomEvent("newbeing:hotkey-buy"));
+        }
+      } else if (event.key.toLowerCase() === "s" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const currentWorkspace = useWorkspaceStore.getState().activeWorkspace;
+        if (currentWorkspace === "terminal" || currentWorkspace === "replay") {
+          event.preventDefault();
+          window.dispatchEvent(new CustomEvent("newbeing:hotkey-sell"));
         }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setPage, workspaceReady, watchlist, symbol, exchange, timeframe]);
+  }, [setPage, workspaceReady, watchlist, symbol, exchange, timeframe, router]);
 
   const runBacktest = useCallback(async (): Promise<void> => {
     const canApply = captureWorkspaceSelection();
@@ -691,6 +812,10 @@ export function Terminal(): React.JSX.Element {
       setRunning(false);
     }
   }, [exchange, symbol, timeframe, strategyId, parameters, config, setBacktest, setWorkspace, setDockTab]);
+
+  useEffect(() => {
+    runBacktestRef.current = () => { void runBacktest(); };
+  }, [runBacktest]);
 
   const handleVisibleRange = useCallback((range: { from: number | null; to: number | null }): void => {
     setVisibleRange(range);
@@ -958,7 +1083,7 @@ export function Terminal(): React.JSX.Element {
   const replayBars = workspace === "replay" ? replaySession?.bars ?? EMPTY_REPLAY_BARS : null;
   const replayPrice = replaySession?.bars.at(-1)?.close ?? null;
 
-  const showsWatchlist = workspace === "terminal";
+  const showsWatchlist = workspace === "terminal" && sidebarOpen;
   /* The inspector keeps a fixed pixel width because the study panels need it, but in
      a narrow pane (the sidebar browser is ~420px) that fixed width leaves the chart
      ~45px and the workspace becomes unusable. Cap the side column as a share of the
@@ -995,109 +1120,149 @@ export function Terminal(): React.JSX.Element {
     <div className={`application-shell mode-${workspace}`} data-ak-ui="system" data-theme={theme === "light" ? "light" : undefined}>
       <WorkspaceSync />
       {!workspaceReady ? (
-        <div role="status" className="p-3 text-xs font-mono text-[var(--ak-text-secondary)]">Loading local workspace…</div>
-      ) : workspace === "replay" && !replayConfirmed ? (
-        <div className="p-3 text-xs font-mono text-[var(--ak-text-secondary)]">
-          <p role={replaySyncError ? "alert" : "status"}>{replaySyncError ?? "Waiting for the server to confirm Replay…"}</p>
-          {replaySyncError && <button className="mr-3 underline" onClick={retryReplaySync}>Retry</button>}
-          <button className="underline" onClick={() => setPage("terminal")}>Cancel and return to Markets</button>
-        </div>
+        <div role="status" className="h-screen w-screen flex flex-col items-center justify-center bg-[var(--ak-surface-canvas)] font-mono text-xs text-[var(--ak-text-secondary)]">Loading local workspace…</div>
       ) : (
         <>
-      <header className="topbar flex items-center gap-2 px-3 bg-[var(--ak-surface-canvas)] border-b border-[var(--ak-border-strong)] z-20">
-        <div className="brand-lockup flex items-center gap-2">
-          <div className="brand-mark p-1 bg-[var(--ak-signal-info)] text-black">
-            <Activity size={15} strokeWidth={2.6} />
+          <header className="topbar flex items-center justify-between gap-3 px-3 z-20">
+            {/* Wing 1: Brand Lockup & Navigation Cockpit */}
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="brand-lockup flex items-center gap-2">
+                <AkGlow tone="info" className="inline-flex items-center">
+                  <div className="brand-mark p-1 bg-[var(--ak-signal-info)] text-black">
+                    <Activity size={15} strokeWidth={2.6} />
+                  </div>
+                </AkGlow>
+                <AkBrackets className="font-bold text-xs tracking-wider flex items-center gap-1">
+                  <span className="text-[var(--ak-text-primary)]">newBeing</span>
+                  <span className="text-[var(--ak-signal-info)] text-[10px]">PRTS</span>
+                </AkBrackets>
+              </div>
+
+              <div className="h-5 w-[1px] bg-[var(--ak-border)] mx-0.5 opacity-50" />
+
+              <nav className="nav-cockpit flex items-center gap-1 shrink-0" aria-label="Workspace navigation">
+                <div className="workspace-flow-sequence" role="group" aria-label="Research workflow">
+                  {([ ["terminal", "Markets", "1"], ["research", "Research", "2"], ["replay", "Replay", "3"] ] as const).map(([item, label, num], index) => (
+                    <Fragment key={item}>
+                      <button
+                        data-testid={`workspace-${item}`}
+                        aria-current={workspace === item ? "page" : undefined}
+                        aria-label={`${label} workspace, shortcut ${num}`}
+                        className={`workspace-tab relative px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase transition-all ${workspace === item ? "active text-[var(--ak-signal-action)] bg-[var(--ak-surface-raised)] border-b-2 border-[var(--ak-signal-action)]" : "text-[var(--ak-text-secondary)] hover:text-white"}`}
+                        onClick={() => setPage(item)}
+                        title={`Switch to ${label} with ${num}`}
+                      >
+                        {workspace === item && <AkCorner position="tl" tone="yellow" />}
+                        {label}
+                      </button>
+                      {index < 2 && <span className="workflow-step-separator" aria-hidden="true">›</span>}
+                    </Fragment>
+                  ))}
+                </div>
+                <span className="workspace-nav-separator" aria-hidden="true" />
+                <Link href="/derivatives" className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0" aria-label="Derivatives market mode, shortcut 4" title="Switch to Derivatives with 4">
+                  Derivatives
+                </Link>
+              </nav>
+            </div>
+
+            {/* Wing 2: Central Cockpit Pod (Symbol Search, Timeframe, Exchange) */}
+            <div className="instrument-pod hidden md:flex items-center shrink-0">
+              <SymbolPicker disabled={replayLocked} />
+
+              <div className="h-4 w-[1px] bg-[var(--ak-border)] mx-1 opacity-50" />
+
+              <div className="timeframe-selector flex items-center gap-0.5 shrink-0" aria-label="Timeframe">
+                {TIMEFRAMES.map((item) => (
+                  <button
+                    key={item}
+                    disabled={replayLocked || !EXCHANGE_TIMEFRAMES[exchange].includes(item)}
+                    className={`px-1.5 py-0.5 text-[11px] font-mono font-bold transition-all ${timeframe === item ? "active bg-[var(--ak-signal-info)] text-black" : "text-[var(--ak-text-secondary)] hover:text-white"}`}
+                    onClick={() => useWorkspaceStore.getState().setTimeframe(item)}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+
+              <div className="h-4 w-[1px] bg-[var(--ak-border)] mx-1 opacity-50" />
+
+              <label className="exchange-select flex items-center gap-1 text-xs font-mono bg-transparent px-2 py-0.5 shrink-0 cursor-pointer border-0">
+                <span className="exchange-logo font-bold text-[var(--ak-signal-action)]">{exchange.slice(0, 1).toUpperCase()}</span>
+                <select
+                  aria-label="Exchange"
+                  value={exchange}
+                  disabled={replayLocked}
+                  onChange={(event) => useWorkspaceStore.getState().setExchange(event.target.value as WorkspaceState["exchange"])}
+                  className="nb-select-bare bg-transparent border-0 outline-none text-xs font-mono cursor-pointer"
+                >
+                  <option value="binance">Binance Spot</option>
+                  <option value="coinbaseexchange">Coinbase</option>
+                  <option value="okx">OKX Spot</option>
+                  <option value="kraken">Kraken</option>
+                </select>
+                <ChevronDown size={11} className="text-[var(--ak-text-secondary)] opacity-70" />
+              </label>
+            </div>
+
+            {/* Wing 3: Session Status & Tactical Actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="topbar-status flex items-center gap-1.5 px-2.5 h-7 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] whitespace-nowrap shrink-0 shadow-sm" aria-label={`Execution mode: paper. Live trading disabled. Active workspace: ${workspaceName}.`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] animate-pulse shrink-0" />
+                <span className="text-[10px] font-mono text-[var(--ak-signal-action)] font-bold">{workspaceName.toUpperCase()}</span>
+                <span className="text-[10px] font-mono text-[var(--ak-text-secondary)] opacity-60">·</span>
+                <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">PAPER</span>
+              </div>
+
+              <div className="h-5 w-[1px] bg-[var(--ak-border)] mx-0.5 opacity-50" />
+
+              <div className="topbar-actions flex items-center gap-1 shrink-0">
+                <Button variant="ghost" size="icon" title={sidebarOpen ? "Collapse sidebar [Ctrl+B or \\]" : "Expand sidebar [Ctrl+B or \\]"} aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"} onClick={() => setSidebarOpen((prev) => !prev)}>
+                  {sidebarOpen ? <PanelLeftClose size={13} /> : <PanelLeft size={13} />}
+                </Button>
+                <Button variant="ghost" size="icon" title="Terminal shortcuts [?]" aria-label="Terminal shortcuts" onClick={() => setShowHotkeys((prev) => !prev)}>
+                  <HelpCircle size={13} />
+                </Button>
+                <Button variant="ghost" size="icon" title="Toggle theme" aria-label="Toggle theme" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+                  {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
+                </Button>
+                <Button variant="ghost" size="icon" title="Reset layout" aria-label="Reset layout" onClick={() => setLayout({ watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 })}>
+                  <LayoutDashboard size={13} />
+                </Button>
+              </div>
+            </div>
+          </header>
+
+      {workspace === "replay" && !replayConfirmed && (
+        <div className="replay-sync-banner px-3 py-1.5 bg-amber-950/40 border-b border-amber-500/40 text-xs font-mono text-amber-300 flex items-center justify-between z-20 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span className="text-[10px] font-bold px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 uppercase tracking-wider">REPLAY SYNC</span>
+            <span role={replaySyncError ? "alert" : "status"} className="text-[11px]">{replaySyncError ?? "Synchronizing replay session with server…"}</span>
           </div>
-          <AkBrackets className="font-bold text-xs tracking-wider flex items-center gap-1">
-            <span className="text-[var(--ak-text-primary)]">newBeing</span>
-            <span className="text-[var(--ak-signal-info)] text-[10px]">PRTS</span>
-          </AkBrackets>
-        </div>
-
-        <div className="topbar-divider h-5 w-[1px] bg-[var(--ak-border)] mx-1" />
-
-        <nav className="workspace-nav flex items-center gap-1" aria-label="Workspaces">
-          {([ ["terminal", "Markets", "1"], ["research", "Research", "2"], ["replay", "Replay", "3"] ] as const).map(([item, label, num]) => (
-            <button
-              key={item}
-              data-testid={`workspace-${item}`}
-              className={`workspace-tab relative px-3 py-1 text-xs font-mono font-bold tracking-wider uppercase transition-all ${workspace === item ? "active text-[var(--ak-signal-action)] bg-[var(--ak-surface-raised)] border border-[var(--ak-signal-action)]" : "text-[var(--ak-text-secondary)] hover:text-white border border-transparent"}`}
-              onClick={() => setPage(item)}
-              title={`Switch to ${label} [${num}]`}
-            >
-              {label} <span className="opacity-50 text-[9px]">[{num}]</span>
+          <div className="flex items-center gap-2">
+            {replaySyncError && (
+              <button className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 uppercase tracking-wider transition-all cursor-pointer" onClick={retryReplaySync}>
+                Retry
+              </button>
+            )}
+            <button className="px-2 py-0.5 text-[10px] font-bold bg-[var(--ak-surface-sunken-2)] hover:bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border border-[var(--ak-border-subtle)] uppercase tracking-wider transition-all cursor-pointer" onClick={() => setPage("terminal")}>
+              Return to Markets
             </button>
-          ))}
-          <Link href="/derivatives" className="workspace-tab px-3 py-1 text-xs font-mono font-bold uppercase text-[var(--ak-text-secondary)]">Derivatives</Link>
-        </nav>
-
-        <div className="topbar-spacer flex-1" />
-
-        <SymbolPicker disabled={replayLocked} />
-
-        <div className="topbar-divider narrow-divider h-5 w-[1px] bg-[var(--ak-border)] mx-1" />
-
-        <div className="timeframe-selector flex items-center gap-0.5" aria-label="Timeframe">
-          {TIMEFRAMES.map((item) => (
-            <button
-              key={item}
-              disabled={replayLocked || !EXCHANGE_TIMEFRAMES[exchange].includes(item)}
-              className={`px-1.5 py-0.5 text-[11px] font-mono font-bold transition-all ${timeframe === item ? "active bg-[var(--ak-signal-info)] text-black" : "text-[var(--ak-text-secondary)] hover:text-white"}`}
-              onClick={() => useWorkspaceStore.getState().setTimeframe(item)}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-
-        <div className="topbar-divider narrow-divider h-5 w-[1px] bg-[var(--ak-border)] mx-1" />
-
-        <label className="exchange-select flex items-center gap-1 text-xs font-mono bg-[var(--ak-surface-sunken)] px-2 py-1 border border-[var(--ak-border-subtle)]">
-          <span className="exchange-logo font-bold text-[var(--ak-signal-action)]">{exchange.slice(0, 1).toUpperCase()}</span>
-          <select
-            aria-label="Exchange"
-            value={exchange}
-            disabled={replayLocked}
-            onChange={(event) => useWorkspaceStore.getState().setExchange(event.target.value as WorkspaceState["exchange"])}
-            className="nb-select-bare bg-transparent border-0 outline-none text-xs font-mono cursor-pointer"
-          >
-            <option value="binance">Binance Spot</option>
-            <option value="coinbaseexchange">Coinbase</option>
-            <option value="okx">OKX Spot</option>
-            <option value="kraken">Kraken</option>
-          </select>
-          <ChevronDown size={11} className="text-[var(--ak-text-secondary)] opacity-70" />
-        </label>
-
-        <div className="topbar-status flex items-center gap-2 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]" aria-label={`Execution mode: paper. Live trading disabled. Active workspace: ${workspaceName}.`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
-          <div className="flex flex-col text-[9px] font-mono leading-tight">
-            <span className="text-[var(--ak-signal-action)] font-bold">{workspaceName.toUpperCase()}</span>
-            <span className="text-[var(--ak-text-secondary)]">PAPER · LIVE OFF</span>
           </div>
         </div>
+      )}
 
-        <Button variant="ghost" size="icon" title="Terminal shortcuts [?]" aria-label="Terminal shortcuts" onClick={() => setShowHotkeys((prev) => !prev)}>
-          <HelpCircle size={14} />
-        </Button>
-        <Button variant="ghost" size="icon" title="Toggle theme" aria-label="Toggle theme" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-          {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-        </Button>
-        <Button variant="ghost" size="icon" title="Reset layout" aria-label="Reset layout" onClick={() => setLayout({ watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 })}>
-          <LayoutDashboard size={14} />
-        </Button>
-      </header>
-
-      <div className="market-heading p-3 bg-[var(--ak-surface-canvas)] border-b border-[var(--ak-border-strong)] flex flex-wrap items-center justify-between gap-4" id="workspace-home">
+      <div className="market-heading relative px-4 py-2.5 flex flex-wrap items-center justify-between gap-4 shadow-xl" id="workspace-home">
+        <AkCorner position="tl" tone="info" />
         <div className="market-identity flex items-center gap-3 font-mono">
           <div className="flex flex-col">
-            <span className="market-eyebrow text-[9px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold flex items-center gap-1.5">
-              <span className="text-[var(--ak-signal-info)] opacity-70 font-mono">{"//"}</span>
+            <span className="market-eyebrow text-[9px] text-[var(--ak-signal-info)] uppercase tracking-widest font-bold flex items-center gap-1.5">
+              <span className="opacity-70 font-mono">{"//"}</span>
               {EXCHANGE_LABELS[exchange]} · SPOT TRADING
             </span>
             <div className="market-title flex items-baseline gap-1 text-xl font-bold">
-              <Decoded className="base-symbol text-[var(--ak-text-primary)]" value={symbol.split("/")[0] ?? symbol} trigger={`sym|${symbol}`} />
+              <Decoded className="base-symbol text-[var(--ak-text-primary)] font-extrabold tracking-tight" value={symbol.split("/")[0] ?? symbol} trigger={`sym|${symbol}`} />
               <span className="quote-symbol text-[var(--ak-text-secondary)] opacity-70 text-sm">
                 / <Decoded value={symbol.split("/")[1] ?? ""} trigger={`quote|${symbol}`} />
               </span>
@@ -1125,44 +1290,44 @@ export function Terminal(): React.JSX.Element {
                 ? `Updated: ${new Date(summary.timestamp).toLocaleTimeString()}`
                 : "Awaiting feed"}
           </span>
-          <AkTag variant={summaryError ? "danger" : "default"} className="text-[10px] flex items-center gap-1">
-            <span className={`w-1.5 h-1.5 rounded-full ${summaryError ? "bg-[var(--ak-signal-danger)]" : "bg-[var(--ak-signal-success)] animate-pulse"}`} />
-            {workspace === "replay" ? "REPLAY DATA" : summaryError ? "DELAYED" : "PUBLIC REALTIME"}
-          </AkTag>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[10px] font-bold">
+            <span className="relative flex h-2 w-2">
+              {!summaryError && workspace !== "replay" && (
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${summary ? "bg-emerald-400" : "bg-amber-400"}`} />
+              )}
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${summaryError ? "bg-rose-500" : workspace === "replay" ? "bg-cyan-400" : summary ? "bg-emerald-500" : "bg-amber-400"}`} />
+            </span>
+            <span className={summaryError ? "text-rose-400" : workspace === "replay" ? "text-cyan-400" : summary ? "text-emerald-400" : "text-amber-400"}>
+              {workspace === "replay" ? "REPLAY DATA" : summaryError ? "DELAYED" : summary ? "PUBLIC REALTIME" : "CONNECTING"}
+            </span>
+          </div>
         </div>
       </div>
 
       <main className={`workspace-layout mode-layout-${workspace}`}>
-        <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label="Active workspace">
-          <div className="rail-caption text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold pb-1 border-b border-[var(--ak-border-subtle)]">
-            SYSTEM TELEMETRY
-          </div>
-          <div className={`rail-status ${workspace} p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1`}>
-            <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
-              {workspaceName.toUpperCase()}
-            </span>
-            <span className="rail-status-note text-[10px] text-[var(--ak-text-secondary)] block leading-tight">
-              {RAIL_NOTES[workspace]}
-            </span>
-          </div>
+        {(workspace === "research" || workspace === "replay") && sidebarOpen && (
+          <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label="Active workspace">
+            <div className="rail-caption text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold pb-1 border-b border-[var(--ak-border-subtle)]">
+              {workspaceName.toUpperCase()} · WORKSPACE
+            </div>
+            <div className={`rail-status ${workspace} p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1`}>
+              <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
+                {workspaceName.toUpperCase()}
+              </span>
+              <span className="rail-status-note text-[10px] text-[var(--ak-text-secondary)] block leading-tight">
+                {RAIL_NOTES[workspace]}
+              </span>
+            </div>
 
-          {workspace === "research" && (
-            <>
-              <RailStrategyRoster />
-              <RailRunHistory />
-            </>
-          )}
-          {workspace === "replay" && <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />}
-
-          <div className="rail-facts space-y-1 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[10px]">
-            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">ACTIVE PAIR</span><strong className="font-mono">{symbol}</strong></div>
-            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">TIMEFRAME</span><strong className="font-mono">{timeframe}</strong></div>
-            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">VENUE</span><strong className="font-mono">{EXCHANGE_LABELS[exchange]}</strong></div>
-            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">EXECUTION</span><strong className="text-[var(--ak-signal-info)]">PAPER SIM</strong></div>
-            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">STORAGE</span><strong className="text-[var(--ak-text-secondary)]">SQLITE 3 · WAL</strong></div>
-            <div className="flex justify-between"><span className="text-[var(--ak-text-secondary)]">MATH ENGINE</span><strong className="text-[var(--ak-text-secondary)]">DECIMAL.JS</strong></div>
+            {workspace === "research" && (
+              <>
+                <RailStrategyRoster />
+                <RailRunHistory />
+              </>
+            )}
+            {workspace === "replay" && <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />}
           </div>
-        </div>
+        )}
 
         <section className="market-canvas" aria-label={`${workspaceName} market workspace`}>
           <div className="workspace-grid" style={{ gridTemplateColumns: gridColumns, gridTemplateRows: `minmax(0, 1fr) 5px min(${dockHeight}px, max(150px, calc(100% - 265px)))` }}>
@@ -1191,18 +1356,26 @@ export function Terminal(): React.JSX.Element {
                 <div className="chart-toolbar-right flex items-center gap-2">
                   {running ? (
                     <span className="run-status text-xs text-[var(--ak-signal-action)] flex items-center gap-1.5">
-                      <LoaderCircle size={13} className="spin" /> {lastAction ?? "Executing…"}
+                      <AkSpinner color="#ffd800" label="Executing" /> {lastAction ?? "Executing…"}
                     </span>
                   ) : lastAction ? (
                     <span className="run-status text-xs text-[var(--ak-text-secondary)]">{lastAction}</span>
                   ) : null}
                   {workspace === "terminal" && (
-                    <Button variant="outline" size="sm" onClick={() => setPage("research")} className="h-6 text-[10px]">
-                      Research Strategy
+                    <Button variant="outline" size="sm" onClick={() => setPage("research")} className="h-6 text-[10px]" title={`Continue to Research with ${symbol} on ${timeframe}`}>
+                      Build strategy
                     </Button>
                   )}
                 </div>
               </div>
+
+              {backtestError && (
+                <div className="p-2 bg-[var(--ak-surface-canvas)] border-b border-[var(--ak-border-subtle)]">
+                  <AkNotice variant="danger" code="PRTS.EXEC" title="Backtest Simulation Error">
+                    {backtestError}
+                  </AkNotice>
+                </div>
+              )}
 
               {exchange !== "binance" && (
                 <div className="global-alert p-1.5 bg-[var(--ak-surface-sunken)] text-[10px] font-mono text-[var(--ak-text-secondary)] border-b border-[var(--ak-border-subtle)]" role="status">
@@ -1237,7 +1410,7 @@ export function Terminal(): React.JSX.Element {
                   its content and the candles collapse into a sliver. */}
               <div className="flex-1 min-h-0 relative flex flex-col">
                 <MarketChart
-                  key={`${exchange}|${symbol}|${timeframe}|${deferredWorkspace}`}
+                  key={`${exchange}|${symbol}|${timeframe}|${workspace === "replay" ? "replay" : "live"}`}
                   backtest={workspace === "replay" ? null : result}
                   replayBars={replayBars}
                   onRangeChange={handleVisibleRange}
@@ -1269,7 +1442,7 @@ export function Terminal(): React.JSX.Element {
 
             <div className="dock-slot" style={{ gridColumn: col.chart, gridRow: 3 }}>
               <BottomDock
-                key={`${exchange}|${symbol}|${deferredWorkspace}`}
+                key={`${exchange}|${symbol}|${workspace === "replay" ? "replay" : "live"}`}
                 workspace={workspace}
                 replayMode={workspace === "replay"}
                 replaySession={replaySession}
@@ -1284,18 +1457,21 @@ export function Terminal(): React.JSX.Element {
         </section>
       </main>
 
-      <nav className="mobile-mode-nav md:hidden flex justify-around p-2 bg-[var(--ak-surface-canvas)] border-t border-[var(--ak-border-strong)]" aria-label="Workspace modes">
+      <nav className="mobile-mode-nav flex justify-around p-2 bg-[var(--ak-surface-canvas)] border-t border-[var(--ak-border-strong)]" aria-label="Workspace navigation">
         {([["terminal", "Markets"], ["research", "Research"], ["replay", "Replay"]] as const).map(([item, label]) => (
           <button
             key={item}
             type="button"
             aria-current={workspace === item ? "page" : undefined}
-            className={`text-xs font-mono font-bold uppercase ${workspace === item ? "text-[var(--ak-signal-action)] underline" : "text-[var(--ak-text-secondary)]"}`}
+            className={workspace === item ? "active" : undefined}
             onClick={() => setPage(item)}
           >
             {label}
           </button>
         ))}
+        <Link href="/derivatives" aria-label="Derivatives market mode" title="Open Derivatives" className="mobile-mode-link">
+          Derivatives
+        </Link>
       </nav>
 
       <footer className="statusbar flex items-center justify-between px-3 py-1 bg-[var(--ak-surface-canvas)] border-t border-[var(--ak-border-strong)] text-[10px] font-mono text-[var(--ak-text-secondary)]">
@@ -1316,118 +1492,113 @@ export function Terminal(): React.JSX.Element {
         </div>
       </footer>
 
-      {showHotkeys && (
-        <div className="hotkeys-modal fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs font-mono" role="dialog" aria-modal="true" aria-label="Terminal command hotkeys">
-          <div className="hotkeys-dialog w-full max-w-lg bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] p-4 shadow-2xl space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-[var(--ak-border-subtle)]">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[var(--ak-signal-info)]" />
-                <strong className="text-xs tracking-wider uppercase text-[var(--ak-text-primary)]">
-                  TERMINAL COMMAND HOTKEYS
-                </strong>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowHotkeys(false)}
-                className="text-[var(--ak-text-secondary)] hover:text-white text-xs px-1 cursor-pointer"
-                aria-label="Close shortcuts dialog"
-              >
-                ✕ ESC
-              </button>
+      <AkDialog
+        open={showHotkeys}
+        onOpenChange={setShowHotkeys}
+        eyebrow="SYSTEM // PRTS NAVIGATION"
+        title="TERMINAL COMMAND HOTKEYS"
+        size="lg"
+        tokens={{ "--ak-dialog-w": "42rem" }}
+        className="font-mono text-xs"
+        footer={
+          <div className="flex items-center justify-between w-full text-[10px] text-[var(--ak-text-secondary)] font-mono">
+            <span>Tactile quick-flow activated · Press Esc or click outside to return</span>
+            <button
+              type="button"
+              onClick={() => setShowHotkeys(false)}
+              className="px-2.5 py-1 text-xs font-bold font-mono bg-[var(--ak-surface-sunken-2)] hover:bg-[var(--ak-surface-raised)] border border-[var(--ak-border)] text-[var(--ak-text-primary)] cursor-pointer"
+            >
+              CLOSE [ESC]
+            </button>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3 text-xs pt-1">
+          <div className="space-y-1.5">
+            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">NAVIGATION</span>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Markets / Research / Replay / Deriv</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">1 / 2 / 3 / 4</kbd>
             </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="space-y-1.5">
-                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">NAVIGATION</span>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Markets</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">1</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Research</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">2</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Replay Sim</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">3</kbd>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">MARKET &amp; FEEDS</span>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Search Pair</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">/ or ⌘K</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Cycle Watchlist</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">[ / ]</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Cycle Timeframe</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">T</kbd>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">REPLAY CONTROLS</span>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Play / Pause</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Space</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Step Next Bar</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">→ or N</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Adjust Speed</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">&lt; / &gt;</kbd>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">DERIVATIVES WORKSPACE</span>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Perpetuals</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Alt+1</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Dated Futures</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Alt+2</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Options Chain</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Alt+3</kbd>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">TICKET &amp; DEPTH</span>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Pick Book Price</span>
-                  <span className="text-[10px] text-[var(--ak-signal-action)]">Click Price</span>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Step Quantity</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">- / +</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Command Help</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">?</kbd>
-                </div>
-                <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">Close Dialog</span>
-                  <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Esc</kbd>
-                </div>
-              </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Cycle Bottom Dock</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">D / Shift+D</kbd>
             </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Cycle Inspector</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">I / Shift+I</kbd>
+            </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Run Backtest (Research)</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">B or ⌘↵</kbd>
+            </div>
+          </div>
 
-            <div className="text-[10px] text-[var(--ak-text-secondary)] pt-1 text-center opacity-70 border-t border-[var(--ak-border-subtle)]">
-              Tactile quick-flow activated · Click outside or press Esc to return
+          <div className="space-y-1.5">
+            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">MARKET &amp; FEEDS</span>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Search Pair</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">/ or ⌘K</kbd>
+            </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Cycle Watchlist</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">[ / ]</kbd>
+            </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Cycle Timeframe</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">T / Shift+T</kbd>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">REPLAY CONTROLS</span>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Play / Pause</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Space</kbd>
+            </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Step Next Bar</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">→ or N</kbd>
+            </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Adjust Speed</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">&lt; / &gt;</kbd>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">MANUAL TRADING &amp; TICKETS</span>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Quick Buy / Sell</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">B / S</kbd>
+            </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Sizing Chips / Stepper</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Chips · - / +</kbd>
+            </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">One-Click Flatten</span>
+              <span className="text-[10px] text-[var(--ak-signal-danger)] font-bold">Close 100% button</span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">WORKSPACE &amp; VIEW</span>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Toggle Sidebar</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">\ or ⌘B</kbd>
+            </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Order Book Price Fill</span>
+              <span className="text-[10px] text-[var(--ak-signal-info)] font-bold">Click depth row</span>
+            </div>
+            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+              <span className="text-[var(--ak-text-secondary)]">Command Help</span>
+              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">?</kbd>
             </div>
           </div>
         </div>
-      )}
+      </AkDialog>
         </>
       )}
     </div>

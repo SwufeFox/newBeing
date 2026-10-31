@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { AkBrackets, AkInput, AkPopover, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import type { Candle } from "@newbeing/core";
@@ -8,6 +9,7 @@ import { CandlestickSeries, ColorType, createChart, type IChartApi, type ISeries
 import type { DerivativeInstrument, DerivativeKind, DerivativeQuote } from "@newbeing/market-data/derivatives";
 import type { DerivativesAccount, DerivativesOrderRequest, DerivativesPosition } from "@newbeing/application/derivatives-types";
 import { Button } from "@/components/ui/button";
+import { queueWorkspaceNavigation } from "@/components/workspace-sync";
 import { useWorkspaceStore } from "@/store/workspace";
 import { derivativeNumber, derivativeDate, derivativeBlockReason, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale } from "@/lib/derivatives-ui";
 
@@ -234,6 +236,7 @@ const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): R
   return <div ref={containerRef} className="h-48 w-full" role="img" aria-label="Contract OHLC candles, 1 hour" />;
 });
 export function DerivativesWorkspace(): React.JSX.Element {
+  const router = useRouter();
   const globalWorkspace = useWorkspaceStore((state) => state.activeWorkspace);
   const [remoteReplay, setRemoteReplay] = useState<boolean | null>(null);
   const [kind, setKind] = useState<DerivativeKind>("perpetual");
@@ -385,11 +388,22 @@ export function DerivativesWorkspace(): React.JSX.Element {
       } else if (event.altKey && event.key === "3") {
         event.preventDefault();
         changeKindRef.current("option");
+      } else if (!event.altKey && !event.ctrlKey && !event.metaKey) {
+        if (event.key === "1") {
+          queueWorkspaceNavigation("terminal");
+          router.push("/");
+        } else if (event.key === "2") {
+          queueWorkspaceNavigation("research");
+          router.push("/");
+        } else if (event.key === "3") {
+          queueWorkspaceNavigation("replay");
+          router.push("/");
+        }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [blocked]);
+  }, [blocked, router]);
 
   const stepContracts = (direction: -1 | 1): void => {
     const current = Number(quantity) || 0;
@@ -560,16 +574,52 @@ export function DerivativesWorkspace(): React.JSX.Element {
   return <div className="derivatives-shell font-mono">
     <header className="derivatives-topbar">
       <Link href="/" className="derivatives-brand">
-        <AkBrackets className="flex items-center gap-1">
-          <span>newBeing</span>
-          <em>PRTS</em>
+        <AkBrackets className="flex items-center gap-1 font-bold text-xs tracking-wider">
+          <span className="text-[var(--ak-text-primary)]">newBeing</span>
+          <span className="text-[var(--ak-signal-info)] text-[10px]">PRTS</span>
         </AkBrackets>
       </Link>
       <h1 className="meta">/ Derivatives</h1>
-      <AkTag variant="advanced">PAPER · LIVE OFF</AkTag>
+      <div className="topbar-divider h-5 w-[1px] bg-[var(--ak-border)] mx-1" />
+      <nav className="workspace-nav flex items-center gap-1 shrink-0" aria-label="Workspace navigation">
+        <div className="workspace-flow-sequence" role="group" aria-label="Research workflow">
+          <Link
+            href="/"
+            onClick={() => queueWorkspaceNavigation("terminal")}
+            className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
+            aria-label="Markets workspace, shortcut 1"
+            title="Switch to Markets with 1"
+          >Markets</Link>
+          <span className="workflow-step-separator" aria-hidden="true">›</span>
+          <Link
+            href="/"
+            onClick={() => queueWorkspaceNavigation("research")}
+            className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
+            aria-label="Research workspace, shortcut 2"
+            title="Switch to Research with 2"
+          >Research</Link>
+          <span className="workflow-step-separator" aria-hidden="true">›</span>
+          <Link
+            href="/"
+            onClick={() => queueWorkspaceNavigation("replay")}
+            className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
+            aria-label="Replay workspace, shortcut 3"
+            title="Switch to Replay with 3"
+          >Replay</Link>
+        </div>
+        <span className="workspace-nav-separator" aria-hidden="true" />
+        <span
+          className="workspace-tab active px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase text-[var(--ak-signal-action)] bg-[var(--ak-surface-raised)] transition-all shrink-0 cursor-default"
+          aria-current="page"
+          aria-label="Current workspace: Derivatives, shortcut 4"
+          title="Current workspace: Derivatives [4]"
+        >
+          Derivatives
+        </span>
+      </nav>
       <div className="flex-1" />
+      <AkTag variant="advanced" className="px-2.5 text-[10px]">PAPER · LIVE OFF</AkTag>
       <EngineModel />
-      <Link href="/" className="meta hover:text-[var(--c-fg)]">← Back to terminal</Link>
     </header>
 
     {/* market plate: same grammar as the terminal's market-heading */}
@@ -700,14 +750,23 @@ export function DerivativesWorkspace(): React.JSX.Element {
         </div>
       </section>
 
-      <div className="min-w-0 space-y-3">
+      <div className="min-w-0 space-y-3 flex-1 overflow-y-auto min-h-0">
         <section className="derivatives-panel" aria-label="Contract market data">
           <div className="derivatives-panel-head">
             <span>Contract details</span>
             <span className="num normal-case tracking-normal">{instrument ? instrument.id : "—"}</span>
           </div>
           {marketError && <div role="alert" className="m-3 space-y-2 text-[var(--c-down)] text-[11px]"><p>{marketError}</p><Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Retry quote</Button></div>}
-          {selectedId && !instrument && !marketError && <p className="m-3 text-[var(--c-fg-4)] text-[11px]">Loading contract and quote…</p>}
+          {selectedId && !instrument && !marketError && (
+            <div className="derivatives-panel-body py-3 space-y-3 opacity-50 animate-pulse">
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                <div className="flex flex-col gap-1"><span className="meta">Contract size</span><span className="w-16 h-3.5 bg-[var(--c-surface-3)] rounded-[2px]" /></div>
+                <div className="flex flex-col gap-1"><span className="meta">Min / step</span><span className="w-16 h-3.5 bg-[var(--c-surface-3)] rounded-[2px]" /></div>
+                <div className="flex flex-col gap-1"><span className="meta">Price tick</span><span className="w-14 h-3.5 bg-[var(--c-surface-3)] rounded-[2px]" /></div>
+                <div className="flex flex-col gap-1"><span className="meta">Margin</span><span className="w-16 h-3.5 bg-[var(--c-surface-3)] rounded-[2px]" /></div>
+              </div>
+            </div>
+          )}
           {instrument && quote && <div className="derivatives-panel-body">
             <div className="flex flex-wrap gap-x-6 gap-y-1">
               <div className="flex flex-col gap-1"><span className="meta">Contract size</span><span className="num">{derivativeNumber(instrument.contractSize)} {instrument.base}</span></div>
@@ -800,9 +859,28 @@ export function DerivativesWorkspace(): React.JSX.Element {
       <section className="derivatives-panel" aria-label="Derivatives Paper ticket">
         <div className="derivatives-panel-head"><span>Paper ticket</span><span className="num normal-case tracking-normal">{instrument ? `${instrument.venue}/${instrument.settle}` : "—"}</span></div>
         <div className="derivatives-panel-body derivatives-ticket">
-          <p className="derivatives-ticket-note">Separate local settle account. Spot and legacy balances are never used or migrated.</p>
+          {instrument && quote && <p className="derivatives-ticket-note">Separate local settle account. Spot and legacy balances are never used or migrated.</p>}
           {blocked ? <p role="status" className="derivatives-ticket-note">Paper order entry is hidden during Replay.</p>
-            : !instrument || !quote ? <p role="status" className="derivatives-ticket-note alert">Order entry is paused until exchange metadata and a fresh quote are available. Existing balances, positions, and history remain readable in the local ledger.</p>
+            : !instrument || !quote ? (
+              <div className="space-y-3">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 space-y-1.5 font-mono">
+                  <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[10px] tracking-wider uppercase">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                    <span>ORDER ENTRY PAUSED</span>
+                  </div>
+                  <p role="status" className="derivatives-ticket-note alert m-0 text-[11px] leading-relaxed">
+                    Order entry is paused until exchange metadata and a fresh quote are available. Existing balances, positions, and history remain readable in the local ledger.
+                  </p>
+                </div>
+                <div className="p-3 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1 font-mono text-[10px]">
+                  <span className="text-[var(--ak-text-secondary)] opacity-70 uppercase tracking-wider block font-bold">VENUE TELEMETRY</span>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-[var(--ak-text-secondary)]">OKX DERIVATIVES</span>
+                    <span className="text-[var(--ak-signal-info)]">ISOLATED MARGIN</span>
+                  </div>
+                </div>
+              </div>
+            )
               : !accountReady ? <p role="status" className="derivatives-ticket-note">{ledgerError ? "Local Paper account unavailable. Refresh the local ledger before trading." : "Loading local Paper account…"}</p>
                 : !account ? <>
             <div className="flex flex-col gap-1 flex items-baseline justify-between"><span className="meta">Initial balance</span><span className="num">{initialBalance} {instrument.settle}</span></div>
@@ -901,27 +979,39 @@ export function DerivativesWorkspace(): React.JSX.Element {
                     <span className="text-[9px] text-[var(--c-fg-4)] mr-1">Fill:</span>
                     <button
                       type="button"
-                      disabled={busy || blocked}
-                      onClick={() => setMaximumPrice(String(quote.bid))}
-                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-up)] font-mono text-[10px] active:scale-95 transition-transform"
+                      disabled={busy || blocked || typeof quote.bid !== "number" || !Number.isFinite(quote.bid) || quote.bid <= 0}
+                      onClick={() => {
+                        if (typeof quote.bid === "number" && Number.isFinite(quote.bid) && quote.bid > 0) {
+                          setMaximumPrice(String(quote.bid));
+                        }
+                      }}
+                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-up)] font-mono text-[10px] active:scale-95 transition-transform disabled:opacity-40"
                       title="Fill with current native bid"
                     >
                       Bid {derivativeNumber(quote.bid)}
                     </button>
                     <button
                       type="button"
-                      disabled={busy || blocked}
-                      onClick={() => setMaximumPrice(String(quote.mark))}
-                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-fg-2)] font-mono text-[10px] active:scale-95 transition-transform"
+                      disabled={busy || blocked || typeof quote.mark !== "number" || !Number.isFinite(quote.mark) || quote.mark <= 0}
+                      onClick={() => {
+                        if (typeof quote.mark === "number" && Number.isFinite(quote.mark) && quote.mark > 0) {
+                          setMaximumPrice(String(quote.mark));
+                        }
+                      }}
+                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-fg-2)] font-mono text-[10px] active:scale-95 transition-transform disabled:opacity-40"
                       title="Fill with current mark price"
                     >
                       Mark {derivativeNumber(quote.mark)}
                     </button>
                     <button
                       type="button"
-                      disabled={busy || blocked}
-                      onClick={() => setMaximumPrice(String(quote.ask))}
-                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-down)] font-mono text-[10px] active:scale-95 transition-transform"
+                      disabled={busy || blocked || typeof quote.ask !== "number" || !Number.isFinite(quote.ask) || quote.ask <= 0}
+                      onClick={() => {
+                        if (typeof quote.ask === "number" && Number.isFinite(quote.ask) && quote.ask > 0) {
+                          setMaximumPrice(String(quote.ask));
+                        }
+                      }}
+                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-down)] font-mono text-[10px] active:scale-95 transition-transform disabled:opacity-40"
                       title="Fill with current native ask"
                     >
                       Ask {derivativeNumber(quote.ask)}
@@ -936,7 +1026,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
             </fieldset>
           </form>}
           {notice && <p role="status" className={`derivatives-ticket-note ${notice.tone}`}>{notice.text}</p>}
-          <p className="derivatives-ticket-note">Funding is not accrued. Expiry freezes positions awaiting official settlement. Local isolated margin does not simulate exchange liquidation.</p>
+          {instrument && quote && <p className="derivatives-ticket-note">Funding is not accrued. Expiry freezes positions awaiting official settlement. Local isolated margin does not simulate exchange liquidation.</p>}
         </div>
       </section>
     </main>
@@ -946,5 +1036,11 @@ export function DerivativesWorkspace(): React.JSX.Element {
       <span>LOCAL WORKSPACE · {instrument ? `${instrument.nativeId} · ${instrument.settle}` : "NO CONTRACT"}</span>
       <span>DERIVATIVES · LIVE TRADING DISABLED · SQLITE LOCAL PERSISTENCE</span>
     </footer>
+    <nav className="mobile-mode-nav derivatives-mobile-nav" aria-label="Workspace navigation">
+      <Link href="/" onClick={() => queueWorkspaceNavigation("terminal")}>Markets</Link>
+      <Link href="/" onClick={() => queueWorkspaceNavigation("research")}>Research</Link>
+      <Link href="/" onClick={() => queueWorkspaceNavigation("replay")}>Replay</Link>
+      <Link href="/derivatives" aria-current="page" className="active">Derivatives</Link>
+    </nav>
   </div>;
 }

@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Clock3, FastForward, LoaderCircle, Pause, Play, SkipForward, Square, RotateCcw } from "lucide-react";
 import type { ReplayConfig, ReplaySession, Timeframe } from "@newbeing/core";
-import { AkButton, AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkProgress } from "@swufefox/ak-ui-react";
+import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkProgress } from "@swufefox/ak-ui-react";
+import { Button } from "@/components/ui/button";
 
 interface ReplayControlsProps {
   symbol: string;
@@ -40,7 +41,17 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
     if (!session || session.status !== "active") return;
     const handleKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      if (
+        !target ||
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        Boolean(target.closest?.("input, textarea, select")) ||
+        target.isContentEditable ||
+        Boolean(target.closest?.(".monaco-editor")) ||
+        Boolean(target.closest?.("[contenteditable='true']")) ||
+        (event.code === "Space" && target.tagName === "BUTTON")
+      ) return;
 
       if (event.code === "Space") {
         event.preventDefault();
@@ -84,28 +95,28 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
 
       {!session ? (
         <div className="space-y-3">
-          <div className="replay-start-group grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 items-end">
-            <AkField hint="PAST BOUNDARY">
+          <div className="replay-start-group flex flex-wrap items-end gap-2.5 p-2.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+            <AkField hint="PAST BOUNDARY" className="min-w-[190px] flex-1">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">START AT · LOCAL TIME</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">START AT · LOCAL TIME</AkFieldLabel>
                 <AkInput
                   type="datetime-local"
                   aria-label="START AT · LOCAL TIME"
                   value={startAt}
                   onChange={(event) => onStartAtChange(event.target.value)}
-                  className="text-xs h-8"
+                  className="text-xs h-8 font-mono"
                 />
               </label>
             </AkField>
 
-            <AkField hint="SEED WINDOW">
+            <AkField hint="SEED WINDOW" className="w-28">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">PAST BARS</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">PAST BARS</AkFieldLabel>
                 <AkSelect
                   aria-label="PAST BARS"
                   value={limit}
                   onChange={(event) => onLimitChange(Number(event.target.value))}
-                  className="text-xs h-8"
+                  className="text-xs h-8 font-mono font-bold"
                 >
                   <option value={120}>120 bars</option>
                   <option value={200}>200 bars</option>
@@ -114,9 +125,9 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               </label>
             </AkField>
 
-            <AkField hint="BASE CAPITAL">
+            <AkField hint="BASE CAPITAL" className="w-32">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">INITIAL CAPITAL · QUOTE</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">INITIAL CAPITAL</AkFieldLabel>
                 <AkInput
                   type="number"
                   aria-label="INITIAL CAPITAL · QUOTE"
@@ -128,9 +139,9 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               </label>
             </AkField>
 
-            <AkField hint="PER FILL">
+            <AkField hint="PER FILL" className="w-24">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">FEE RATE</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">FEE RATE</AkFieldLabel>
                 <AkInput
                   type="number"
                   aria-label="FEE RATE"
@@ -144,9 +155,9 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               </label>
             </AkField>
 
-            <AkField hint="ADVERSE">
+            <AkField hint="ADVERSE" className="w-24">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)]">SLIPPAGE RATE</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">SLIPPAGE RATE</AkFieldLabel>
                 <AkInput
                   type="number"
                   aria-label="SLIPPAGE RATE"
@@ -160,18 +171,30 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               </label>
             </AkField>
 
-            <div className="flex flex-col justify-end">
-              <AkButton
-                data-testid="replay-seed"
-                variant="action"
-                disabled={busy}
-                onClick={() => onStart({ initialCapital: Number(initialCapital), feeRate: Number(feeRate), slippageRate: Number(slippageRate) })}
-                icon={busy ? <LoaderCircle className="spin" size={13} /> : <Play size={13} />}
-                className="h-8 text-xs font-bold"
-              >
-                Seed {symbol} · {timeframe}
-              </AkButton>
-            </div>
+            <Button
+              data-testid="replay-seed"
+              variant="primary"
+              disabled={
+                busy ||
+                !Number.isFinite(Number(initialCapital)) || Number(initialCapital) <= 0 ||
+                !Number.isFinite(Number(feeRate)) || Number(feeRate) < 0 || Number(feeRate) > 0.05 ||
+                !Number.isFinite(Number(slippageRate)) || Number(slippageRate) < 0 || Number(slippageRate) > 0.05
+              }
+              onClick={() => {
+                const cap = Number(initialCapital);
+                const fee = Number(feeRate);
+                const slip = Number(slippageRate);
+                onStart({
+                  initialCapital: Number.isFinite(cap) && cap > 0 ? cap : 10000,
+                  feeRate: Number.isFinite(fee) && fee >= 0 ? fee : 0.001,
+                  slippageRate: Number.isFinite(slip) && slip >= 0 ? slip : 0.0005,
+                });
+              }}
+              icon={busy ? <LoaderCircle className="spin" size={13} /> : <Play size={13} />}
+              className="h-8 text-xs font-bold px-4 mb-0.5 whitespace-nowrap ml-auto"
+            >
+              {busy ? "Loading bars…" : `Seed ${symbol} · ${timeframe}`}
+            </Button>
           </div>
           <p className="text-[11px] text-[var(--ak-text-secondary)] flex items-center gap-1.5 opacity-80">
             <span>ℹ️</span> Only completed bars at or before the selected boundary are loaded. Future candles remain strictly hidden until advanced.
@@ -180,7 +203,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
       ) : (
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center justify-between gap-2 bg-[var(--ak-surface-sunken)] px-2 py-1 border border-[var(--ak-border-subtle)]">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
                 <strong className="font-mono text-xs">{symbol} · {timeframe}</strong>
@@ -199,8 +222,9 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
             </div>
 
             <div className="replay-actions flex items-center gap-2">
-              <AkButton
-                variant={playing ? "default" : "action"}
+              <Button
+                variant={playing ? "subtle" : "primary"}
+                size="sm"
                 disabled={busy || session.status !== "active"}
                 onClick={onTogglePlay}
                 icon={busy ? <LoaderCircle className="spin" size={13} /> : playing ? <Pause size={13} /> : <Play size={13} />}
@@ -208,11 +232,12 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 title="Shortcut: Space"
               >
                 {playing ? "Pause" : "Play"} <span className="opacity-60 text-[10px] ml-1">[Space]</span>
-              </AkButton>
+              </Button>
 
-              <AkButton
+              <Button
                 data-testid="replay-step"
                 variant="outline"
+                size="sm"
                 disabled={busy || playing || session.status !== "active"}
                 onClick={onStep}
                 icon={<SkipForward size={13} />}
@@ -220,7 +245,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 title="Shortcut: Right Arrow or N"
               >
                 Step <span className="opacity-60 text-[10px] ml-1">[→]</span>
-              </AkButton>
+              </Button>
 
               <div className="flex items-center gap-1.5 bg-[var(--ak-surface-canvas)] px-2 py-0.5 border border-[var(--ak-border)] text-xs" title="Speed shortcuts: < and >">
                 <FastForward size={11} className="text-[var(--ak-signal-info)]" />
@@ -250,25 +275,27 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 </select>
               </div>
 
-              <AkButton
+              <Button
                 variant="outline"
+                size="sm"
                 disabled={busy || session.status !== "active"}
                 onClick={onFinish}
                 icon={<Square size={12} />}
                 className="h-7 text-xs"
               >
                 Finish
-              </AkButton>
+              </Button>
 
-              <AkButton
-                variant="default"
+              <Button
+                variant="subtle"
+                size="sm"
                 disabled={busy || playing}
                 onClick={onNewSession}
                 icon={<RotateCcw size={12} />}
                 className="h-7 text-xs"
               >
                 New session
-              </AkButton>
+              </Button>
             </div>
           </div>
 

@@ -11,7 +11,15 @@ export function TabsList({ className, ...props }: ComponentProps<typeof TabsPrim
 }
 
 export function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsPrimitive.Trigger>): React.JSX.Element {
-  return <TabsPrimitive.Trigger className={cn("tab-trigger", className)} {...props} />;
+  return (
+    <TabsPrimitive.Trigger
+      className={cn(
+        "tab-trigger relative transition-all cursor-pointer font-mono select-none outline-none data-[state=active]:text-[var(--ak-signal-action)] data-[state=active]:bg-[var(--ak-surface-raised)] data-[state=active]:border-b-2 data-[state=active]:border-[var(--ak-signal-action)] data-[state=inactive]:text-[var(--ak-text-secondary)] data-[state=inactive]:hover:text-[var(--ak-text-primary)] data-[state=inactive]:hover:bg-[var(--ak-surface-sunken-2)]",
+        className
+      )}
+      {...props}
+    />
+  );
 }
 
 export function TabsContent({ className, ...props }: ComponentProps<typeof TabsPrimitive.Content>): React.JSX.Element {

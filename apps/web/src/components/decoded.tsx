@@ -27,22 +27,31 @@ const FIXED = /[\s,.%+\-—·:/]/;
 
 const isPlaceholder = (v: string): boolean => v === "—" || v === "--" || v === "";
 
-function glyphFor(ch: string, position: number, frame: number): string {
+function hashStr(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h << 5) - h + str.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h);
+}
+
+function glyphFor(ch: string, position: number, frame: number, seedOffset: number): string {
   if (FIXED.test(ch)) return ch;
-  const seed = position * 31 + frame * 17;
-  if (ch >= "0" && ch <= "9") return DIGITS[(seed * 7919) % DIGITS.length] ?? ch;
-  if (/[A-Za-z]/.test(ch)) return LETTERS[(seed * 6151) % LETTERS.length] ?? ch;
+  const seed = position * 31 + frame * 17 + seedOffset;
+  if (ch >= "0" && ch <= "9") return DIGITS[Math.abs(seed * 7919) % DIGITS.length] ?? ch;
+  if (/[A-Za-z]/.test(ch)) return LETTERS[Math.abs(seed * 6151) % LETTERS.length] ?? ch;
   return ch;
 }
 
-function noise(template: string, frame: number): string {
-  return [...template].map((ch, i) => glyphFor(ch, i, frame)).join("");
+function noise(template: string, frame: number, seedOffset: number): string {
+  return [...template].map((ch, i) => glyphFor(ch, i, frame, seedOffset)).join("");
 }
 
 export type DecodePhase = "idle" | "noise";
 
 /** Hard stop for the rolling state when the data never shows up. */
-const NOISE_CEILING_MS = 2200;
+const NOISE_CEILING_MS = 1200;
 
 export function Decoded({
   value,
@@ -64,6 +73,7 @@ export function Decoded({
   const rolling = useRef(false);
   const noiseStart = useRef(0);
   const truth = useRef(value);
+  const seedOffset = useRef(hashStr(trigger ?? value));
 
   const stopRoll = (): void => {
     if (raf.current !== null) { cancelAnimationFrame(raf.current); raf.current = null; }
@@ -77,6 +87,7 @@ export function Decoded({
     lastTrigger.current = trigger;
     lastValue.current = value;
     truth.current = value;
+    seedOffset.current = hashStr((trigger ?? "") + value);
 
     if (!mounted.current) {
       mounted.current = true;
@@ -97,6 +108,7 @@ export function Decoded({
       rolling.current = true;
       setPhase("noise");
       noiseStart.current = performance.now();
+      const offset = seedOffset.current;
       const frame = (now: number): void => {
         if (!rolling.current) return;
         if (now - noiseStart.current > NOISE_CEILING_MS) {
@@ -107,23 +119,31 @@ export function Decoded({
           raf.current = null;
           return;
         }
-        setDisplay(noise(template, Math.floor(now / 46)));
+        setDisplay(noise(template, Math.floor(now / 55), offset));
         raf.current = requestAnimationFrame(frame);
       };
       raf.current = requestAnimationFrame(frame);
     };
 
+    const templateFor = (trg?: string): string => {
+      if (trg?.includes("chg")) return "+0.00%";
+      if (trg?.includes("vol")) return "0.00M";
+      if (trg?.includes("quote")) return "USDT";
+      if (trg?.includes("sym")) return "BTC";
+      return "0000.00";
+    };
+
     if (triggerChanged) {
       // A new subject: if we already have its value (cache / same tick) show it
       // at once; otherwise roll — the roll runs only while we truly have nothing.
-      if (isPlaceholder(value)) startRoll("0000.00");
+      if (isPlaceholder(value)) startRoll(templateFor(trigger));
       else showNow(value);
       return;
     }
 
     // Same subject, the value moved.
     if (isPlaceholder(value)) {
-      startRoll("0000.00");
+      showNow("—");
       return;
     }
 

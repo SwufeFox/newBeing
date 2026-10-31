@@ -13,12 +13,15 @@ export function SharedSpotTicket(props: TicketProps) {
 
 function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
   const quote = symbol.split("/")[1]!;
+  const base = symbol.split("/")[0]!;
   const [account, setAccount] = useState<SpotAccount | null>(null);
   const [readState, setReadState] = useState<"loading" | "ready" | "error">("loading");
   const [quantity, setQuantity] = useState("0.001");
+  const [sizingSide, setSizingSide] = useState<"buy" | "sell">("buy");
   const [priceDraft, setPriceDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [intent, setIntent] = useState<Intent | null>(null);
   const intentRef = useRef<Intent | null>(null);
   const transportUncertain = useRef(false);
@@ -109,6 +112,10 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
         setIntent(null);
       }
       if (!response.ok || payload.error) throw new Error(payload.error ?? "Shared spot command failed.");
+      if (action === "order") {
+        setNotice(`${side?.toUpperCase() ?? "Order"} submitted to shared spot account`);
+        window.setTimeout(() => setNotice(null), 3000);
+      }
     } catch (reason) {
       if (!receivedOutcome && action === "order") transportUncertain.current = true;
       if (mounted.current && !controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Shared spot command failed.");
@@ -120,9 +127,21 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
 
   function sizeBudget(fraction: number) {
     try {
-      const balance = account?.balances[quote];
-      const budget = Math.floor(((balance?.total ?? 0) - (balance?.reserved ?? 0)) * fraction * 1e8) / 1e8;
-      setQuantity(String(spotBuyQuantity(budget, Number(maximumPrice), account?.feeRate ?? 0.001)));
+      if (sizingSide === "buy") {
+        const balance = account?.balances[quote];
+        const budget = Math.floor(((balance?.total ?? 0) - (balance?.reserved ?? 0)) * fraction * 1e8) / 1e8;
+        const priceNum = Number(maximumPrice);
+        if (!Number.isFinite(priceNum) || priceNum <= 0) {
+          setError("Set a valid maximum price before sizing budget.");
+          return;
+        }
+        setQuantity(String(spotBuyQuantity(budget, priceNum, account?.feeRate ?? 0.001)));
+      } else {
+        const balance = account?.balances[base];
+        const avail = Math.max(0, (balance?.total ?? 0) - (balance?.reserved ?? 0));
+        const qty = fraction === 1 ? avail : Math.floor(avail * fraction * 1e4) / 1e4;
+        setQuantity(qty > 0 ? String(qty) : "0");
+      }
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Cannot size this order."); }
   }
 
@@ -138,6 +157,30 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
       setPriceDraft(Number((referencePrice * multiplier).toFixed(4)).toString());
     }
   };
+
+  const commandRef = useRef(command);
+  useEffect(() => {
+    commandRef.current = command;
+  });
+
+  useEffect(() => {
+    const handleBuy = () => {
+      if (!inFlight.current && readState === "ready") {
+        void commandRef.current("order", "buy");
+      }
+    };
+    const handleSell = () => {
+      if (!inFlight.current && readState === "ready") {
+        void commandRef.current("order", "sell");
+      }
+    };
+    window.addEventListener("newbeing:hotkey-buy", handleBuy);
+    window.addEventListener("newbeing:hotkey-sell", handleSell);
+    return () => {
+      window.removeEventListener("newbeing:hotkey-buy", handleBuy);
+      window.removeEventListener("newbeing:hotkey-sell", handleSell);
+    };
+  }, [readState, quantity, maximumPrice]);
 
   const unavailable = busy || readState !== "ready";
   return (
@@ -166,16 +209,44 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-1.5 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[10px]">
-            {Object.entries(account.balances).map(([asset, balance]) => (
-              <div key={asset} className="flex flex-col">
-                <span className="text-[var(--ak-text-secondary)] font-bold">{asset}: {balance.total} · reserved {balance.reserved}</span>
-              </div>
-            ))}
+            {Object.entries(account.balances).map(([asset, balance]) => {
+              const avail = Math.max(0, balance.total - balance.reserved);
+              return (
+                <div key={asset} className="flex items-center justify-between">
+                  <span className="text-[var(--ak-text-secondary)] font-bold">{asset}: {balance.total} · reserved {balance.reserved}</span>
+                  {asset === base && avail > 0 && (
+                    <button
+                      type="button"
+                      disabled={unavailable || !!intent}
+                      onClick={() => {
+                        setSizingSide("sell");
+                        setQuantity(String(avail));
+                      }}
+                      className="ml-1 text-[8px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
+                      title="Set full base inventory quantity to sell"
+                    >
+                      Close 100%
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className="space-y-1">
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-wider">Quantity ({symbol.split("/")[0]})</span>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-wider">Quantity ({base})</span>
+                <button
+                  type="button"
+                  aria-label="Toggle sizing side"
+                  onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
+                  className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
+                  title="Click to toggle between Quote (Buy) and Inventory (Sell) sizing"
+                >
+                  {sizingSide === "buy" ? "SIZING · BUY" : "SIZING · SELL"}
+                </button>
+              </div>
               <div className="flex items-center gap-1">
                 <input
                   aria-label="Shared spot quantity"
@@ -256,7 +327,9 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
           </div>
 
           <div className="flex items-center gap-1 pt-0.5">
-            <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase tracking-wider mr-1">Size:</span>
+            <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase tracking-wider mr-1">
+              {sizingSide === "buy" ? "Quote %:" : "Inv %:"}
+            </span>
             {[0.25, 0.5, 0.75, 1].map((fraction) => (
               <Button
                 key={fraction}
@@ -275,6 +348,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
             <Button
               disabled={unavailable || (!!intent && intent.side !== "buy")}
               onClick={() => void command("order", "buy")}
+              onMouseEnter={() => setSizingSide("buy")}
               className="py-2 text-xs font-bold bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-600/30 active:scale-95 transition-transform"
             >
               {intent?.side === "buy" ? "Retry same buy" : "Buy spot"}
@@ -282,6 +356,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
             <Button
               disabled={unavailable || (!!intent && intent.side !== "sell")}
               onClick={() => void command("order", "sell")}
+              onMouseEnter={() => setSizingSide("sell")}
               className="py-2 text-xs font-bold bg-rose-600/20 text-rose-400 border border-rose-500/40 hover:bg-rose-600/30 active:scale-95 transition-transform"
             >
               {intent?.side === "sell" ? "Retry same sell" : "Sell inventory"}
@@ -306,6 +381,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
         </>
       ))}
 
+      {notice && <p role="status" className="p-1.5 bg-emerald-950/20 border border-emerald-800/40 text-[10px] text-[var(--ak-signal-success)] font-mono">{notice}</p>}
       {intent && <p role="status" className="p-1.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-action)] text-[10px] text-[var(--ak-signal-action)]">Keep this order unchanged until its outcome is confirmed. Refresh or retry the same order to check it.</p>}
       {error && <p role="alert" className="p-1.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-danger)] text-[10px] text-[var(--ak-signal-danger)]">{error}</p>}
     </div>

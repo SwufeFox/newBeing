@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, LoaderCircle, Plus, Star, Trash2, WifiOff, X } from "lucide-react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { BookmarkCheck, Check, LoaderCircle, Plus, Trash2, WifiOff, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
 import type { MarketSummary } from "@newbeing/market-data/types";
@@ -28,7 +28,7 @@ function quotePrice(value: number | null | undefined): string {
 /** USDT-quoted pairs only, matching what the rest of the app can trade. */
 const SYMBOL_PATTERN = /^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/;
 
-export function Watchlist({ disabled = false }: { disabled?: boolean }): React.JSX.Element {
+export const Watchlist = memo(function Watchlist({ disabled = false }: { disabled?: boolean }): React.JSX.Element {
   const [watchlist, selected, exchange, setSymbol, remove, add, move] = useWorkspaceStore(useShallow((state) => [
     state.watchlist, state.symbol, state.exchange, state.setSymbol,
     state.removeWatchlistSymbol, state.addWatchlistSymbol, state.moveWatchlistSymbol,
@@ -123,7 +123,7 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
   useEffect(() => {
     if (disabled || watchlist.length === 0) return;
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 12_000);
+    const timer = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, 12_000);
     return () => window.clearInterval(timer);
   }, [refresh, disabled, watchlist.length]);
 
@@ -168,14 +168,13 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
       onDragLeave={() => setExternalDrop(false)}
       onDrop={onPanelDrop}
     >
-      <div className="panel-heading">
+      <div className="panel-heading" title="Watchlist · Use [ and ] to cycle symbols">
         <div className="flex items-center gap-1.5">
-          <Star size={13} className="text-[var(--ak-signal-action)]" />
-          <span className="font-bold tracking-wider">WATCHLIST</span>
-          <span className="text-[9px] font-mono text-[var(--c-fg-4)] ml-1" title="Use [ and ] to cycle symbols">[ / ]</span>
+          <BookmarkCheck size={13} className="text-[var(--ak-signal-info)]" />
+          <span className="font-bold tracking-wider text-xs">WATCHLIST</span>
         </div>
-        <div className="watchlist-head-actions">
-          <span className="count-label">{watchlist.length}</span>
+        <div className="watchlist-head-actions flex items-center gap-1.5">
+          <span className="count-label text-[10px] font-mono px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] font-bold">{watchlist.length}</span>
           <button
             type="button"
             className="watchlist-add-toggle transition-transform active:scale-95"
@@ -234,8 +233,8 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
           const isSelected = symbol === selected;
           const dropAbove = dragOver === index && dragFrom !== null && dragFrom > index;
           const dropBelow = dragOver === index && dragFrom !== null && dragFrom < index;
-          const changeFormatted = typeof change === "number" ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "—";
-          const isPositive = typeof change === "number" && change >= 0;
+          const changeFormatted = typeof change === "number" && Number.isFinite(change) ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "—";
+          const isPositive = typeof change === "number" && Number.isFinite(change) && change >= 0;
 
           return (
             <div
@@ -275,14 +274,22 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
                 </span>
                 <span className="watch-quote">
                   <strong className="tabular-nums font-mono">
-                    <Decoded value={quotePrice(summary?.last)} trigger={`${symbol}|${summary?.last}`} />
+                    {summary ? (
+                      <Decoded value={quotePrice(summary.last)} trigger={`${symbol}|${summary.last}`} />
+                    ) : (
+                      <span className="inline-block w-14 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px] animate-pulse" />
+                    )}
                   </strong>
-                  <AkTag
-                    variant={typeof change === "number" ? (isPositive ? "default" : "danger") : "neutral"}
-                    className={`text-[10px] px-1 py-0 h-4 min-h-0 tracking-tight leading-none ${isPositive ? "text-[var(--ak-signal-success)]" : ""}`}
-                  >
-                    {changeFormatted}
-                  </AkTag>
+                  {summary ? (
+                    <AkTag
+                      variant={typeof change === "number" ? (isPositive ? "default" : "danger") : "neutral"}
+                      className={`text-[10px] px-1 py-0 h-4 min-h-0 tracking-tight leading-none ${isPositive ? "text-[var(--ak-signal-success)]" : ""}`}
+                    >
+                      {changeFormatted}
+                    </AkTag>
+                  ) : (
+                    <span className="inline-block w-10 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px] opacity-60 animate-pulse" />
+                  )}
                 </span>
               </button>
               <button
@@ -299,7 +306,7 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
 
         {watchlist.length === 0 && (
           <div className="empty-watchlist">
-            <Star size={14} className="text-[var(--ak-signal-action)]" />
+            <BookmarkCheck size={14} className="text-[var(--ak-signal-action)]" />
             <span>Empty. Add a symbol above, or drag one in from the search field.</span>
           </div>
         )}
@@ -312,10 +319,13 @@ export function Watchlist({ disabled = false }: { disabled?: boolean }): React.J
         )}
       </div>
 
-      <div className="watchlist-footnote flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] opacity-60">
-        <span>DRAG TO REORDER</span>
-        <span>{exchange.toUpperCase()} SPOT</span>
+      <div className="watchlist-footer mt-auto pt-2 px-2 pb-1 border-t border-[var(--ak-border-subtle)] flex items-center justify-between text-[9px] font-mono text-[var(--ak-text-secondary)]">
+        <span className="flex items-center gap-1.5 text-[var(--ak-signal-success)] font-bold">
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-success)] animate-pulse inline-block" />
+          FEED LIVE
+        </span>
+        <span className="opacity-60 text-[8px] uppercase tracking-wider">DRAG ⁞⁞ TO REORDER</span>
       </div>
     </section>
   );
-}
+});

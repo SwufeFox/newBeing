@@ -1,7 +1,7 @@
 "use client";
 
 import { replayReport, type ReplayExecution, type ReplayOrderInput } from "@newbeing/core";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Braces, Check, Clock3, Copy, History, Layers3, TrendingDown, TrendingUp, Wallet, ArrowDownRight, ArrowUpRight } from "lucide-react";
 import type { BacktestResult, ExchangeId, OrderPreview, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
 import type { MarketSummary, OrderBookSnapshot, RecentTrade } from "@newbeing/market-data/types";
@@ -12,7 +12,8 @@ import { PaperRecoveryPanel } from "@/components/paper-recovery";
 import { StrategyLab } from "@/components/strategy-lab";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
-import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton } from "@swufefox/ak-ui-react";
+import { floorToDecimals } from "@/lib/indicators";
+import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress, AkSpinner } from "@swufefox/ak-ui-react";
 
 function exchangeLabel(exchange: ExchangeId): string {
   return ({ binance: "Binance Spot", coinbaseexchange: "Coinbase Exchange", kraken: "Kraken Spot", okx: "OKX Spot" })[exchange];
@@ -87,14 +88,19 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
       }
     };
     void refresh();
-    const interval = window.setInterval(() => void refresh(), exchange === "binance" ? 3_000 : 15_000);
+    const interval = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, exchange === "binance" ? 3_000 : 15_000);
     return () => { disposed = true; window.clearInterval(interval); };
   }, [symbol, exchange]);
 
-  const maxSize = Math.max(0.000001, ...(book?.bids.map((level) => level.amount) ?? []), ...(book?.asks.map((level) => level.amount) ?? []));
+  const validAmounts = [...(book?.bids ?? []), ...(book?.asks ?? [])]
+    .map((level) => level.amount)
+    .filter((amount) => Number.isFinite(amount) && amount > 0);
+  const maxSize = Math.max(0.000001, ...validAmounts);
   const quote = symbol.split("/")[1] ?? "USDT";
-  const midPrice = book && book.asks[0] && book.bids[0] ? (book.asks[0].price + book.bids[0].price) / 2 : null;
-  const spread = book && book.asks[0] && book.bids[0] ? book.asks[0].price - book.bids[0].price : null;
+  const bestAsk = book?.asks.find((level) => Number.isFinite(level.price) && level.price > 0)?.price ?? null;
+  const bestBid = book?.bids.find((level) => Number.isFinite(level.price) && level.price > 0)?.price ?? null;
+  const midPrice = bestAsk !== null && bestBid !== null ? (bestAsk + bestBid) / 2 : null;
+  const spread = bestAsk !== null && bestBid !== null ? bestAsk - bestBid : null;
 
   return (
     <div className="orderbook-panel bg-[var(--ak-surface-canvas)] p-2.5 font-mono text-xs">
@@ -104,53 +110,92 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
       </div>
       {error && !book && <div className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{error}</div>}
 
-      <div className="asks-ladder py-1 space-y-0.5">
-        {book?.asks.slice(0, 7).reverse().map((level, index) => (
+      {!book && !error && (
+        <div className="book-skeleton py-1 space-y-1 opacity-40 animate-pulse">
+          {[...Array(5)].map((_, i) => (
+            <div key={`skel-ask-${i}`} className="flex justify-between py-0.5 px-1 text-[11px]">
+              <span className="w-16 h-3 bg-red-500/20 rounded-[2px]" />
+              <span className="w-10 h-3 bg-[var(--ak-surface-raised)] rounded-[2px]" />
+            </div>
+          ))}
+          <div className="my-1 py-1 px-1.5 bg-[var(--ak-surface-sunken)] border-y border-[var(--ak-border-subtle)] flex items-center justify-between">
+            <span className="w-20 h-4 bg-[var(--ak-surface-raised)] rounded-[2px]" />
+            <span className="w-14 h-3 bg-[var(--ak-surface-raised)] rounded-[2px]" />
+          </div>
+          {[...Array(5)].map((_, i) => (
+            <div key={`skel-bid-${i}`} className="flex justify-between py-0.5 px-1 text-[11px]">
+              <span className="w-16 h-3 bg-emerald-500/20 rounded-[2px]" />
+              <span className="w-10 h-3 bg-[var(--ak-surface-raised)] rounded-[2px]" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="asks-ladder py-0.5 space-y-0.5">
+        {book?.asks.slice(0, 5).reverse().map((level, index) => (
           <div
-            className="book-row ask relative flex justify-between py-0.5 px-1 hover:bg-red-950/20 cursor-pointer select-none group"
+            className="book-row ask relative flex justify-between py-[2px] px-1 hover:bg-red-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight"
             key={`ask-${index}`}
             onClick={() => onPickPrice?.(level.price)}
             title="Click to copy price to ticket"
           >
             <span
-              className="depth-bar absolute right-0 top-0 bottom-0 bg-red-500/15 pointer-events-none transition-all duration-200"
-              style={{ width: `${Math.max(2, (level.amount / maxSize) * 100)}%` }}
+              className="depth-bar absolute right-0 top-0 bottom-0 pointer-events-none transition-all duration-300"
+              style={{
+                width: `${Math.min(100, Math.max(3, ((level.amount || 0) / maxSize) * 100))}%`,
+                background: "linear-gradient(90deg, rgba(227, 59, 59, 0.04) 0%, rgba(227, 59, 59, 0.28) 100%)",
+                borderLeft: "2px solid rgba(227, 59, 59, 0.6)",
+                boxShadow: "inset 0 0 8px rgba(227, 59, 59, 0.15)",
+              }}
             />
-            <span className="text-[var(--ak-signal-danger)] font-bold group-hover:underline">{price(level.price)}</span>
-            <span className="text-[var(--ak-text-secondary)]">{level.amount.toFixed(4)}</span>
+            <span className="text-[var(--ak-signal-danger)] font-bold tabular-nums group-hover:underline z-10">{price(level.price)}</span>
+            <span className="text-[var(--ak-text-secondary)] tabular-nums z-10">{level.amount.toFixed(4)}</span>
           </div>
         ))}
       </div>
 
       {midPrice !== null && (
-        <div className="book-mid my-1 py-1 px-1.5 bg-[var(--ak-surface-sunken)] border-y border-[var(--ak-border-subtle)] flex items-center justify-between">
-          <strong className="text-sm font-bold text-[var(--ak-text-primary)]">{price(midPrice)}</strong>
+        <div className="book-mid my-1 py-0.5 px-2 bg-[var(--ak-surface-sunken-2)] border-y border-[var(--ak-signal-info)]/30 flex items-center justify-between font-mono shadow-sm">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
+            <strong className="text-xs font-bold text-[var(--ak-text-primary)] tabular-nums">{price(midPrice)}</strong>
+          </div>
           <span className="book-spread text-[10px] text-[var(--ak-text-secondary)] flex items-center gap-1">
             <em className="not-italic opacity-70">SPREAD</em>
-            <b className="text-[var(--ak-signal-action)]">{price(spread)}</b>
+            <b className="text-[var(--ak-signal-action)] tabular-nums">{price(spread)}</b>
           </span>
         </div>
       )}
 
-      <div className="bids-ladder py-1 space-y-0.5">
-        {book?.bids.slice(0, 7).map((level, index) => (
+      <div className="bids-ladder py-0.5 space-y-0.5">
+        {book?.bids.slice(0, 5).map((level, index) => (
           <div
-            className="book-row bid relative flex justify-between py-0.5 px-1 hover:bg-emerald-950/20 cursor-pointer select-none group"
+            className="book-row bid relative flex justify-between py-[2px] px-1 hover:bg-emerald-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight"
             key={`bid-${index}`}
             onClick={() => onPickPrice?.(level.price)}
             title="Click to copy price to ticket"
           >
             <span
-              className="depth-bar absolute right-0 top-0 bottom-0 bg-emerald-500/15 pointer-events-none transition-all duration-200"
-              style={{ width: `${Math.max(2, (level.amount / maxSize) * 100)}%` }}
+              className="depth-bar absolute right-0 top-0 bottom-0 pointer-events-none transition-all duration-300"
+              style={{
+                width: `${Math.min(100, Math.max(3, ((level.amount || 0) / maxSize) * 100))}%`,
+                background: "linear-gradient(90deg, rgba(70, 196, 124, 0.04) 0%, rgba(70, 196, 124, 0.28) 100%)",
+                borderLeft: "2px solid rgba(70, 196, 124, 0.6)",
+                boxShadow: "inset 0 0 8px rgba(70, 196, 124, 0.15)",
+              }}
             />
-            <span className="text-[var(--ak-signal-success)] font-bold group-hover:underline">{price(level.price)}</span>
-            <span className="text-[var(--ak-text-secondary)]">{level.amount.toFixed(4)}</span>
+            <span className="text-[var(--ak-signal-success)] font-bold tabular-nums group-hover:underline z-10">{price(level.price)}</span>
+            <span className="text-[var(--ak-text-secondary)] tabular-nums z-10">{level.amount.toFixed(4)}</span>
           </div>
         ))}
       </div>
 
-      {!book && !error && <div className="book-loading p-4 text-center text-xs text-[var(--ak-text-secondary)]">Loading public depth…</div>}
+      {!book && !error && (
+        <div className="book-loading p-4 text-center text-xs text-[var(--ak-text-secondary)] flex items-center justify-center gap-2">
+          <AkSpinner color="#18d1ff" label="Loading depth" />
+          <span>Loading public depth…</span>
+        </div>
+      )}
       <div className="data-stamp text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-2 text-right">
         {error ? `STALE · ${exchangeLabel(exchange)} public depth` : `${exchangeLabel(exchange)} depth snapshot`}
       </div>
@@ -176,7 +221,7 @@ function RecentTrades({ symbol, exchange, onPickPrice }: { symbol: string; excha
       }
     };
     void refresh();
-    const interval = window.setInterval(() => void refresh(), exchange === "binance" ? 3_000 : 15_000);
+    const interval = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, exchange === "binance" ? 3_000 : 15_000);
     return () => { disposed = true; window.clearInterval(interval); };
   }, [symbol, exchange]);
 
@@ -199,12 +244,12 @@ function RecentTrades({ symbol, exchange, onPickPrice }: { symbol: string; excha
               onClick={() => onPickPrice?.(trade.price)}
               title="Click to copy price to ticket"
             >
-              <span className={`font-bold group-hover:underline flex items-center gap-1 ${isBuy ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
+              <span className={`font-bold tabular-nums group-hover:underline flex items-center gap-1 ${isBuy ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
                 {isBuy ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
                 {price(trade.price)}
               </span>
-              <span className="text-[var(--ak-text-secondary)]">{trade.amount.toFixed(4)}</span>
-              <span className="text-[10px] text-[var(--ak-text-secondary)] opacity-70">
+              <span className="text-[var(--ak-text-secondary)] tabular-nums">{trade.amount.toFixed(4)}</span>
+              <span className="text-[10px] text-[var(--ak-text-secondary)] tabular-nums opacity-70">
                 {new Date(trade.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
             </div>
@@ -212,7 +257,12 @@ function RecentTrades({ symbol, exchange, onPickPrice }: { symbol: string; excha
         })}
       </div>
 
-      {trades.length === 0 && !error && <div className="book-loading p-4 text-center text-xs text-[var(--ak-text-secondary)]">Loading latest trades…</div>}
+      {trades.length === 0 && !error && (
+        <div className="book-loading p-4 text-center text-xs text-[var(--ak-text-secondary)] flex items-center justify-center gap-2">
+          <AkSpinner color="#18d1ff" label="Loading trades" />
+          <span>Loading latest trades…</span>
+        </div>
+      )}
       <div className="data-stamp text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-2 text-right">
         {error ? `STALE · ${exchangeLabel(exchange)} public trades` : `${exchangeLabel(exchange)} public stream`}
       </div>
@@ -354,7 +404,7 @@ function PaperTicket({
       }
     };
     void refresh();
-    const interval = window.setInterval(() => void refresh(), 8_000);
+    const interval = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, 8_000);
     return () => { disposed = true; window.clearInterval(interval); };
   }, [symbol, notice, exchange]);
 
@@ -415,16 +465,48 @@ function PaperTicket({
     }
   };
 
+  const submitRef = useRef(submit);
+  useEffect(() => {
+    submitRef.current = submit;
+  });
+
+  useEffect(() => {
+    const handleBuy = () => {
+      if (mode === "paper" && !busy && Number(quantity) > 0) {
+        void submitRef.current("buy");
+      }
+    };
+    const handleSell = () => {
+      if (mode === "paper" && !busy && portfolio && portfolio.baseBalance > 0) {
+        void submitRef.current("sell");
+      }
+    };
+    window.addEventListener("newbeing:hotkey-buy", handleBuy);
+    window.addEventListener("newbeing:hotkey-sell", handleSell);
+    return () => {
+      window.removeEventListener("newbeing:hotkey-buy", handleBuy);
+      window.removeEventListener("newbeing:hotkey-sell", handleSell);
+    };
+  }, [mode, busy, quantity, portfolio]);
+
   // Quick percentage calculators for supreme tactile feel
   const applyPercent = (pct: number, side: "buy" | "sell"): void => {
-    if (!portfolio || !referencePrice) return;
+    if (!portfolio || referencePrice === null || !Number.isFinite(referencePrice) || referencePrice <= 0) return;
     if (side === "buy") {
-      const avail = portfolio.quoteBalance * pct;
-      const computed = avail / referencePrice;
-      setQuantity(Math.max(0.0001, Number(computed.toFixed(4))).toString());
+      const feeRate = portfolio.feeRate ?? 0.001;
+      const avail = Math.max(0, portfolio.quoteBalance) * pct;
+      const budget = avail / (1 + feeRate);
+      const computed = budget / referencePrice;
+      const qty = floorToDecimals(computed, 4);
+      setQuantity(qty > 0 ? qty.toString() : "0");
     } else {
-      const computed = portfolio.baseBalance * pct;
-      setQuantity(Math.max(0.0001, Number(computed.toFixed(4))).toString());
+      if (pct === 1) {
+        setQuantity(portfolio.baseBalance > 0 ? portfolio.baseBalance.toString() : "0");
+      } else {
+        const computed = Math.max(0, portfolio.baseBalance) * pct;
+        const qty = floorToDecimals(computed, 4);
+        setQuantity(qty > 0 ? qty.toString() : "0");
+      }
     }
   };
 
@@ -443,7 +525,7 @@ function PaperTicket({
     : 0;
 
   return (
-    <div className="paper-ticket p-3 bg-[var(--ak-surface-canvas)] space-y-2.5 font-mono text-xs border-t border-[var(--ak-border-subtle)]">
+    <div className="paper-ticket p-2.5 bg-[var(--ak-surface-canvas)] space-y-2 font-mono text-xs border-t border-[var(--ak-border-subtle)]">
       <div className="ticket-heading flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
         <div className="flex items-center gap-1.5">
           <Wallet size={13} className="text-[var(--ak-signal-action)]" />
@@ -452,27 +534,65 @@ function PaperTicket({
         <AkTag variant="advanced" className="text-[10px]">SIMULATED</AkTag>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
-        <div className="flex flex-col">
-          <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{quote} AVAILABLE</span>
-          <strong className="text-xs text-[var(--ak-text-primary)] font-bold">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="telemetry-kpi-card">
+          <span className="kpi-label">{quote} AVAILABLE</span>
+          <strong className="kpi-val text-[var(--ak-text-primary)]">
             {activePortfolio ? `$${activePortfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
           </strong>
+          <small className="text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-1">COLLATERAL</small>
         </div>
-        <div className="flex flex-col">
-          <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{base} POSITION</span>
-          <strong className="text-xs text-[var(--ak-text-primary)] font-bold">
+        <div className="telemetry-kpi-card">
+          <div className="flex items-center justify-between">
+            <span className="kpi-label">{base} POSITION</span>
+            {activePortfolio && activePortfolio.baseBalance > 0 && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setQuantity(activePortfolio.baseBalance.toString());
+                  void submit("sell");
+                }}
+                className="text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
+                title="Market close full position"
+              >
+                Close 100%
+              </button>
+            )}
+          </div>
+          <strong className="kpi-val text-[var(--ak-text-primary)]">
             {activePortfolio ? `${activePortfolio.baseBalance.toFixed(5)} ${base}` : "—"}
           </strong>
-          <small className={`text-[10px] font-bold ${pnl >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
+          <small className={`text-[10px] font-bold tabular-nums mt-1 ${pnl >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
             uPnL {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} {quote}
           </small>
         </div>
       </div>
 
+      {activePortfolio && (
+        <div className="allocation-bar px-1 py-0.5">
+          {(() => {
+            const quoteBal = activePortfolio.quoteBalance;
+            const posVal = referencePrice ? activePortfolio.baseBalance * referencePrice : 0;
+            const totalEq = quoteBal + posVal;
+            const pct = totalEq > 0 ? Math.min(100, Math.max(0, Math.round((posVal / totalEq) * 100))) : 0;
+            return (
+              <AkProgress
+                value={pct}
+                max={100}
+                label="POSITION ALLOCATION"
+                valueLabel={`${pct}%`}
+                size="sm"
+                variant={pct > 80 ? "danger" : pct > 50 ? "warning" : "default"}
+              />
+            );
+          })()}
+        </div>
+      )}
+
       {prefilledPrice !== null && prefilledPrice !== undefined && (
         <div className="flex items-center justify-between px-2 py-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-info)] text-[10px] text-[var(--ak-signal-info)] font-mono">
-          <span>BOOK REF: ${price(prefilledPrice)} {quote}</span>
+          <span className="tabular-nums">BOOK REF: ${price(prefilledPrice)} {quote}</span>
           {onClearPrefilledPrice && (
             <button
               type="button"
@@ -485,41 +605,41 @@ function PaperTicket({
         </div>
       )}
 
-      <div className="ticket-field flex flex-col gap-1">
+      <div className="ticket-field flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
           <label htmlFor="paper-qty" className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">
             QUANTITY · {base}
           </label>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              aria-label="Toggle sizing side"
-              onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
-              className="text-[9px] px-1 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
-              title="Click to toggle between Quote (Buy) and Inventory (Sell) sizing"
-            >
-              {sizingSide === "buy" ? "BUY" : "SELL"}
-            </button>
-            {([0.25, 0.5, 0.75, 1] as const).map((pct) => (
-              <button
-                key={pct}
-                type="button"
-                onClick={() => applyPercent(pct, sizingSide)}
-                className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] active:scale-95 transition-all cursor-pointer"
-                title={`Set ${pct * 100}% for ${sizingSide}`}
-              >
-                {pct === 1 ? "MAX" : `${pct * 100}%`}
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            aria-label="Toggle sizing side"
+            onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
+            className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
+            title="Click to toggle between Quote (Buy) and Inventory (Sell) sizing"
+          >
+            {sizingSide === "buy" ? "SIZING · BUY" : "SIZING · SELL"}
+          </button>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="grid grid-cols-4 gap-1.5">
+          {([0.25, 0.5, 0.75, 1] as const).map((pct) => (
+            <button
+              key={pct}
+              type="button"
+              onClick={() => applyPercent(pct, sizingSide)}
+              className="tactile-chip text-[10px] py-1 text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] cursor-pointer font-mono font-bold text-center select-none"
+              title={`Set ${pct * 100}% for ${sizingSide}`}
+            >
+              {pct === 1 ? "MAX" : `${pct * 100}%`}
+            </button>
+          ))}
+        </div>
+        <div className="ticket-stepper flex items-stretch h-8 border border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken-2)] focus-within:border-[var(--ak-signal-info)] transition-colors shadow-inner">
           <button
             type="button"
             onClick={() => stepQuantity(-1)}
-            className="h-8 w-7 flex items-center justify-center bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white hover:border-[var(--ak-signal-info)] active:scale-95 transition-all text-xs font-bold cursor-pointer select-none"
-            title="Step down quantity"
-            aria-label="Step down quantity"
+            className="w-8 shrink-0 flex items-center justify-center text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-raised)] border-r border-[var(--ak-border-subtle)] active:bg-[var(--ak-signal-info)] active:text-black transition-all text-sm font-bold cursor-pointer select-none"
+            title="Decrease quantity"
+            aria-label="Decrease quantity"
           >
             −
           </button>
@@ -532,22 +652,22 @@ function PaperTicket({
             step="0.0001"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
-            className="h-8 text-xs font-mono flex-1"
+            className="h-full text-xs font-mono flex-1 min-w-0 border-0 bg-transparent shadow-none"
           />
           <button
             type="button"
             onClick={() => stepQuantity(1)}
-            className="h-8 w-7 flex items-center justify-center bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white hover:border-[var(--ak-signal-info)] active:scale-95 transition-all text-xs font-bold cursor-pointer select-none"
-            title="Step up quantity"
-            aria-label="Step up quantity"
+            className="w-8 shrink-0 flex items-center justify-center text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-raised)] border-l border-[var(--ak-border-subtle)] active:bg-[var(--ak-signal-info)] active:text-black transition-all text-sm font-bold cursor-pointer select-none"
+            title="Increase quantity"
+            aria-label="Increase quantity"
           >
             +
           </button>
         </div>
       </div>
 
-      <div className="ticket-estimate flex items-center justify-between p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">ESTIMATED NOTIONAL</span>
+      <div className="ticket-estimate flex items-center justify-between p-2 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] shadow-inner">
+        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase font-bold tracking-wider">ESTIMATED NOTIONAL</span>
         <strong className="text-xs text-[var(--ak-text-primary)] font-bold">
           {estimated === null ? "—" : `$${estimated.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${quote}`}
         </strong>
@@ -562,7 +682,11 @@ function PaperTicket({
           onClick={() => void submit("buy")}
           onMouseEnter={() => setSizingSide("buy")}
           icon={<TrendingUp size={13} />}
-          className="h-8 font-bold text-xs"
+          className={`h-8 font-bold text-xs transition-all duration-150 active:translate-y-[1px] active:scale-[0.98] ${
+            sizingSide === "buy"
+              ? "bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-500/30"
+              : "bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-400 border border-emerald-500/30"
+          } disabled:opacity-30 disabled:pointer-events-none`}
         >
           Buy
         </Button>
@@ -573,7 +697,11 @@ function PaperTicket({
           onClick={() => void submit("sell")}
           onMouseEnter={() => setSizingSide("sell")}
           icon={<TrendingDown size={13} />}
-          className="h-8 font-bold text-xs"
+          className={`h-8 font-bold text-xs transition-all duration-150 active:translate-y-[1px] active:scale-[0.98] ${
+            sizingSide === "sell"
+              ? "bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white shadow-[0_0_12px_rgba(244,63,94,0.35)] border border-rose-500/30"
+              : "bg-rose-950/20 hover:bg-rose-950/40 text-rose-400 border border-rose-500/30"
+          } disabled:opacity-30 disabled:pointer-events-none`}
         >
           Sell
         </Button>
@@ -605,8 +733,12 @@ function PaperTicket({
 
       {error && <div className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">{error}</div>}
       {notice && <div className="success-inline text-xs text-[var(--ak-signal-success)] p-1.5 bg-emerald-950/20 border border-emerald-800/40">{notice}</div>}
-      <div className="ticket-disclaimer text-[9px] text-[var(--ak-text-secondary)] opacity-60 leading-tight">
-        Simulated execution only · price references real public bid/ask quotes; no live capital is at risk.
+      <div className="ticket-disclaimer flex items-center justify-between text-[8px] text-[var(--ak-text-secondary)] opacity-60 font-mono tracking-wider pt-0.5">
+        <div className="flex items-center gap-1">
+          <span className="w-1 h-1 rounded-full bg-[var(--ak-signal-info)]" />
+          <span>PRTS SIMULATION</span>
+        </div>
+        <span>PUBLIC QUOTES</span>
       </div>
     </div>
   );
@@ -632,21 +764,61 @@ function ReplayTicket({
   onOrder: (side: "buy" | "sell", quantity: number, options?: Partial<ReplayOrderInput>) => Promise<void>;
 }): React.JSX.Element {
   const [quantity, setQuantity] = useState("0.001");
+  const [sizingSide, setSizingSide] = useState<"buy" | "sell">("buy");
   const [orderType, setOrderType] = useState<ReplayOrderInput["type"]>("market");
   const [trigger, setTrigger] = useState("");
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
   const [notes, setNotes] = useState(execution?.notes ?? "");
   const [tags, setTags] = useState(execution?.tags.join(", ") ?? "");
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [ticketNotice, setTicketNotice] = useState<string | null>(null);
 
   const submit = (side: "buy" | "sell"): void => {
+    setTicketError(null);
+    setTicketNotice(null);
+    const triggerNum = Number(trigger);
+    if (orderType !== "market" && (!Number.isFinite(triggerNum) || triggerNum <= 0)) {
+      setTicketError("Limit/stop price is required and must be positive.");
+      return;
+    }
     void onOrder(side, Number(quantity), {
       type: orderType,
-      ...(orderType !== "market" ? { price: Number(trigger) } : {}),
+      ...(orderType !== "market" ? { price: triggerNum } : {}),
       ...(side === "buy" && stopLoss ? { stopLoss: Number(stopLoss) } : {}),
       ...(side === "buy" && takeProfit ? { takeProfit: Number(takeProfit) } : {}),
-    }).catch(() => undefined);
+    }).then(() => {
+      setTicketNotice(`${side.toUpperCase()} queued for next bar`);
+      window.setTimeout(() => setTicketNotice(null), 3000);
+    }).catch((reason) => {
+      setTicketError(reason instanceof Error ? reason.message : "Replay order failed.");
+      window.setTimeout(() => setTicketError(null), 4000);
+    });
   };
+
+  const submitRef = useRef(submit);
+  useEffect(() => {
+    submitRef.current = submit;
+  });
+
+  useEffect(() => {
+    const handleBuy = () => {
+      if (session?.status === "active" && !busy && Number(quantity) > 0) {
+        submitRef.current("buy");
+      }
+    };
+    const handleSell = () => {
+      if (session?.status === "active" && !busy && portfolio && portfolio.baseBalance > 0) {
+        submitRef.current("sell");
+      }
+    };
+    window.addEventListener("newbeing:hotkey-buy", handleBuy);
+    window.addEventListener("newbeing:hotkey-sell", handleSell);
+    return () => {
+      window.removeEventListener("newbeing:hotkey-buy", handleBuy);
+      window.removeEventListener("newbeing:hotkey-sell", handleSell);
+    };
+  }, [session, busy, quantity, portfolio, orderType, trigger, stopLoss, takeProfit]);
 
   const size = Number(quantity);
   const current = session?.bars.at(-1);
@@ -656,9 +828,36 @@ function ReplayTicket({
   const quote = symbol.split("/")[1] ?? "USDT";
   const base = symbol.split("/")[0] ?? "BTC";
 
+  const applyPercent = (pct: number, side: "buy" | "sell"): void => {
+    if (!portfolio || !current || !Number.isFinite(current.close) || current.close <= 0) return;
+    if (side === "buy") {
+      const feeRate = portfolio.feeRate ?? 0.001;
+      const avail = Math.max(0, portfolio.quoteBalance) * pct;
+      const budget = avail / (1 + feeRate);
+      const computed = budget / current.close;
+      const qty = floorToDecimals(computed, 4);
+      setQuantity(qty > 0 ? qty.toString() : "0");
+    } else {
+      if (pct === 1) {
+        setQuantity(portfolio.baseBalance > 0 ? portfolio.baseBalance.toString() : "0");
+      } else {
+        const computed = Math.max(0, portfolio.baseBalance) * pct;
+        const qty = floorToDecimals(computed, 4);
+        setQuantity(qty > 0 ? qty.toString() : "0");
+      }
+    }
+  };
+
+  const stepQuantity = (direction: -1 | 1): void => {
+    const currentQty = Number(quantity) || 0;
+    const step = currentQty >= 1 ? 0.1 : currentQty >= 0.1 ? 0.01 : 0.001;
+    const next = Math.max(0.0001, Number((currentQty + direction * step).toFixed(4)));
+    setQuantity(String(next));
+  };
+
   if (!session || !portfolio || !current) {
     return (
-      <div className="paper-ticket replay-ticket p-4 bg-[var(--ak-surface-canvas)] font-mono text-xs space-y-2">
+      <div className="paper-ticket replay-ticket p-3 bg-[var(--ak-surface-canvas)] font-mono text-xs space-y-3">
         <div className="ticket-heading flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
           <div className="flex items-center gap-1.5">
             <Clock3 size={13} className="text-[var(--ak-signal-info)]" />
@@ -666,9 +865,18 @@ function ReplayTicket({
           </div>
           <AkTag variant="advanced" className="text-[10px]">ISOLATED</AkTag>
         </div>
-        <span className="ticket-disclaimer text-[11px] text-[var(--ak-text-secondary)] opacity-80 block">
-          Start a historical session to create its isolated Paper wallet. No live market quotes are used.
-        </span>
+        <div className="p-3 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-2">
+          <div className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase flex items-center justify-between">
+            <span>REPLAY PROTOCOL</span>
+            <span className="text-[var(--ak-signal-action)] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-action)] animate-pulse inline-block" />
+              AWAITING SEED
+            </span>
+          </div>
+          <span className="ticket-disclaimer text-[10px] text-[var(--ak-text-secondary)] opacity-80 block leading-relaxed">
+            Time-travel simulation strictly isolates lookahead history. Seed the window on the chart bar to initialize local ledger state and execute paper fills.
+          </span>
+        </div>
       </div>
     );
   }
@@ -699,24 +907,52 @@ function ReplayTicket({
       <div className="grid grid-cols-2 gap-2 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
         <div className="flex flex-col">
           <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{quote} AVAILABLE</span>
-          <strong className="text-xs text-[var(--ak-text-primary)] font-bold">
+          <strong className="text-xs text-[var(--ak-text-primary)] font-bold tabular-nums">
             ${portfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </strong>
         </div>
         <div className="flex flex-col">
-          <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{base} POSITION</span>
-          <strong className="text-xs text-[var(--ak-text-primary)] font-bold">
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{base} POSITION</span>
+            {portfolio.baseBalance > 0 && (
+              <button
+                type="button"
+                disabled={busy || session.status !== "active"}
+                onClick={() => {
+                  void onOrder("sell", portfolio.baseBalance, { type: "market" }).then(() => {
+                    setTicketNotice("Market close queued for next bar");
+                    window.setTimeout(() => setTicketNotice(null), 3000);
+                  });
+                }}
+                className="text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
+                title="Queue market sell of entire position on next bar"
+              >
+                Close 100%
+              </button>
+            )}
+          </div>
+          <strong className="text-xs text-[var(--ak-text-primary)] font-bold tabular-nums">
             {portfolio.baseBalance.toFixed(6)} {base}
           </strong>
-          <small className={`text-[10px] font-bold ${unrealized >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
+          <small className={`text-[10px] font-bold tabular-nums ${unrealized >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
             uPnL {unrealized >= 0 ? "+" : ""}{unrealized.toFixed(2)} {quote}
           </small>
         </div>
       </div>
 
-      <div className="ticket-estimate flex items-center justify-between p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+      <div
+        className="ticket-estimate flex items-center justify-between p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] hover:border-[var(--ak-signal-info)] cursor-pointer transition-colors"
+        onClick={() => {
+          if (current) {
+            setTrigger(current.close.toString());
+            setTicketNotice(`Price $${price(current.close)} applied to limit/stop`);
+            window.setTimeout(() => setTicketNotice(null), 2500);
+          }
+        }}
+        title="Click to copy cursor close to limit/stop price input"
+      >
         <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">CURSOR CLOSE PRICE</span>
-        <strong className="text-xs text-[var(--ak-text-primary)] font-bold">{price(current.close)} {quote}</strong>
+        <strong className="text-xs text-[var(--ak-text-primary)] font-bold tabular-nums hover:underline">{price(current.close)} {quote}</strong>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -725,7 +961,13 @@ function ReplayTicket({
           <AkSelect
             aria-label="Replay order type"
             value={orderType}
-            onChange={(event) => setOrderType(event.target.value as ReplayOrderInput["type"])}
+            onChange={(event) => {
+              const nextType = event.target.value as ReplayOrderInput["type"];
+              setOrderType(nextType);
+              if (nextType !== "market" && !trigger && current) {
+                setTrigger(current.close.toString());
+              }
+            }}
             className="h-7 text-xs font-bold"
           >
             <option value="market">Market</option>
@@ -733,18 +975,69 @@ function ReplayTicket({
             <option value="stop">Stop</option>
           </AkSelect>
         </label>
-        <label className="ticket-field flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">QUANTITY · {base}</span>
-          <AkInput
-            type="number"
-            aria-label={`QUANTITY · ${base}`}
-            min="0"
-            step="0.0001"
-            value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
-            className="h-7 text-xs font-mono"
-          />
-        </label>
+        <div className="ticket-field flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">QUANTITY · {base}</span>
+            <button
+              type="button"
+              aria-label="Toggle replay sizing side"
+              onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
+              className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
+              title="Click to toggle between Quote (Buy) and Inventory (Sell) sizing"
+            >
+              {sizingSide === "buy" ? "SIZING · BUY" : "SIZING · SELL"}
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {([0.25, 0.5, 0.75, 1] as const).map((pct) => (
+              <button
+                key={pct}
+                type="button"
+                onClick={() => applyPercent(pct, sizingSide)}
+                className="text-[10px] py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] active:scale-95 transition-all cursor-pointer font-mono font-bold text-center"
+                title={`Set ${pct * 100}% for ${sizingSide}`}
+              >
+                {pct === 1 ? "MAX" : `${pct * 100}%`}
+              </button>
+            ))}
+          </div>
+          <div className="ticket-stepper flex items-stretch h-8 border border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken-2)] focus-within:border-[var(--ak-signal-info)] transition-colors">
+            <button
+              type="button"
+              onClick={() => stepQuantity(-1)}
+              className="w-8 shrink-0 flex items-center justify-center text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-raised)] border-r border-[var(--ak-border-subtle)] active:bg-[var(--ak-signal-info)] active:text-black transition-all text-sm font-bold cursor-pointer select-none"
+              title="Decrease quantity"
+              aria-label="Decrease quantity"
+            >
+              −
+            </button>
+            <AkInput
+              type="number"
+              aria-label={`QUANTITY · ${base}`}
+              min="0"
+              step="0.0001"
+              value={quantity}
+              onChange={(event) => setQuantity(event.target.value)}
+              className="h-full text-xs font-mono flex-1 min-w-0 border-0 bg-transparent shadow-none"
+            />
+            <button
+              type="button"
+              onClick={() => stepQuantity(1)}
+              className="w-8 shrink-0 flex items-center justify-center text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-raised)] border-l border-[var(--ak-border-subtle)] active:bg-[var(--ak-signal-info)] active:text-black transition-all text-sm font-bold cursor-pointer select-none"
+              title="Increase quantity"
+              aria-label="Increase quantity"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="ticket-estimate flex items-center justify-between p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">ESTIMATED NOTIONAL</span>
+        <strong className="text-xs text-[var(--ak-text-primary)] font-bold tabular-nums">
+          {Number.isFinite(size) && size > 0 ? `$${(size * current.close).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${quote}` : "—"}
+        </strong>
       </div>
 
       {orderType !== "market" && (
@@ -790,33 +1083,51 @@ function ReplayTicket({
         <Button
           variant="primary"
           size="sm"
-          disabled={busy || session.status !== "active" || !Number.isFinite(size) || size <= 0}
+          disabled={
+            busy ||
+            session.status !== "active" ||
+            !Number.isFinite(size) ||
+            size <= 0 ||
+            (orderType !== "market" && (!Number.isFinite(Number(trigger)) || Number(trigger) <= 0))
+          }
           onClick={() => submit("buy")}
+          onMouseEnter={() => setSizingSide("buy")}
           icon={<TrendingUp size={13} />}
-          className="h-8 font-bold text-xs"
+          className="h-8 font-bold text-xs bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-[0_0_12px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)] border-0"
         >
           Queue buy
         </Button>
         <Button
           variant="danger"
           size="sm"
-          disabled={busy || session.status !== "active" || !Number.isFinite(size) || size <= 0 || size > portfolio.baseBalance}
+          disabled={
+            busy ||
+            session.status !== "active" ||
+            !Number.isFinite(size) ||
+            size <= 0 ||
+            size > portfolio.baseBalance ||
+            (orderType !== "market" && (!Number.isFinite(Number(trigger)) || Number(trigger) <= 0))
+          }
           onClick={() => submit("sell")}
+          onMouseEnter={() => setSizingSide("sell")}
           icon={<TrendingDown size={13} />}
-          className="h-8 font-bold text-xs"
+          className="h-8 font-bold text-xs bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white shadow-[0_0_12px_rgba(244,63,94,0.3)] hover:shadow-[0_0_20px_rgba(244,63,94,0.5)] border-0"
         >
           Queue sell
         </Button>
       </div>
 
+      {ticketError && <div className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">{ticketError}</div>}
+      {ticketNotice && <div className="success-inline text-xs text-[var(--ak-signal-success)] p-1.5 bg-emerald-950/20 border border-emerald-800/40">{ticketNotice}</div>}
+
       {orders.length > 0 && (
         <div className="space-y-1 max-h-32 overflow-auto p-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
           {orders.slice().reverse().map((order) => (
             <div className="flex items-center justify-between p-1 text-[10px] border-b border-[var(--ak-border-subtle)]" key={order.clientOrderId}>
-              <span className={`font-bold ${order.side === "buy" ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
+              <span className={`font-bold tabular-nums ${order.side === "buy" ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
                 {order.side.toUpperCase()} {order.quantity} · {order.status}
               </span>
-              <span className="text-[var(--ak-text-secondary)]">{order.fillPrice === null ? "—" : price(order.fillPrice)}</span>
+              <span className="text-[var(--ak-text-secondary)] tabular-nums">{order.fillPrice === null ? "—" : price(order.fillPrice)}</span>
               {order.status === "submitted" && (
                 <Button size="sm" variant="ghost" className="h-5 text-[9px] px-1" disabled={busy} onClick={() => void onCommand({ action: "cancel", clientOrderId: order.clientOrderId }).catch(() => undefined)}>
                   Cancel
@@ -888,8 +1199,12 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
   const selectedTab: string = offered.includes(tab) ? tab : (offered[0] ?? "context");
 
   return (
-    <aside className="inspector-panel flex flex-col h-full bg-[var(--ak-surface-canvas)] border-l border-[var(--ak-border-strong)]">
-      <Tabs value={selectedTab} onValueChange={(value) => setTab(value as "book" | "trades" | "strategy" | "context")} className="inspector-tabs flex-1 flex flex-col min-h-0">
+    <aside className="inspector-panel h-full border-l border-[var(--ak-border-strong)]">
+      <Tabs
+        value={selectedTab}
+        onValueChange={(value) => setTab(value as "book" | "trades" | "strategy" | "context")}
+        className={`inspector-tabs flex flex-col min-h-0 ${selectedTab === "strategy" ? "flex-1" : "flex-initial"}`}
+      >
         <TabsList className="inspector-tab-list flex border-b border-[var(--ak-border-strong)] bg-[var(--ak-surface-sunken)]">
           {offered.includes("book") && (
             <TabsTrigger value="book" aria-label="Order book" className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
@@ -917,7 +1232,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
           )}
         </TabsList>
 
-        <div className="flex-1 overflow-auto min-h-0">
+        <div className={`overflow-auto min-h-0 ${selectedTab === "strategy" ? "flex-1" : ""}`}>
           <TabsContent value="book"><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} onPickPrice={handlePickPrice} /></TabsContent>
           <TabsContent value="trades"><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} onPickPrice={handlePickPrice} /></TabsContent>
           <TabsContent value="strategy"><StrategyLab onRun={onRun} running={running} /></TabsContent>
@@ -944,15 +1259,39 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
           onOrder={onReplayOrder}
         />
       ) : (
-        selectedTab !== "strategy" && <div className="max-h-[55vh] overflow-auto">
-          <label className="flex flex-col p-2 text-xs">Paper account mode<AkSelect aria-label="Paper account mode" value={paperMode} onChange={(event) => setPaperMode(event.target.value as "legacy" | "shared-spot")}><option value="legacy">Legacy pair wallet</option><option value="shared-spot">New shared spot wallet</option></AkSelect></label>
-          {paperMode === "shared-spot" ? (
-            <SharedSpotTicket key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} referencePrice={pickedPrice ?? summary?.ask ?? summary?.last ?? null} />
-          ) : (
-            <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} prefilledPrice={pickedPrice} onClearPrefilledPrice={() => setPickedPrice(null)} />
-          )}
-          <PaperRecoveryPanel />
-        </div>
+        selectedTab !== "strategy" && (
+          <div className="flex-1 overflow-auto min-h-0 flex flex-col justify-between">
+            <div>
+              <div className="px-3 py-1.5 bg-[var(--ak-surface-sunken-2)] border-b border-[var(--ak-border-subtle)] flex items-center justify-between shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]">
+                <label className="flex items-center justify-between gap-2 w-full text-[10px] font-mono font-bold text-[var(--ak-text-secondary)] uppercase">
+                  <span className="flex items-center gap-1.5 tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-action)] shadow-[0_0_6px_var(--ak-signal-action)]" />
+                    Paper account mode
+                  </span>
+                  <AkSelect
+                    aria-label="Paper account mode"
+                    value={paperMode}
+                    onChange={(event) => setPaperMode(event.target.value as "legacy" | "shared-spot")}
+                    className="h-6 text-xs font-mono min-w-[155px] bg-[var(--c-surface)] border-[var(--ak-border)] text-[var(--ak-text-primary)]"
+                  >
+                    <option value="legacy">Legacy pair wallet</option>
+                    <option value="shared-spot">New shared spot wallet</option>
+                  </AkSelect>
+                </label>
+              </div>
+
+              {paperMode === "shared-spot" ? (
+                <SharedSpotTicket key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} referencePrice={pickedPrice ?? summary?.ask ?? summary?.last ?? null} />
+              ) : (
+                <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} prefilledPrice={pickedPrice} onClearPrefilledPrice={() => setPickedPrice(null)} />
+              )}
+            </div>
+
+            <div className="border-t border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken)]">
+              <PaperRecoveryPanel />
+            </div>
+          </div>
+        )
       )}
     </aside>
   );

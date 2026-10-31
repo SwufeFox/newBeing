@@ -63,15 +63,27 @@ export function PaperRecoveryPanel(): React.JSX.Element {
       }
     };
     void refresh();
-    const interval = window.setInterval(() => void refresh(), 8000);
+    const interval = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, 8000);
     return () => { disposed = true; window.clearInterval(interval); };
   }, [revision]);
   return <div data-testid="paper-recovery" data-loaded={loaded ? "true" : "false"}>
-    <div className="ticket-disclaimer">
-      {loaded
-        ? `Pending Paper · all accounts · ${pending.length}. Cancellation preserves wallets and prevents delayed quotes from filling. To trade again, create a new order.`
-        : "Pending Paper · reading local accounts…"}
-    </div>
+    {pending.length === 0 && recoveries.length === 0 ? (
+      <div className="ticket-disclaimer flex items-center justify-between text-[9px] font-mono text-[var(--ak-text-secondary)] opacity-60 px-2.5 py-1.5 border-t border-[var(--ak-border-subtle)]">
+        <div className="flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${loaded ? "bg-emerald-500/80" : "bg-amber-500/80 animate-pulse"}`} />
+          <span>{loaded ? "RECOVERY AUDIT ACTIVE" : "READING ACCOUNTS…"}</span>
+        </div>
+        <span className="tabular-nums font-bold text-[8px] uppercase tracking-wider">{loaded ? "0 PENDING" : "SYNCING"}</span>
+      </div>
+    ) : (
+      <div className="ticket-disclaimer flex items-center justify-between text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2.5 py-1.5 border-t border-amber-500/30">
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <span>PENDING AUDIT ({pending.length})</span>
+        </div>
+        <span className="text-[9px] uppercase tracking-wider font-bold">INTERRUPTED INTENTS</span>
+      </div>
+    )}
     {pending.map((order) => (
       <PendingIntent
         key={order.clientOrderId}

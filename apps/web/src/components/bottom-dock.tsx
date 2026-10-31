@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { AreaSeries, ColorType, createChart, type UTCTimestamp } from "lightweight-charts";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileText, FlaskConical, ListChecks, RotateCcw, ScanSearch, Wallet, Filter } from "lucide-react";
 import { STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplaySession } from "@newbeing/core";
@@ -12,14 +12,16 @@ import { captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
-import { AkTag, AkNotice, AkNum, AkButton } from "@swufefox/ak-ui-react";
+import { AkTag, AkNotice, AkNum, AkButton, AkGauge, AkProgress, AkSpinner, AkCountUp } from "@swufefox/ak-ui-react";
 
 /** Format an amount in the symbol's own quote currency */
 function money(value: number, currency = "USDT"): string {
+  if (!Number.isFinite(value)) return `— ${currency}`;
   return `${value < 0 ? "−" : ""}${Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
 function percentage(value: number): string {
+  if (!Number.isFinite(value)) return "—";
   return `${value >= 0 ? "+" : "−"}${(Math.abs(value) * 100).toFixed(2)}%`;
 }
 
@@ -75,6 +77,7 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
   const [payload, setPayload] = useState<PaperPayload | null>(null);
   const [price, setPrice] = useState<number | null>(null);
   const [stale, setStale] = useState(false);
+  const [closing, setClosing] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -97,28 +100,83 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 8_000);
+    const timer = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, 8_000);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [symbol, exchange]);
 
-  if (!payload) return <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><Wallet size={18} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>Paper account unavailable</strong><span>Waiting for local account state.</span></div>;
+  if (!payload) {
+    return (
+      <div className="position-table-wrap p-2 font-mono text-xs">
+        <div className="overflow-auto border border-[var(--ak-border-subtle)] opacity-50 animate-pulse">
+          <table className="data-table w-full text-left">
+            <thead>
+              <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] uppercase">
+                <th className="p-2">ASSET</th>
+                <th className="p-2">SIZE</th>
+                <th className="p-2">AVG ENTRY</th>
+                <th className="p-2">MARK PRICE</th>
+                <th className="p-2">UNREALIZED PNL</th>
+                <th className="p-2">REALIZED PNL</th>
+                <th className="p-2">AVAILABLE</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-[var(--ak-border-subtle)]">
+                <td className="p-2"><span className="inline-block w-16 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px]" /></td>
+                <td className="p-2"><span className="inline-block w-12 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px]" /></td>
+                <td className="p-2"><span className="inline-block w-14 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px]" /></td>
+                <td className="p-2"><span className="inline-block w-14 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px]" /></td>
+                <td className="p-2"><span className="inline-block w-16 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px]" /></td>
+                <td className="p-2"><span className="inline-block w-16 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px]" /></td>
+                <td className="p-2"><span className="inline-block w-20 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px]" /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+  const closePosition = async (): Promise<void> => {
+    if (!payload || payload.portfolio.baseBalance <= 0) return;
+    setClosing(true);
+    try {
+      const clientOrderId = `close-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const res = await fetch("/api/paper", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientOrderId,
+          symbol,
+          side: "sell",
+          quantity: payload.portfolio.baseBalance,
+          mode: "paper",
+          exchange,
+        }),
+      });
+      if (res.ok) {
+        const refreshResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
+        const account: unknown = await refreshResponse.json();
+        if (refreshResponse.ok && typeof account === "object" && account !== null && "portfolio" in account) {
+          setPayload(account as PaperPayload);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setClosing(false);
+    }
+  };
+
   const { portfolio } = payload;
-  const unrealized = portfolio.averageEntryPrice !== null && price !== null
+  const unrealized = portfolio.averageEntryPrice !== null && price !== null && Number.isFinite(price) && Number.isFinite(portfolio.averageEntryPrice)
     ? (price - portfolio.averageEntryPrice) * portfolio.baseBalance
     : 0;
   const quoteCurrency = symbol.split("/")[1] ?? "USDT";
 
   return (
-    <div className="position-table-wrap p-2.5 font-mono text-xs">
-      <div className="paper-isolation-note flex items-center justify-between pb-2 mb-2 border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)]">
-        <div className="flex items-center gap-1.5">
-          <AkTag variant="advanced" className="text-[9px]">PAPER ONLY</AkTag>
-          <span>Isolated simulated wallet · zero live capital risk</span>
-        </div>
-        <span>VENUE: {EXCHANGE_LABELS[exchange].toUpperCase()}</span>
-      </div>
+    <div className="position-table-wrap p-2 font-mono text-xs">
       {stale && <div className="table-footnote text-xs text-[var(--ak-signal-action)] mb-2">STALE · Showing last account snapshot; mark price may be delayed.</div>}
-      <div className="overflow-auto border border-[var(--ak-border-subtle)]">
+      <div className="overflow-auto border border-[var(--ak-border-subtle)] shadow-sm">
         <table className="data-table w-full text-left">
           <thead>
             <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] uppercase">
@@ -129,24 +187,48 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
               <th className="p-2">UNREALIZED PNL</th>
               <th className="p-2">REALIZED PNL</th>
               <th className="p-2">AVAILABLE</th>
+              <th className="p-2 text-right">ACTION</th>
             </tr>
           </thead>
           <tbody>
             <tr className="border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors">
               <td className="p-2 font-bold flex items-center gap-1">
-                <span className="text-[var(--ak-text-primary)]">{symbol.split("/")[0]}</span>
-                <span className="text-[10px] text-[var(--ak-text-secondary)]">/{symbol.split("/")[1]}</span>
+                <button
+                  type="button"
+                  onClick={() => useWorkspaceStore.getState().setSymbol(symbol)}
+                  className="hover:text-[var(--ak-signal-info)] hover:underline inline-flex items-center gap-1 cursor-pointer transition-colors text-left"
+                  title={`Select ${symbol}`}
+                >
+                  <span className="text-[var(--ak-text-primary)]">{symbol.split("/")[0]}</span>
+                  <span className="text-[10px] text-[var(--ak-text-secondary)]">/{symbol.split("/")[1]}</span>
+                </button>
               </td>
-              <td className="p-2 font-mono">{portfolio.baseBalance.toFixed(5)}</td>
-              <td className="p-2 font-mono">{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
-              <td className="p-2 font-mono">{price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
-              <td className={`p-2 font-mono font-bold ${unrealized >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
+              <td className="p-2 font-mono tabular-nums">{portfolio.baseBalance.toFixed(5)}</td>
+              <td className="p-2 font-mono tabular-nums">{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+              <td className="p-2 font-mono tabular-nums">{price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+              <td className={`p-2 font-mono tabular-nums font-bold ${unrealized >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                 {money(unrealized, quoteCurrency)}
               </td>
-              <td className={`p-2 font-mono font-bold ${portfolio.realizedPnl >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
+              <td className={`p-2 font-mono tabular-nums font-bold ${portfolio.realizedPnl >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                 {money(portfolio.realizedPnl, quoteCurrency)}
               </td>
-              <td className="p-2 font-mono">{money(portfolio.quoteBalance, quoteCurrency)}</td>
+              <td className="p-2 font-mono tabular-nums">{money(portfolio.quoteBalance, quoteCurrency)}</td>
+              <td className="p-2 text-right">
+                {portfolio.baseBalance > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={closing}
+                    onClick={() => void closePosition()}
+                    className="h-6 text-[10px] px-2 font-bold transition-transform active:scale-95"
+                    title="Liquidate/close position at market"
+                  >
+                    {closing ? "Closing…" : "Close"}
+                  </Button>
+                ) : (
+                  <span className="text-[10px] text-[var(--ak-text-secondary)] opacity-40">—</span>
+                )}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -159,21 +241,14 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
 function ReplayPositions({ session, portfolio }: { session: ReplaySession | null; portfolio: PaperPortfolio | null }): React.JSX.Element {
   if (!session || !portfolio) return <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><Wallet size={18} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>No replay account loaded</strong><span>Start a historical replay to create its isolated account.</span></div>;
   const current = session.bars.at(-1);
-  const unrealized = current && portfolio.averageEntryPrice !== null
+  const unrealized = current && portfolio.averageEntryPrice !== null && Number.isFinite(current.close) && Number.isFinite(portfolio.averageEntryPrice)
     ? (current.close - portfolio.averageEntryPrice) * portfolio.baseBalance
     : 0;
   const quoteCurrency = session.symbol.split("/")[1] ?? "USDT";
 
   return (
-    <div className="position-table-wrap p-2.5 font-mono text-xs">
-      <div className="paper-isolation-note flex items-center justify-between pb-2 mb-2 border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)]">
-        <div className="flex items-center gap-1.5">
-          <AkTag variant="default" className="text-[9px]">REPLAY WALLET</AkTag>
-          <span>Marked strictly to the current revealed bar close</span>
-        </div>
-        <span>SESSION: {session.id.slice(0, 10)}…</span>
-      </div>
-      <div className="overflow-auto border border-[var(--ak-border-subtle)]">
+    <div className="position-table-wrap p-2 font-mono text-xs">
+      <div className="overflow-auto border border-[var(--ak-border-subtle)] shadow-sm">
         <table className="data-table w-full text-left">
           <thead>
             <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] uppercase">
@@ -192,16 +267,16 @@ function ReplayPositions({ session, portfolio }: { session: ReplaySession | null
                 <span className="text-[var(--ak-text-primary)]">{session.symbol.split("/")[0]}</span>
                 <span className="text-[10px] text-[var(--ak-text-secondary)]">/{session.symbol.split("/")[1]} · {session.timeframe}</span>
               </td>
-              <td className="p-2 font-mono">{portfolio.baseBalance.toFixed(5)}</td>
-              <td className="p-2 font-mono">{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
-              <td className="p-2 font-mono">{current?.close.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
-              <td className={`p-2 font-mono font-bold ${unrealized >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
+              <td className="p-2 font-mono tabular-nums">{portfolio.baseBalance.toFixed(5)}</td>
+              <td className="p-2 font-mono tabular-nums">{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+              <td className="p-2 font-mono tabular-nums">{current?.close.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+              <td className={`p-2 font-mono tabular-nums font-bold ${unrealized >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                 {money(unrealized, quoteCurrency)}
               </td>
-              <td className={`p-2 font-mono font-bold ${portfolio.realizedPnl >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
+              <td className={`p-2 font-mono tabular-nums font-bold ${portfolio.realizedPnl >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                 {money(portfolio.realizedPnl, quoteCurrency)}
               </td>
-              <td className="p-2 font-mono">{money(portfolio.quoteBalance, quoteCurrency)}</td>
+              <td className="p-2 font-mono tabular-nums">{money(portfolio.quoteBalance, quoteCurrency)}</td>
             </tr>
           </tbody>
         </table>
@@ -211,11 +286,19 @@ function ReplayPositions({ session, portfolio }: { session: ReplaySession | null
 }
 
 function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyId = (id: string): void => {
+    void navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    window.setTimeout(() => setCopiedId(null), 1500);
+  };
+
   if (orders.length === 0) return <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><ListChecks size={18} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>No simulated orders yet</strong><span>Paper orders will appear here with their client IDs and state.</span></div>;
 
   return (
     <div className="table-scroll overflow-auto max-h-72 p-2 font-mono text-xs">
-      <table className="data-table w-full text-left">
+      <div className="overflow-auto border border-[var(--ak-border-subtle)] shadow-sm">
+        <table className="data-table w-full text-left">
         <thead>
           <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] uppercase">
             <th className="p-2">TIME</th>
@@ -234,7 +317,16 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
             return (
               <tr key={order.clientOrderId} className="border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors">
                 <td className="p-2 text-[10px] text-[var(--ak-text-secondary)]">{new Date(order.createdAt).toLocaleTimeString()}</td>
-                <td className="p-2 font-bold">{order.symbol}</td>
+                <td className="p-2 font-bold">
+                  <button
+                    type="button"
+                    onClick={() => useWorkspaceStore.getState().setSymbol(order.symbol)}
+                    className="hover:text-[var(--ak-signal-info)] hover:underline cursor-pointer transition-colors text-left"
+                    title={`Select ${order.symbol}`}
+                  >
+                    {order.symbol}
+                  </button>
+                </td>
                 <td className="p-2">
                   <AkTag variant={isBuy ? "default" : "danger"} className="text-[10px] px-1.5 py-0">
                     {order.side.toUpperCase()}
@@ -245,12 +337,25 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
                   <span className={`status-pill status-${order.status} uppercase font-bold text-[10px]`}>{order.status}</span>
                 </td>
                 <td className="p-2 font-mono tabular-nums">{order.fillPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
-                <td className="p-2 mono text-[10px] text-[var(--ak-text-secondary)]">{order.clientOrderId}</td>
+                <td className="p-2 mono text-[10px] text-[var(--ak-text-secondary)]">
+                  <button
+                    type="button"
+                    onClick={() => copyId(order.clientOrderId)}
+                    className="hover:text-[var(--ak-text-primary)] hover:underline inline-flex items-center gap-1 cursor-pointer font-mono text-left"
+                    title="Click to copy order ID"
+                  >
+                    <span>{order.clientOrderId}</span>
+                    {copiedId === order.clientOrderId && (
+                      <span className="text-[9px] text-[var(--ak-signal-success)] font-bold">COPIED</span>
+                    )}
+                  </button>
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -303,16 +408,35 @@ function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, repla
 
   return (
     <div className="backtest-view p-3 bg-[var(--ak-surface-canvas)] font-mono text-xs space-y-3">
-      <div className="backtest-summary-row grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="metric-strip grid grid-cols-2 md:grid-cols-3 gap-2 bg-[var(--ak-surface-sunken)] p-2.5 border border-[var(--ak-border-subtle)]">
+      <div className="backtest-summary-row grid grid-cols-1 lg:grid-cols-4 gap-3">
+        <div className="metric-strip lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2 bg-[var(--ak-surface-sunken)] p-2.5 border border-[var(--ak-border-subtle)]">
           <Metric label="TOTAL RETURN" value={percentage(metric.totalReturn)} tone={metric.totalReturn >= 0 ? "positive" : "negative"} />
           <Metric label="MAX DRAWDOWN" value={percentage(-metric.maxDrawdown)} tone="negative" />
-          <Metric label="SHARPE RATIO" value={metric.sharpeRatio?.toFixed(2) ?? "—"} title={result.execution?.sharpeMethod} />
-          <Metric label="WIN RATE" value={percentage(metric.winRate)} />
-          <Metric label="PROFIT FACTOR" value={metric.profitFactor?.toFixed(2) ?? "—"} />
+          <Metric
+            label="SHARPE RATIO"
+            value={metric.sharpeRatio?.toFixed(2) ?? "—"}
+            tone={metric.sharpeRatio != null ? (metric.sharpeRatio >= 1 ? "positive" : metric.sharpeRatio < 0 ? "negative" : undefined) : undefined}
+            title={result.execution?.sharpeMethod}
+          />
+          <Metric label="WIN RATE" value={percentage(metric.winRate)} tone={metric.winRate >= 0.5 ? "positive" : "negative"} />
+          <Metric
+            label="PROFIT FACTOR"
+            value={metric.profitFactor?.toFixed(2) ?? "—"}
+            tone={metric.profitFactor != null ? (metric.profitFactor >= 1.5 ? "positive" : metric.profitFactor < 1 ? "negative" : undefined) : undefined}
+          />
           <Metric label="TOTAL TRADES" value={String(metric.tradeCount)} />
         </div>
-        <div className="equity-chart-wrap lg:col-span-2 bg-[var(--ak-surface-sunken-2)] p-2 border border-[var(--ak-border-subtle)] flex flex-col h-40">
+        <div className="gauge-card hidden sm:flex flex-col items-center justify-center p-2 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+          <AkGauge
+            value={Math.round(metric.winRate * 100)}
+            max={100}
+            label="WIN RATE"
+            unit="%"
+            size="sm"
+            variant={metric.winRate >= 0.5 ? "default" : "warning"}
+          />
+        </div>
+        <div className="equity-chart-wrap bg-[var(--ak-surface-sunken-2)] p-2 border border-[var(--ak-border-subtle)] flex flex-col h-40">
           <div className="equity-chart-label text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-wider mb-1 font-bold">
             EQUITY CURVE · {result.symbol.split("/")[1]}
           </div>
@@ -350,8 +474,9 @@ function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, repla
             disabled={replayBusy || result.equityCurve.length === 0}
             onClick={() => onStartReplay(result)}
             className="text-xs h-7 font-bold"
+            title="Continue to Replay from the final equity point of this backtest."
           >
-            {replayBusy ? "Starting replay…" : "Replay from final equity point"}
+            {replayBusy ? "Starting replay…" : "Continue to Replay"}
           </Button>
           {replayError && <span role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)]">{replayError}</span>}
         </div>
@@ -407,13 +532,13 @@ function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, repla
                       </AkTag>
                     </td>
                     <td className="p-1.5 text-[10px] text-[var(--ak-text-secondary)]">{timestamp(trade.entryTime)}</td>
-                    <td className="p-1.5 font-mono">{trade.entryPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                    <td className="p-1.5 font-mono tabular-nums">{trade.entryPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
                     <td className="p-1.5 text-[10px] text-[var(--ak-text-secondary)]">{timestamp(trade.exitTime)}</td>
-                    <td className="p-1.5 font-mono">{trade.exitPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
-                    <td className={`p-1.5 font-mono font-bold ${trade.netPnl >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
+                    <td className="p-1.5 font-mono tabular-nums">{trade.exitPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                    <td className={`p-1.5 font-mono tabular-nums font-bold ${trade.netPnl >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                       {money(trade.netPnl, result.symbol.split("/")[1])}
                     </td>
-                    <td className="p-1.5 font-mono text-[var(--ak-text-secondary)]">{money(trade.fees, result.symbol.split("/")[1])}</td>
+                    <td className="p-1.5 font-mono tabular-nums text-[var(--ak-text-secondary)]">{money(trade.fees, result.symbol.split("/")[1])}</td>
                     <td className="p-1.5 text-[10px] text-[var(--ak-text-secondary)] uppercase">{trade.exitReason}</td>
                   </tr>
                 ))}
@@ -430,7 +555,7 @@ function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, repla
   );
 }
 
-function Metric({ label, value, tone, title }: { label: string; value: string; tone?: "positive" | "negative"; title?: string }): React.JSX.Element {
+function Metric({ label, value, tone, title }: { label: string; value: string; tone?: "positive" | "negative" | undefined; title?: string | undefined }): React.JSX.Element {
   const Icon = tone === "positive" ? ArrowUpRight : tone === "negative" ? ArrowDownRight : null;
   return (
     <div className="metric-cell flex flex-col p-1.5" title={title}>
@@ -450,16 +575,24 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
   const [comparisonError, setComparisonError] = useState<string | null>(null);
   const [loadingComparison, setLoadingComparison] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let disposed = false;
     void fetch("/api/backtests?limit=30", { cache: "no-store" }).then(async (response) => {
       const payload: unknown = await response.json();
       if (!response.ok) throw new Error("Experiment history is unavailable.");
-      if (typeof payload === "object" && payload !== null && "items" in payload && Array.isArray(payload.items) && !disposed) setItems(payload.items as BacktestResult[]);
-    }).catch((reason: unknown) => { if (!disposed) setError(reason instanceof Error ? reason.message : "History load failed."); });
+      if (typeof payload === "object" && payload !== null && "items" in payload && Array.isArray(payload.items) && !disposed) {
+        const nextItems = payload.items as BacktestResult[];
+        setItems(nextItems);
+        setSelectedIds((current) => current.filter((id) => nextItems.some((item) => item.resultId === id)));
+        setError(null);
+      }
+    }).catch((reason: unknown) => { if (!disposed) setError(reason instanceof Error ? reason.message : "History load failed."); })
+      .finally(() => { if (!disposed) setRefreshing(false); });
     return () => { disposed = true; };
-  }, []);
+  }, [refreshToken]);
 
   const compareSelected = async (): Promise<void> => {
     setLoadingComparison(true);
@@ -479,18 +612,52 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
     }
   };
 
-  if (error) return <div className="empty-state p-6 text-center text-xs text-[var(--ak-signal-danger)]"><AlertCircle size={18} className="mx-auto mb-2" /><strong>History unavailable</strong><span>{error}</span></div>;
-  if (items.length === 0) return <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><Clock3 size={18} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>No saved experiments</strong><span>Each completed backtest is stored in local SQLite.</span></div>;
+  if (error) {
+    return (
+      <div className="empty-state p-6 text-center text-xs text-[var(--ak-signal-danger)]">
+        <AlertCircle size={18} className="mx-auto mb-2" />
+        <strong>History unavailable</strong>
+        <span>{error}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2 text-xs"
+          disabled={refreshing}
+          onClick={() => setRefreshToken((token) => token + 1)}
+        >
+          {refreshing ? "Retrying…" : "Retry"}
+        </Button>
+      </div>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]">
+        <Clock3 size={18} className="mx-auto mb-2 text-[var(--ak-signal-info)]" />
+        <strong>No saved experiments</strong>
+        <span>Each completed backtest is stored in local SQLite.</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2 text-xs"
+          disabled={refreshing}
+          onClick={() => setRefreshToken((token) => token + 1)}
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+    );
+  }
 
   const assumptionsKey = (item: BacktestResult): string => JSON.stringify([
-    item.assumptions.accountMode,
-    item.assumptions.initialCapital,
-    item.assumptions.positionFraction,
-    item.assumptions.feeRate,
-    item.assumptions.slippageRate,
-    item.assumptions.allowShorts,
-    item.assumptions.stopLossPct,
-    item.assumptions.takeProfitPct,
+    item.assumptions?.accountMode,
+    item.assumptions?.initialCapital,
+    item.assumptions?.positionFraction,
+    item.assumptions?.feeRate,
+    item.assumptions?.slippageRate,
+    item.assumptions?.allowShorts,
+    item.assumptions?.stopLossPct,
+    item.assumptions?.takeProfitPct,
   ]);
   const groupKey = (item: BacktestResult): string => JSON.stringify([item.datasetId, item.exchange, item.symbol, item.timeframe, item.engineVersion, assumptionsKey(item)]);
   const comparable = comparison ?? [];
@@ -498,6 +665,24 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
 
   return (
     <div className="p-3 font-mono text-xs space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] text-[var(--ak-text-secondary)]">{items.length} saved run{items.length === 1 ? "" : "s"} · newest first</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 text-[10px] px-2"
+          disabled={refreshing || loadingComparison}
+          onClick={() => {
+            setRefreshToken((token) => {
+              setRefreshing(true);
+              return token + 1;
+            });
+          }}
+          icon={<RotateCcw size={11} className={refreshing ? "spin" : undefined} />}
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
       <div className="table-scroll overflow-auto max-h-56 border border-[var(--ak-border-subtle)]">
         <table className="data-table w-full text-left">
           <thead>
@@ -510,12 +695,13 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
               <th className="p-1.5">MAX DD</th>
               <th className="p-1.5">TRADES</th>
               <th className="p-1.5">RESULT ID</th>
+              <th className="p-1.5 text-right">ACTION</th>
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.resultId} className="border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors clickable-row cursor-pointer">
-                <td className="p-1.5">
+              <tr key={item.resultId} className="border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors clickable-row cursor-pointer" onClick={() => onSelect(item.resultId)}>
+                <td className="p-1.5" onClick={(event) => event.stopPropagation()}>
                   <input
                     aria-label={`Select ${item.resultId} for comparison`}
                     type="checkbox"
@@ -529,17 +715,30 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
                     }}
                   />
                 </td>
-                <td className="p-1.5 text-[10px] text-[var(--ak-text-secondary)]" onClick={() => onSelect(item.resultId)}>{new Date(item.createdAt).toLocaleString()}</td>
-                <td className="p-1.5 font-bold" onClick={() => onSelect(item.resultId)}>{item.symbol} · {item.timeframe}</td>
-                <td className="p-1.5" onClick={() => onSelect(item.resultId)}>{item.strategyId}</td>
-                <td className={`p-1.5 font-mono font-bold ${item.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`} onClick={() => onSelect(item.resultId)}>
+                <td className="p-1.5 text-[10px] text-[var(--ak-text-secondary)]">{new Date(item.createdAt).toLocaleString()}</td>
+                <td className="p-1.5 font-bold">{item.symbol} · {item.timeframe}</td>
+                <td className="p-1.5">{item.strategyId}</td>
+                <td className={`p-1.5 font-mono tabular-nums font-bold ${item.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                   {percentage(item.metrics.totalReturn)}
                 </td>
-                <td className="p-1.5 font-mono text-[var(--ak-signal-danger)]" onClick={() => onSelect(item.resultId)}>
+                <td className="p-1.5 font-mono tabular-nums text-[var(--ak-signal-danger)]">
                   {percentage(-item.metrics.maxDrawdown)}
                 </td>
-                <td className="p-1.5 font-mono" onClick={() => onSelect(item.resultId)}>{item.metrics.tradeCount}</td>
-                <td className="p-1.5 mono text-[10px] text-[var(--ak-text-secondary)]" onClick={() => onSelect(item.resultId)}>{item.resultId.slice(0, 12)}…</td>
+                <td className="p-1.5 font-mono tabular-nums">{item.metrics.tradeCount}</td>
+                <td className="p-1.5 mono text-[10px] text-[var(--ak-text-secondary)]">{item.resultId.slice(0, 12)}…</td>
+                <td className="p-1.5 text-right">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelect(item.resultId);
+                    }}
+                    aria-label={`Open result ${item.resultId.slice(0, 12)}`}
+                    className="text-[10px] font-mono px-1.5 py-0.5 border border-[var(--ak-border-subtle)] hover:border-[var(--ak-signal-info)] hover:text-[var(--ak-signal-info)] cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--ak-signal-info)]"
+                  >
+                    Open
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -611,7 +810,7 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
   );
 }
 
-export function BottomDock({
+export const BottomDock = memo(function BottomDock({
   replayMode = false,
   replaySession = null,
   replayPortfolio = null,
@@ -651,9 +850,9 @@ export function BottomDock({
     const initialBacktest = initial.backtest;
     const initialActiveId = initial.activeBacktestId;
     void fetch(`/api/backtests/${encodeURIComponent(resultId)}`, { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) throw new Error("Backtest result could not be loaded.");
       const payload: unknown = await response.json();
       if (requestId !== selectionRequestRef.current || !canApply() || useWorkspaceStore.getState().backtest !== initialBacktest || useWorkspaceStore.getState().activeBacktestId !== initialActiveId) return;
-      if (!response.ok) throw new Error("Backtest result could not be loaded.");
       setBacktest(payload as BacktestResult);
       setTab("backtest");
     }).catch((error: unknown) => { if (requestId === selectionRequestRef.current && canApply() && useWorkspaceStore.getState().backtest === initialBacktest && useWorkspaceStore.getState().activeBacktestId === initialActiveId) setPaperError(error instanceof Error ? error.message : "Could not load result."); });
@@ -664,11 +863,12 @@ export function BottomDock({
     const requestId = selectionRequestRef.current;
     let disposed = false;
     void fetch(`/api/backtests/${encodeURIComponent(activeBacktestId)}`, { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) return;
       const payload: unknown = await response.json();
       const current = useWorkspaceStore.getState();
       // Restoring the already-selected ID must survive unrelated tab changes,
       // but never apply an old response after leaving its workspace.
-      if (!disposed && requestId === selectionRequestRef.current && current.activeWorkspace === workspace && current.activeBacktestId === activeBacktestId && current.backtest === result && response.ok) setBacktest(payload as BacktestResult);
+      if (!disposed && requestId === selectionRequestRef.current && current.activeWorkspace === workspace && current.activeBacktestId === activeBacktestId && current.backtest === result) setBacktest(payload as BacktestResult);
     }).catch(() => undefined);
     return () => { disposed = true; };
   }, [activeBacktestId, result, setBacktest, replayMode, workspace]);
@@ -690,7 +890,7 @@ export function BottomDock({
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 8_000);
+    const timer = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, 8_000);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [symbol, replayMode, exchange]);
 
@@ -817,4 +1017,4 @@ export function BottomDock({
       </div>
     </section>
   );
-}
+});
