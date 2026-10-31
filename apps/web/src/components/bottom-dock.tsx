@@ -1,9 +1,10 @@
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { AreaSeries, ColorType, createChart, type UTCTimestamp } from "lightweight-charts";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileText, FlaskConical, ListChecks, RotateCcw, ScanSearch, Wallet, Filter } from "lucide-react";
 import { STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplaySession } from "@newbeing/core";
+import type { ExperimentSummary } from "@newbeing/storage";
 import { SweepPanel } from "@/components/sweep-panel";
 import { EvaluationPanel } from "@/components/evaluation-panel";
 import { Button } from "@/components/ui/button";
@@ -360,7 +361,7 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
   );
 }
 
-function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, replayError, selectionRequestRef }: { result: BacktestResult | null; onOpenStrategy: () => void; onStartReplay: (result: BacktestResult) => void; replayBusy: boolean; replayError: string | null; selectionRequestRef: React.MutableRefObject<number> }): React.JSX.Element {
+function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy, replayError, selectionRequestRef }: { result: BacktestResult | null; onOpenStrategy: () => void; onStartReplay: (result: BacktestResult) => void; replayBusy: boolean; replayError: string | null; selectionRequestRef: React.MutableRefObject<number> }): React.JSX.Element {
   const [filter, setFilter] = useState<"all" | "long" | "short" | "win" | "loss">("all");
   const [rerunning, setRerunning] = useState(false);
   const setBacktest = useWorkspaceStore((state) => state.setBacktest);
@@ -555,6 +556,8 @@ function BacktestView({ result, onOpenStrategy, onStartReplay, replayBusy, repla
   );
 }
 
+const BacktestView = memo(BacktestViewContent);
+
 function Metric({ label, value, tone, title }: { label: string; value: string; tone?: "positive" | "negative" | undefined; title?: string | undefined }): React.JSX.Element {
   const Icon = tone === "positive" ? ArrowUpRight : tone === "negative" ? ArrowDownRight : null;
   return (
@@ -568,8 +571,8 @@ function Metric({ label, value, tone, title }: { label: string; value: string; t
   );
 }
 
-function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): React.JSX.Element {
-  const [items, setItems] = useState<BacktestResult[]>([]);
+function ExperimentHistoryContent({ onSelect }: { onSelect: (id: string) => void }): React.JSX.Element {
+  const [items, setItems] = useState<ExperimentSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [comparison, setComparison] = useState<BacktestResult[] | null>(null);
   const [comparisonError, setComparisonError] = useState<string | null>(null);
@@ -580,11 +583,11 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
 
   useEffect(() => {
     let disposed = false;
-    void fetch("/api/backtests?limit=30", { cache: "no-store" }).then(async (response) => {
+    void fetch("/api/backtests?view=summary&limit=30", { cache: "no-store" }).then(async (response) => {
       const payload: unknown = await response.json();
       if (!response.ok) throw new Error("Experiment history is unavailable.");
       if (typeof payload === "object" && payload !== null && "items" in payload && Array.isArray(payload.items) && !disposed) {
-        const nextItems = payload.items as BacktestResult[];
+        const nextItems = payload.items as ExperimentSummary[];
         setItems(nextItems);
         setSelectedIds((current) => current.filter((id) => nextItems.some((item) => item.resultId === id)));
         setError(null);
@@ -718,13 +721,13 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
                 <td className="p-1.5 text-[10px] text-[var(--ak-text-secondary)]">{new Date(item.createdAt).toLocaleString()}</td>
                 <td className="p-1.5 font-bold">{item.symbol} · {item.timeframe}</td>
                 <td className="p-1.5">{item.strategyId}</td>
-                <td className={`p-1.5 font-mono tabular-nums font-bold ${item.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
-                  {percentage(item.metrics.totalReturn)}
+                <td className={`p-1.5 font-mono tabular-nums font-bold ${item.metrics.totalReturn === null ? "" : item.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
+                  {item.metrics.totalReturn === null ? "—" : percentage(item.metrics.totalReturn)}
                 </td>
                 <td className="p-1.5 font-mono tabular-nums text-[var(--ak-signal-danger)]">
-                  {percentage(-item.metrics.maxDrawdown)}
+                  {item.metrics.maxDrawdown === null ? "—" : percentage(-item.metrics.maxDrawdown)}
                 </td>
-                <td className="p-1.5 font-mono tabular-nums">{item.metrics.tradeCount}</td>
+                <td className="p-1.5 font-mono tabular-nums">{item.metrics.tradeCount ?? "—"}</td>
                 <td className="p-1.5 mono text-[10px] text-[var(--ak-text-secondary)]">{item.resultId.slice(0, 12)}…</td>
                 <td className="p-1.5 text-right">
                   <button
@@ -810,6 +813,8 @@ function ExperimentHistory({ onSelect }: { onSelect: (id: string) => void }): Re
   );
 }
 
+const ExperimentHistory = memo(ExperimentHistoryContent);
+
 export const BottomDock = memo(function BottomDock({
   replayMode = false,
   replaySession = null,
@@ -838,12 +843,24 @@ export const BottomDock = memo(function BottomDock({
     ? ["positions", "orders"] as const
     : ["backtest", "sweep", "evaluate", "history", "logs"] as const;
   const activeTab = (allowedTabs as readonly string[]).includes(tab) ? tab : allowedTabs[0];
+  const [backtestPanelVisited, setBacktestPanelVisited] = useState(false);
+  const [historyPanelVisited, setHistoryPanelVisited] = useState(false);
+  const showBacktestPanel = workspace === "research" && activeTab === "backtest";
+  const showHistoryPanel = workspace === "research" && activeTab === "history";
+  const shouldPollPaper = workspace === "terminal" || (workspace === "research" && activeTab === "logs");
+  const openStrategy = useCallback(() => setInspectorTab("strategy"), [setInspectorTab]);
+
+  useEffect(() => {
+    if (replayMode || workspace !== "research") return;
+    if (activeTab === "backtest") setBacktestPanelVisited(true);
+    if (activeTab === "history") setHistoryPanelVisited(true);
+  }, [activeTab, replayMode, workspace]);
 
   const [paper, setPaper] = useState<PaperPayload | null>(null);
   const [paperError, setPaperError] = useState<string | null>(null);
 
   const selectionRequestRef = useRef(0);
-  const selectResult = (resultId: string): void => {
+  const selectResult = useCallback((resultId: string): void => {
     const requestId = ++selectionRequestRef.current;
     const canApply = captureWorkspaceSelection();
     const initial = useWorkspaceStore.getState();
@@ -856,7 +873,7 @@ export const BottomDock = memo(function BottomDock({
       setBacktest(payload as BacktestResult);
       setTab("backtest");
     }).catch((error: unknown) => { if (requestId === selectionRequestRef.current && canApply() && useWorkspaceStore.getState().backtest === initialBacktest && useWorkspaceStore.getState().activeBacktestId === initialActiveId) setPaperError(error instanceof Error ? error.message : "Could not load result."); });
-  };
+  }, [setBacktest, setPaperError, setTab]);
 
   useEffect(() => {
     if (replayMode || !activeBacktestId || result?.resultId === activeBacktestId) return;
@@ -874,7 +891,7 @@ export const BottomDock = memo(function BottomDock({
   }, [activeBacktestId, result, setBacktest, replayMode, workspace]);
 
   useEffect(() => {
-    if (replayMode) return;
+    if (replayMode || !shouldPollPaper) return;
     let disposed = false;
     const refresh = async (): Promise<void> => {
       try {
@@ -892,7 +909,7 @@ export const BottomDock = memo(function BottomDock({
     void refresh();
     const timer = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, 8_000);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, [symbol, replayMode, exchange]);
+  }, [symbol, replayMode, exchange, shouldPollPaper]);
 
   return (
     <section className="bottom-dock flex flex-col h-full bg-[var(--ak-surface-canvas)] border-t border-[var(--ak-border-strong)]">
@@ -962,19 +979,21 @@ export const BottomDock = memo(function BottomDock({
             <OrdersTable orders={paper?.orders ?? []} />
           )
         )}
-        {activeTab === "history" && workspace === "research" && (
-          replayMode ? (
-            <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Experiment history hidden during replay</strong><span>Future-derived results are strictly hidden.</span></div>
-          ) : (
-            <ExperimentHistory onSelect={selectResult} />
-          )
+        {activeTab === "history" && workspace === "research" && replayMode && (
+          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Experiment history hidden during replay</strong><span>Future-derived results are strictly hidden.</span></div>
         )}
-        {activeTab === "backtest" && workspace === "research" && (
-          replayMode ? (
-            <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are revealed.</span></div>
-          ) : (
-            <BacktestView result={result} selectionRequestRef={selectionRequestRef} onOpenStrategy={() => setInspectorTab("strategy")} onStartReplay={onStartReplay} replayBusy={replayBusy} replayError={replayError} />
-          )
+        {!replayMode && (historyPanelVisited || showHistoryPanel) && (
+          <div hidden={!showHistoryPanel}>
+            <ExperimentHistory onSelect={selectResult} />
+          </div>
+        )}
+        {activeTab === "backtest" && workspace === "research" && replayMode && (
+          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Backtest metrics suppressed</strong><span>Only bars through the replay cursor are revealed.</span></div>
+        )}
+        {!replayMode && (backtestPanelVisited || showBacktestPanel) && (
+          <div hidden={!showBacktestPanel}>
+            <BacktestView result={result} selectionRequestRef={selectionRequestRef} onOpenStrategy={openStrategy} onStartReplay={onStartReplay} replayBusy={replayBusy} replayError={replayError} />
+          </div>
         )}
         {activeTab === "sweep" && workspace === "research" && (
           replayMode ? (

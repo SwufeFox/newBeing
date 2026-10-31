@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { loader } from "@monaco-editor/react";
 import { Check, Code2, Play, Save, ShieldAlert, Sliders } from "lucide-react";
 import { STRATEGIES, type StrategyDefinition, type StrategyParameters } from "@newbeing/core";
@@ -67,7 +67,7 @@ function loadStoredPresets(strategyId?: string): Array<{ name: string; params: S
   return [];
 }
 
-export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Element {
+export const StrategyLab = memo(function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Element {
   const [strategyId, setStrategyId, savedDraft, saveDraft, params, setParams, theme, config, setConfig] = useWorkspaceStore(useShallow((state) => [
     state.selectedStrategyId,
     state.setStrategy,
@@ -587,4 +587,4 @@ export function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Ele
       </div>
     </div>
   );
-}
+});

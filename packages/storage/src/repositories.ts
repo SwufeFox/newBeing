@@ -169,6 +169,46 @@ export function getExperiment(resultId: string): BacktestResult | undefined {
   }
 }
 
+export interface ExperimentSummary {
+  resultId: string;
+  strategyId: string;
+  createdAt: string;
+  symbol: string;
+  timeframe: string;
+  metrics: {
+    totalReturn: number | null;
+    maxDrawdown: number | null;
+    tradeCount: number | null;
+    sharpeRatio: number | null;
+    winRate: number | null;
+  };
+}
+
+export function listExperimentSummaries(limit = 20): ExperimentSummary[] {
+  const rows = getDatabase().select({
+    resultId: experiments.resultId,
+    strategyId: experiments.strategyId,
+    createdAt: experiments.createdAt,
+    symbol: experiments.symbol,
+    timeframe: experiments.timeframe,
+    totalReturn: sql<number | null>`CASE WHEN json_valid(${experiments.result}) THEN json_extract(${experiments.result}, '$.metrics.totalReturn') END`,
+    maxDrawdown: sql<number | null>`CASE WHEN json_valid(${experiments.result}) THEN json_extract(${experiments.result}, '$.metrics.maxDrawdown') END`,
+    tradeCount: sql<number | null>`CASE WHEN json_valid(${experiments.result}) THEN json_extract(${experiments.result}, '$.metrics.tradeCount') END`,
+    sharpeRatio: sql<number | null>`CASE WHEN json_valid(${experiments.result}) THEN json_extract(${experiments.result}, '$.metrics.sharpeRatio') END`,
+    winRate: sql<number | null>`CASE WHEN json_valid(${experiments.result}) THEN json_extract(${experiments.result}, '$.metrics.winRate') END`,
+  }).from(experiments).where(sql`json_valid(${experiments.result})`)
+    .orderBy(desc(experiments.createdAt)).limit(Math.max(1, Math.min(100, limit))).all();
+
+  return rows.map(({ resultId, strategyId, createdAt, symbol, timeframe, totalReturn, maxDrawdown, tradeCount, sharpeRatio, winRate }) => ({
+    resultId,
+    strategyId,
+    createdAt: new Date(createdAt).toISOString(),
+    symbol,
+    timeframe,
+    metrics: { totalReturn, maxDrawdown, tradeCount, sharpeRatio, winRate },
+  }));
+}
+
 export function listExperiments(limit = 20): BacktestResult[] {
   return getDatabase().select({ result: experiments.result }).from(experiments)
     .orderBy(desc(experiments.createdAt)).limit(Math.max(1, Math.min(100, limit))).all()

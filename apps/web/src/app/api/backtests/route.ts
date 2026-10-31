@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runResearchBacktest } from "@newbeing/application";
-import { getWorkspaceState, listExperiments } from "@newbeing/storage";
+import { getWorkspaceState, listExperimentSummaries, listExperiments } from "@newbeing/storage";
 import { EXCHANGE_TIMEFRAMES, logEvent, type ExchangeId } from "@newbeing/core";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
@@ -35,10 +35,14 @@ export async function GET(request: Request): Promise<NextResponse> {
   if (getWorkspaceState().state.activeWorkspace === "replay") {
     return NextResponse.json({ error: "Backtest history is hidden during Replay to avoid future-derived results." }, { status: 409 });
   }
-  const limitParam = new URL(request.url).searchParams.get("limit");
+  const searchParams = new URL(request.url).searchParams;
+  const limitParam = searchParams.get("limit");
   const parsed = z.coerce.number().int().min(1).max(100).safeParse(limitParam ?? 20);
   if (!parsed.success) return NextResponse.json({ error: "Invalid experiment limit." }, { status: 400 });
-  return NextResponse.json({ items: listExperiments(parsed.data) }, { headers: { "Cache-Control": "no-store" } });
+  const items = searchParams.get("view") === "summary"
+    ? listExperimentSummaries(parsed.data)
+    : listExperiments(parsed.data);
+  return NextResponse.json({ items }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request): Promise<NextResponse> {

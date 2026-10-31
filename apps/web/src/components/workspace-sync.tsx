@@ -52,9 +52,11 @@ export function WorkspaceSync(): null {
     let revision = 0;
     let identityRevision = 0;
     let isSending = false;
+    let isPolling = false;
+    let lastFocusRefreshAt = 0;
     let pendingSend = false;
     let debounce: ReturnType<typeof setTimeout> | undefined;
-    let poll: ReturnType<typeof setInterval> | undefined;
+    let poll: number | undefined;
     const currentJson = (): string => JSON.stringify(toSharedWorkspaceState(useWorkspaceStore.getState()));
 
     const sendState = async (): Promise<void> => {
@@ -152,6 +154,33 @@ export function WorkspaceSync(): null {
       }
     };
 
+    const pollRemote = async (): Promise<void> => {
+      if (stopped || !ready || document.hidden || isSending || isPolling || currentJson() !== lastSyncedJson) return;
+      const readRevision = revision;
+      isPolling = true;
+      try {
+        const next = await readRemote();
+        if (stopped || !next || isSending || readRevision !== revision || currentJson() !== lastSyncedJson || next.updatedAt <= lastServerTime) return;
+        lastServerTime = next.updatedAt;
+        if (next.updatedAt <= lastLocalWrite) return;
+        lastSyncedJson = JSON.stringify(next.state);
+        useWorkspaceStore.getState().setFromRemote(next.state, next.updatedAt);
+        if (next.state.activeWorkspace === "replay" && replayIdentity(useWorkspaceStore.getState()) === replayIdentity(next.state)) {
+          useWorkspaceStore.setState({ replayConfirmedJson: replayIdentity(next.state), replaySyncError: null });
+        }
+      } finally {
+        isPolling = false;
+      }
+    };
+
+    const refreshWhenVisible = (): void => {
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastFocusRefreshAt < 250) return;
+      lastFocusRefreshAt = now;
+      void pollRemote();
+    };
+
     const synchronize = async (): Promise<void> => {
       await useWorkspaceStore.persist.rehydrate();
       if (stopped) return;
@@ -188,22 +217,9 @@ export function WorkspaceSync(): null {
           store.setDockTab("backtest");
         }
       }
-      poll = setInterval(() => {
-        if (typeof document !== "undefined" && document.hidden) return;
-        const readRevision = revision;
-        if (isSending || currentJson() !== lastSyncedJson) return;
-        void (async () => {
-          const next = await readRemote();
-          if (stopped || !next || isSending || readRevision !== revision || currentJson() !== lastSyncedJson || next.updatedAt <= lastServerTime) return;
-          lastServerTime = next.updatedAt;
-          if (next.updatedAt <= lastLocalWrite) return;
-          lastSyncedJson = JSON.stringify(next.state);
-          useWorkspaceStore.getState().setFromRemote(next.state, next.updatedAt);
-          if (next.state.activeWorkspace === "replay" && replayIdentity(useWorkspaceStore.getState()) === replayIdentity(next.state)) {
-            useWorkspaceStore.setState({ replayConfirmedJson: replayIdentity(next.state), replaySyncError: null });
-          }
-        })();
-      }, 1_500);
+      poll = window.setInterval(() => { void pollRemote(); }, 3_000);
+      document.addEventListener("visibilitychange", refreshWhenVisible);
+      window.addEventListener("focus", refreshWhenVisible);
     };
 
     const unsubscribe = useWorkspaceStore.subscribe((state, previous) => {
@@ -241,6 +257,8 @@ export function WorkspaceSync(): null {
       unsubscribe();
       if (debounce) clearTimeout(debounce);
       if (poll) clearInterval(poll);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
     };
   }, []);
   return null;

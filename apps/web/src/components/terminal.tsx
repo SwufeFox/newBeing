@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ChevronDown,
@@ -462,18 +462,18 @@ function DragHandle({ direction, onDelta, style }: { direction: "horizontal" | "
   return <div className={`drag-handle drag-${direction}`} style={style} role="separator" aria-orientation={direction === "horizontal" ? "vertical" : "horizontal"} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} />;
 }
 
-function RailRunHistory(): React.JSX.Element {
+function RailRunHistoryContent(): React.JSX.Element {
   const [activeBacktestId, selectedStrategyId, setDockTab] = useWorkspaceStore(useShallow((state) => [
     state.activeBacktestId, state.selectedStrategyId, state.setDockTab,
   ]));
-  const [items, setItems] = useState<Array<{ id: string; strategyId?: string; createdAt?: string; metrics?: { totalReturn?: number; tradeCount?: number } }>>([]);
+  const [items, setItems] = useState<Array<{ resultId: string; strategyId?: string; createdAt?: string; metrics?: { totalReturn?: number; tradeCount?: number } }>>([]);
   const [state, setState] = useState<"loading" | "ready" | "blocked" | "error">("loading");
 
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
-        const res = await fetch("/api/backtests");
+        const res = await fetch("/api/backtests?view=summary&limit=16");
         if (res.status === 409) { if (alive) setState("blocked"); return; }
         if (!res.ok) throw new Error(String(res.status));
         const body = await res.json();
@@ -495,9 +495,9 @@ function RailRunHistory(): React.JSX.Element {
       <div className="rail-list space-y-1 mt-1 max-h-48 overflow-auto">
         {items.map((run, idx) => (
           <button
-            key={run.id || `run-${idx}`}
+            key={run.resultId || `run-${idx}`}
             type="button"
-            className={`rail-item w-full flex items-center justify-between p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${activeBacktestId === run.id ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-info)]" : ""}`}
+            className={`rail-item w-full flex items-center justify-between p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${activeBacktestId === run.resultId ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-info)]" : ""}`}
             onClick={() => setDockTab("backtest")}
           >
             <span className="rail-item-main truncate font-bold">{(run.strategyId ?? selectedStrategyId).replace(/-/g, " ")}</span>
@@ -516,7 +516,9 @@ function RailRunHistory(): React.JSX.Element {
   );
 }
 
-function RailStrategyRoster(): React.JSX.Element {
+const RailRunHistory = memo(RailRunHistoryContent);
+
+function RailStrategyRosterContent(): React.JSX.Element {
   const [selectedStrategyId, parameters, setStrategy, setInspectorTab] = useWorkspaceStore(useShallow((state) => [
     state.selectedStrategyId, state.strategyParameters, state.setStrategy, state.setInspectorTab,
   ]));
@@ -578,6 +580,8 @@ function RailStrategyRoster(): React.JSX.Element {
   );
 }
 
+const RailStrategyRoster = memo(RailStrategyRosterContent);
+
 function RailReplayState({ session, playing, speed }: { session: ReplaySession | null; playing: boolean; speed: number }): React.JSX.Element {
   const bars = session?.bars ?? [];
   const first = bars[0];
@@ -628,7 +632,6 @@ export function Terminal(): React.JSX.Element {
     state.activeReplayId, state.setActiveReplayId,
   ]));
 
-  const deferredWorkspace = useDeferredValue(workspace);
   const { summary, error: summaryError, retry: retrySummary } = useSummary(symbol, exchange, workspaceReady && workspace !== "replay");
   const [running, setRunning] = useState(false);
   const [backtestError, setBacktestError] = useState<string | null>(null);
@@ -653,15 +656,28 @@ export function Terminal(): React.JSX.Element {
 
   const setPage = useCallback((next: WorkspaceState["activeWorkspace"]): void => {
     if (next !== "replay") setReplayPlaying(false);
-    setWorkspace(next);
+    const current = useWorkspaceStore.getState();
     if (next === "research") {
-      useWorkspaceStore.getState().setInspectorTab("strategy");
-      setDockTab("backtest");
+      if (current.activeWorkspace === next && current.inspectorTab === "strategy" && current.dockTab === "backtest") return;
+      useWorkspaceStore.setState({ activeWorkspace: next, inspectorTab: "strategy", dockTab: "backtest" });
+      return;
     }
-  }, [setWorkspace, setDockTab]);
+    if (current.activeWorkspace === next) return;
+    setWorkspace(next);
+  }, [setWorkspace]);
 
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [researchRailVisited, setResearchRailVisited] = useState(false);
+  const showResearchRail = workspace === "research" && sidebarOpen;
+  const showsWatchlist = workspace === "terminal" && sidebarOpen;
+  const [watchlistVisited, setWatchlistVisited] = useState(false);
+  useEffect(() => {
+    if (showResearchRail) setResearchRailVisited(true);
+  }, [showResearchRail]);
+  useEffect(() => {
+    if (showsWatchlist) setWatchlistVisited(true);
+  }, [showsWatchlist]);
   const watchlist = useWorkspaceStore((state) => state.watchlist);
   const runBacktestRef = useRef<() => void>(() => {});
 
@@ -812,6 +828,10 @@ export function Terminal(): React.JSX.Element {
       setRunning(false);
     }
   }, [exchange, symbol, timeframe, strategyId, parameters, config, setBacktest, setWorkspace, setDockTab]);
+
+  const handleRunBacktest = useCallback((): void => {
+    void runBacktest();
+  }, [runBacktest]);
 
   useEffect(() => {
     runBacktestRef.current = () => { void runBacktest(); };
@@ -1083,7 +1103,6 @@ export function Terminal(): React.JSX.Element {
   const replayBars = workspace === "replay" ? replaySession?.bars ?? EMPTY_REPLAY_BARS : null;
   const replayPrice = replaySession?.bars.at(-1)?.close ?? null;
 
-  const showsWatchlist = workspace === "terminal" && sidebarOpen;
   /* The inspector keeps a fixed pixel width because the study panels need it, but in
      a narrow pane (the sidebar browser is ~420px) that fixed width leaves the chart
      ~45px and the workspace becomes unusable. Cap the side column as a share of the
@@ -1305,39 +1324,49 @@ export function Terminal(): React.JSX.Element {
       </div>
 
       <main className={`workspace-layout mode-layout-${workspace}`}>
-        {(workspace === "research" || workspace === "replay") && sidebarOpen && (
-          <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label="Active workspace">
+        {workspace !== "replay" && (showResearchRail || researchRailVisited) && (
+          <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label="Active workspace" hidden={!showResearchRail}>
             <div className="rail-caption text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold pb-1 border-b border-[var(--ak-border-subtle)]">
-              {workspaceName.toUpperCase()} · WORKSPACE
+              RESEARCH · WORKSPACE
             </div>
-            <div className={`rail-status ${workspace} p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1`}>
+            <div className="rail-status research p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1">
               <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
-                {workspaceName.toUpperCase()}
+                RESEARCH
               </span>
               <span className="rail-status-note text-[10px] text-[var(--ak-text-secondary)] block leading-tight">
-                {RAIL_NOTES[workspace]}
+                {RAIL_NOTES.research}
               </span>
             </div>
-
-            {workspace === "research" && (
-              <>
-                <RailStrategyRoster />
-                <RailRunHistory />
-              </>
-            )}
-            {workspace === "replay" && <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />}
+            <RailStrategyRoster />
+            <RailRunHistory />
+          </div>
+        )}
+        {workspace === "replay" && sidebarOpen && (
+          <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label="Active workspace">
+            <div className="rail-caption text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold pb-1 border-b border-[var(--ak-border-subtle)]">
+              REPLAY · WORKSPACE
+            </div>
+            <div className="rail-status replay p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1">
+              <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
+                REPLAY
+              </span>
+              <span className="rail-status-note text-[10px] text-[var(--ak-text-secondary)] block leading-tight">
+                {RAIL_NOTES.replay}
+              </span>
+            </div>
+            <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />
           </div>
         )}
 
         <section className="market-canvas" aria-label={`${workspaceName} market workspace`}>
           <div className="workspace-grid" style={{ gridTemplateColumns: gridColumns, gridTemplateRows: `minmax(0, 1fr) 5px min(${dockHeight}px, max(150px, calc(100% - 265px)))` }}>
+            {workspace !== "replay" && (showsWatchlist || watchlistVisited) && (
+              <div className="left-rail" style={{ gridColumn: col.rail, gridRow: "1 / 4" }} hidden={!showsWatchlist}>
+                <Watchlist disabled={!showsWatchlist || replayLocked} />
+              </div>
+            )}
             {showsWatchlist && (
-              <>
-                <div className="left-rail" style={{ gridColumn: col.rail, gridRow: "1 / 4" }}>
-                  <Watchlist disabled={replayLocked} />
-                </div>
-                <DragHandle direction="horizontal" onDelta={resizeWatchlist} style={{ gridColumn: col.railDrag, gridRow: "1 / 4" }} />
-              </>
+              <DragHandle direction="horizontal" onDelta={resizeWatchlist} style={{ gridColumn: col.railDrag, gridRow: "1 / 4" }} />
             )}
 
             <section className="chart-column flex flex-col min-h-0 bg-[var(--ak-surface-canvas)]" style={{ gridColumn: col.chart, gridRow: 1 }}>
@@ -1433,7 +1462,7 @@ export function Terminal(): React.JSX.Element {
                 replayPortfolio={replayPortfolio}
                 replayOrders={replayOrders}
                 replayBusy={replayBusy}
-                onRun={() => void runBacktest()}
+                onRun={handleRunBacktest}
                 onReplayOrder={placeReplayOrder}
               />
             </div>
