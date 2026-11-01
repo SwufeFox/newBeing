@@ -38,7 +38,13 @@ export function getCachedCandles(exchange: ExchangeId, symbol: string, timeframe
     lte(candleCache.timestamp, Date.now() - INTERVALS[timeframe]),
     gte(candleCache.timestamp, since), lte(candleCache.timestamp, through), gte(candleCache.cachedAt, Date.now() - CANDLE_CACHE_TTL_MS),
   )).orderBy(asc(candleCache.timestamp)).limit(limit).all();
-  return { candles: rows.map(({ timestamp, open, high, low, close, volume }) => ({ timestamp, open, high, low, close, volume })), cachedAt: rows.length ? Math.min(...rows.map((row) => row.cachedAt)) : null };
+  const candles: Candle[] = [];
+  let cachedAt = Number.POSITIVE_INFINITY;
+  for (const row of rows) {
+    candles.push({ timestamp: row.timestamp, open: row.open, high: row.high, low: row.low, close: row.close, volume: row.volume });
+    cachedAt = Math.min(cachedAt, row.cachedAt);
+  }
+  return { candles, cachedAt: rows.length ? cachedAt : null };
 }
 
 

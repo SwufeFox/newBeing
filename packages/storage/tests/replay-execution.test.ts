@@ -150,12 +150,16 @@ describe("persistent candle finality", () => {
     vi.spyOn(Date, "now").mockReturnValue(600_000);
     saveCachedCandles("kraken", "BTC/USD", "1m", [candle(480_000), candle(600_000)]);
     expect(getDatabase().select().from(candleCache).all()).toHaveLength(1);
-    getDatabase().insert(candleCache).values({ exchange: "kraken", symbol: "BTC/USD", timeframe: "1m", ...candle(420_000), cachedAt: 450_000 }).run();
-    expect(getCachedCandles("kraken", "BTC/USD", "1m", 0, 1).candles).toEqual([candle(480_000)]);
+    getDatabase().insert(candleCache).values([
+      { exchange: "kraken", symbol: "BTC/USD", timeframe: "1m", ...candle(420_000), cachedAt: 450_000 },
+      { exchange: "kraken", symbol: "BTC/USD", timeframe: "1m", ...candle(360_000), cachedAt: 420_000 },
+    ]).run();
+    const expected = { candles: [candle(360_000), candle(480_000)], cachedAt: 420_000 };
+    expect(getCachedCandles("kraken", "BTC/USD", "1m", 0, 10)).toEqual(expected);
     closeDatabaseForTests();
-    expect(getCachedCandles("kraken", "BTC/USD", "1m", 0, 10).candles).toEqual([candle(480_000)]);
+    expect(getCachedCandles("kraken", "BTC/USD", "1m", 0, 10)).toEqual(expected);
     saveCachedCandles("kraken", "BTC/USD", "1m", [candle(420_000)]);
-    expect(getCachedCandles("kraken", "BTC/USD", "1m", 0, 10).candles).toHaveLength(2);
+    expect(getCachedCandles("kraken", "BTC/USD", "1m", 0, 10).candles).toHaveLength(3);
     expect(getCachedCandles("binance", "BTC/USD", "1m", 0, 10).candles).toEqual([]);
   });
 });
