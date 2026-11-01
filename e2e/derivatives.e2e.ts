@@ -159,13 +159,16 @@ test("native derivative identities, explicit capital and atomic contract/option 
   expect((await optionClose.json()).account.positions).toHaveLength(0);
 });
 
-test("derivatives navigation, product selection and narrow layout", async ({ page }) => {
+test("derivatives navigation, venue coverage labels and narrow layout", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: /Derivatives/ }).click();
   await page.waitForURL("**/derivatives", { timeout: 120000 });
   await expect(page.getByRole("heading", { name: "/ Derivatives" })).toBeVisible({ timeout: 60000 });
   await expect(page.getByRole("button", { name: /BTC-USDT-SWAP/ })).toBeVisible();
+  await page.getByRole("tab", { name: "Futures", exact: true }).click();
+  await expect(page.getByText("Deribit + OKX · Linear contracts", { exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Options", exact: true }).click();
+  await expect(page.getByText("Deribit · Long options only", { exact: true })).toBeVisible();
   await expect(page.getByText(/BTC_USDC-25DEC26-80000-C/, { exact: false }).first()).toBeVisible();
   await page.setViewportSize({ width: 419, height: 900 });
   await expect(page.getByRole("heading", { name: "/ Derivatives" })).toBeVisible();

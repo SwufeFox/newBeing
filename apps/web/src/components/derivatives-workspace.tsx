@@ -569,6 +569,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [blocked, kind, optionQuoteIds, optionQuoteKey, revision]);
+  const marketVenues = [...new Set(items.map((item) => item.venue))]
+    .map((venue) => venue === "okx" ? "OKX" : "Deribit")
+    .join(" + ");
 
 
   return <div className="derivatives-shell font-mono">
@@ -681,7 +684,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
         </button>
       ))}
       <div className="flex-1" />
-      <span className="meta">{kind === "option" ? "Deribit · Long options only" : "OKX · Linear isolated contracts"}</span>
+      <span className="meta">{kind === "option" ? "Deribit · Long options only" : `${marketVenues || "No venues"} · Linear contracts`}</span>
     </div>
     <div id="derivatives-panel" role="tabpanel" aria-labelledby={'derivatives-' + kind} className="flex flex-col flex-1">
     <main className="derivatives-layout" style={{ ["--mode" as string]: kind === "option" ? "var(--c-up)" : "var(--c-accent)" }}>
