@@ -483,7 +483,7 @@ function RailRunHistoryContent(): React.JSX.Element {
       } catch { if (alive) setState("error"); }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [activeBacktestId]);
 
   return (
     <div className="rail-block font-mono text-xs">
