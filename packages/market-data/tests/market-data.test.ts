@@ -70,6 +70,29 @@ describe("public spot exchange registry", () => {
     await expect(adapter.fetchSummary("BTC/USD")).resolves.toMatchObject({ symbol: "BTC/USD", timestamp: 1_700_000_000_456 });
     expect(fetchTrades).not.toHaveBeenCalled();
   });
+  it("uses the newest trade timestamp for batch tickers without a timestamp", async () => {
+    const adapter = new CcxtSpotAdapter("kraken");
+    const fetchTrades = vi.fn(async () => [{ timestamp: 1_700_000_000_123 }]);
+    Object.defineProperty(adapter, "exchange", {
+      value: {
+        has: { fetchTickers: true },
+        loadMarkets: vi.fn(async () => ({})),
+        fetchTickers: vi.fn(async () => ({
+          "BTC/USD": { timestamp: null, last: 10 },
+          "ETH/USD": { timestamp: 1_700_000_000_456, last: 20 },
+        })),
+        fetchTrades,
+      },
+    });
+
+    await expect(adapter.fetchSummaries(["BTC/USD", "ETH/USD"])).resolves.toMatchObject([
+      { symbol: "BTC/USD", timestamp: 1_700_000_000_123 },
+      { symbol: "ETH/USD", timestamp: 1_700_000_000_456 },
+    ]);
+    expect(fetchTrades).toHaveBeenCalledOnce();
+    expect(fetchTrades).toHaveBeenCalledWith("BTC/USD", undefined, 1);
+  });
+
 
   it("coalesces concurrent OHLCV reads through the selected CCXT adapter", async () => {
     const adapter = new CcxtSpotAdapter("binance");

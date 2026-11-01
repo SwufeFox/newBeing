@@ -138,10 +138,12 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
     await this.loadMarkets();
     if (!this.exchange.has.fetchTickers) return Promise.all(normalized.map((symbol) => this.fetchSummary(symbol)));
     const tickers = await this.exchange.fetchTickers(normalized);
-    return normalized.flatMap((symbol) => {
+    return Promise.all(normalized.map(async (symbol) => {
       const ticker = tickers[symbol];
-      return ticker ? [{ symbol, last: finiteOrNull(ticker.last), changePct24h: finiteOrNull(ticker.percentage), high24h: finiteOrNull(ticker.high), low24h: finiteOrNull(ticker.low), quoteVolume24h: finiteOrNull(ticker.quoteVolume), bid: finiteOrNull(ticker.bid), ask: finiteOrNull(ticker.ask), timestamp: finiteOrNull(ticker.timestamp) }] : [];
-    });
+      if (!ticker) return null;
+      const timestamp = finiteOrNull(ticker.timestamp) ?? await this.recentTradeTimestamp(symbol);
+      return { symbol, last: finiteOrNull(ticker.last), changePct24h: finiteOrNull(ticker.percentage), high24h: finiteOrNull(ticker.high), low24h: finiteOrNull(ticker.low), quoteVolume24h: finiteOrNull(ticker.quoteVolume), bid: finiteOrNull(ticker.bid), ask: finiteOrNull(ticker.ask), timestamp };
+    })).then((summaries) => summaries.filter((summary): summary is MarketSummary => summary !== null));
   }
 
   async fetchOrderBook(symbol: string, limit = 20): Promise<OrderBookSnapshot> {
