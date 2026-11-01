@@ -3,11 +3,16 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { ENGINE_VERSION, getStrategy, type BacktestResult, type ResearchReproduction, type StrategyDefinition, type StrategyParameters } from "@newbeing/core";
-import { canonicalJson, getWorkspaceState, loadDatasetSnapshot, outcomeIdentity } from "@newbeing/storage";
+import { canonicalJson, getWorkspaceState, loadDatasetSnapshot, outcomeIdentity, type DatasetPayload } from "@newbeing/storage";
 export { outcomeIdentity } from "@newbeing/storage";
 
 export class ResearchError extends Error {
   constructor(message: string, public readonly status: 404 | 409 | 422) { super(message); }
+}
+export interface OriginalResearchInput {
+  strategy: StrategyDefinition;
+  snapshot: DatasetPayload;
+  reproduction: ResearchReproduction;
 }
 export function assertResearchAvailable(): void {
   if (getWorkspaceState().state.activeWorkspace === "replay") throw new ResearchError("Backtests are disabled while Replay is active, to avoid exposing future-derived results.", 409);
@@ -48,12 +53,12 @@ export function resolveResearchStrategy(id: string, parameters: StrategyParamete
   }
   return { strategy, parameters: { ...strategy.defaults, ...parameters } };
 }
-export function originalResearchInput(saved: { reproduction?: ResearchReproduction; datasetId: string; strategyId: string; strategyVersion: string; engineVersion: string; exchange: string; symbol: string; timeframe: string }) {
+export function originalResearchInput(saved: { reproduction?: ResearchReproduction; datasetId: string; strategyId: string; strategyVersion: string; engineVersion: string; exchange: string; symbol: string; timeframe: string }, implementationHash = researchImplementationHash()): OriginalResearchInput {
   assertResearchAvailable();
   const ref = saved.reproduction;
   if (!ref || ref.format !== 1) throw new ResearchError("Legacy result has no immutable candle snapshot and cannot be rerun reproducibly.", 409);
   const strategy = getStrategy(saved.strategyId);
-  if (!strategy || strategy.version !== saved.strategyVersion || saved.engineVersion !== ENGINE_VERSION || ref.implementationHash !== researchImplementationHash()) throw new ResearchError("Saved strategy/engine implementation is incompatible with this deployment.", 409);
+  if (!strategy || strategy.version !== saved.strategyVersion || saved.engineVersion !== ENGINE_VERSION || ref.implementationHash !== implementationHash) throw new ResearchError("Saved strategy/engine implementation is incompatible with this deployment.", 409);
   if (ref.snapshotId !== saved.datasetId) throw new ResearchError("Saved snapshot identity mismatch.", 422);
   const snapshot = loadDatasetSnapshot(ref.snapshotId);
   if (snapshot.exchange !== saved.exchange || snapshot.symbol !== saved.symbol || snapshot.timeframe !== saved.timeframe) throw new ResearchError("Saved instrument identity mismatch.", 422);

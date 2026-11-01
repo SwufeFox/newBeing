@@ -77,6 +77,8 @@ export interface ReplayExecution {
   notes: string;
   tags: string[];
 }
+const REPLAY_BAR_PHASES = ["open", "range"] as const;
+
 export const REPLAY_FILL_POLICY = "Orders become eligible on the next bar only. Market fills at open; limits require a touch and receive no better than the limit; stop gaps fill at the adverse open. Adverse slippage and quote fees apply, with limit prices capped. FIFO, full fills or balance rejection; no volume/liquidity model. Long spot only. Brackets use stop-first and adverse gap opens. Gaps that place SL at/above or TP at/below the actual entry fill reject the entry without a fill. New entries can stop out on their entry bar; targets activate on the following bar. Finish cancels pending orders and marks open inventory, without forced liquidation.";
 export function validateReplayConfig(config: ReplayConfig): void {
   validateMoney(config.initialCapital);
@@ -121,19 +123,30 @@ function applyFill(state: ReplayExecution, orderId: string, side: "buy" | "sell"
   return { price, fee: result.order.fee };
 }
 function runBrackets(state: ReplayExecution, bar: Candle, phase: "open" | "range", onlyOrderId?: string): void {
-  for (const bracket of [...state.brackets]) {
+  let cleanupRequired = false;
+  for (const bracket of state.brackets) {
+    if (!(bracket.quantity > 0)) {
+      cleanupRequired = true;
+      continue;
+    }
     if (onlyOrderId !== undefined && bracket.orderId !== onlyOrderId) continue;
     const protection = longProtectionFill(bar, bracket.stopLoss, bracket.takeProfit, phase, bracket.openedAt < bar.timestamp);
     if (!protection) continue;
     applyFill(state, bracket.orderId, "sell", bracket.quantity, protection.price, bar, protection.reason);
     bracket.quantity = 0;
+    cleanupRequired = true;
   }
-  state.brackets = state.brackets.filter((bracket) => bracket.quantity > 0);
+  if (cleanupRequired) state.brackets = state.brackets.filter((bracket) => bracket.quantity > 0);
 }
 export function matchReplayBar(state: ReplayExecution, bar: Candle): void {
-  if (![bar.timestamp, bar.open, bar.high, bar.low, bar.close, bar.volume].every(Number.isFinite) || bar.low <= 0 || bar.low > Math.min(bar.open, bar.close) || bar.high < Math.max(bar.open, bar.close) || bar.volume < 0) throw new Error("Invalid Replay OHLCV bar.");
+  if (!Number.isSafeInteger(bar.timestamp) || bar.timestamp < 0
+    || !Number.isFinite(bar.open) || !Number.isFinite(bar.high) || !Number.isFinite(bar.low)
+    || !Number.isFinite(bar.close) || !Number.isFinite(bar.volume)
+    || bar.low <= 0 || bar.low > Math.min(bar.open, bar.close) || bar.high < Math.max(bar.open, bar.close) || bar.volume < 0) throw new Error("Invalid Replay OHLCV bar.");
+  const previousBar = state.equity.at(-1);
+  if (previousBar && bar.timestamp <= previousBar.timestamp) throw new Error("Replay bars must have strictly increasing timestamps.");
   runBrackets(state, bar, "open");
-  for (const phase of ["open", "range"] as const) {
+  for (const phase of REPLAY_BAR_PHASES) {
   if (phase === "range") runBrackets(state, bar, "range");
   for (const order of state.orders) {
     if (order.status !== "submitted" || order.submittedAt >= bar.timestamp) continue;

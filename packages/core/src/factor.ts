@@ -254,6 +254,17 @@ export function compileFactor(expression: string): CompiledFactorResult {
         const leftSlots=ordered.map(n => n.k==="bin" || n.k==="un" || n.k==="cond" ? slotByNode.get(n.a!)! : -1);
         const rightSlots=ordered.map(n => n.k==="bin" || n.k==="cond" ? slotByNode.get(n.b!)! : -1);
         const alternateSlots=ordered.map(n => n.k==="cond" ? slotByNode.get(n.c!)! : -1);
+        const computationCap = FACTOR_LIMITS.computation + 1;
+        let workPerCandle = 0;
+        for (const node of ordered) {
+            let nodeWork = 1;
+            if (node.k === "call") {
+                const fn = node.v as string;
+                const window = node.args![1]!.v as number;
+                nodeWork = fn === "ts_delay" ? 1 : fn === "ts_delta" ? 2 : fn === "ts_std_dev" ? 2 * window : window;
+            }
+            workPerCandle = Math.min(computationCap, workPerCandle + nodeWork);
+        }
         const sharedWorkspace: EvaluationWorkspace = { values: new Float64Array(0), valid: new Uint8Array(0) };
         let sharedWorkspaceInUse = false;
         return {
@@ -261,6 +272,17 @@ export function compileFactor(expression: string): CompiledFactorResult {
             errors: [],
             plan: {
                 evaluate: candles => {
+                    if (Math.min(computationCap, workPerCandle * candles.length) > FACTOR_LIMITS.computation) {
+                        return {
+                            ok: false,
+                            values: null,
+                            errors: [{
+                                code: "validation",
+                                message: `Estimated computation exceeds limit of ${FACTOR_LIMITS.computation}`,
+                                ...loc(expression, root.pos),
+                            }],
+                        };
+                    }
                     const cells = ordered.length * candles.length;
                     const canReuse = !sharedWorkspaceInUse && cells <= REUSABLE_WORKSPACE_CELL_LIMIT;
                     let workspace: EvaluationWorkspace;
@@ -303,19 +325,6 @@ export function evaluateFactor(expression: string, candles: readonly Candle[]): 
 
 function evaluateParsed(expression: string, root: Node, rootSlot: number, candles: readonly Candle[], ordered: readonly Node[], inputSlots: readonly number[], leftSlots: readonly number[], rightSlots: readonly number[], alternateSlots: readonly number[], workspace: EvaluationWorkspace): FactorResult {
     try {
-        const cap=FACTOR_LIMITS.computation+1;
-        let work=0;
-        for (const n of ordered) {
-            let nodeWork=1;
-            if (n.k==="call") {
-                const fn=n.v as string, w=n.args![1]!.v as number;
-                nodeWork=fn==="ts_delay" ? 1 : fn==="ts_delta" ? 2 : fn==="ts_std_dev" ? 2*w : w;
-            }
-            work=Math.min(cap, work+nodeWork);
-        }
-        if (Math.min(cap, work*candles.length)>FACTOR_LIMITS.computation)
-            throw new ParseFailure(root.pos, `Estimated computation exceeds limit of ${FACTOR_LIMITS.computation}`, "validation");
-
         const length=candles.length, nodeCount=ordered.length;
         const cells=nodeCount*length;
         workspace.valid.fill(0,0,cells);

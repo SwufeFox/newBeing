@@ -53,6 +53,7 @@ export function validateResearchSweep(results: readonly BacktestResult[], sweep:
   if (sweep.walkForward && sweep.runs.some((run) => !run.segment) &&
       (!allowLegacy || sweep.runs.some((run) => Boolean(run.segment)) || sweep.runs.length !== sweep.values.length * 4 + 4)) fail();
   const legacySegments = researchSweepRunSegments(sweep);
+  const validatedSegments = new Set<string>();
   results.forEach((result, index) => {
     const run = sweep.runs[index]!;
     const value = sweep.walkForward ? result.parameters[sweep.parameter] as number : sweep.values[index]!;
@@ -60,8 +61,12 @@ export function validateResearchSweep(results: readonly BacktestResult[], sweep:
       if (!run.segment && !legacySegments.has(run.resultId)) fail();
       if (run.segment) {
         if (!Number.isInteger(run.segment.start) || !Number.isInteger(run.segment.end) || run.segment.start < 0 || run.segment.end - run.segment.start < 2 || run.segment.end > snapshot.candles.length || run.segment.reproduction.snapshotId !== run.segment.datasetId) fail();
-        const segmentSnapshot = loadDatasetSnapshot(run.segment.datasetId);
-        if (segmentSnapshot.exchange !== sweep.exchange || segmentSnapshot.symbol !== sweep.symbol || segmentSnapshot.timeframe !== sweep.timeframe || !same(segmentSnapshot.candles, snapshot.candles.slice(run.segment.start, run.segment.end))) fail();
+        const segmentKey = `${run.segment.datasetId}:${run.segment.start}:${run.segment.end}`;
+        if (!validatedSegments.has(segmentKey)) {
+          const segmentSnapshot = loadDatasetSnapshot(run.segment.datasetId);
+          if (segmentSnapshot.exchange !== sweep.exchange || segmentSnapshot.symbol !== sweep.symbol || segmentSnapshot.timeframe !== sweep.timeframe || !same(segmentSnapshot.candles, snapshot.candles.slice(run.segment.start, run.segment.end))) fail();
+          validatedSegments.add(segmentKey);
+        }
       } else if (!allowLegacy || result.datasetId !== sweep.datasetId) fail();
     }
     if (!Number.isFinite(value) || run.value !== value || run.resultId !== result.resultId ||
@@ -153,10 +158,16 @@ export function listSavedEvaluations(limit = 20): SavedEvaluationRecord[] {
 }
 
 export function saveResearchResults(results: readonly BacktestResult[], sweep?: BacktestSweepResult, open?: { expected: ReturnType<typeof getWorkspaceState>; state: WorkspaceState }, evaluation?: { evaluationId: string; request: string; report: string; createdAt: number }): void {
+  const verifiedSnapshots = new Map<string, { exchange: string; symbol: string; timeframe: string }>();
   for (const result of results) {
     if (!result.reproduction || result.reproduction.snapshotId !== result.datasetId) throw new Error("Research result requires its original snapshot.");
-    const snapshot = loadDatasetSnapshot(result.datasetId);
-    if (snapshot.exchange !== result.exchange || snapshot.symbol !== result.symbol || snapshot.timeframe !== result.timeframe) throw new Error("Research snapshot identity mismatch.");
+    let identity = verifiedSnapshots.get(result.datasetId);
+    if (!identity) {
+      const snapshot = loadDatasetSnapshot(result.datasetId);
+      identity = { exchange: snapshot.exchange, symbol: snapshot.symbol, timeframe: snapshot.timeframe };
+      verifiedSnapshots.set(result.datasetId, identity);
+    }
+    if (identity.exchange !== result.exchange || identity.symbol !== result.symbol || identity.timeframe !== result.timeframe) throw new Error("Research snapshot identity mismatch.");
   }
   if (sweep) validateResearchSweep(results, sweep);
   getDatabase().transaction((tx) => {

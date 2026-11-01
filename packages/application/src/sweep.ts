@@ -2,7 +2,7 @@ import { ENGINE_VERSION, runBacktest, type BacktestConfig, type BacktestResult, 
 import { fetchLatestCompletedCandles, findCandleGaps, getExchangeAdapter, type ExchangeAdapter } from "@newbeing/market-data";
 import { canonicalJson, getExperiment, getSavedSweep, getWorkspaceState, identifyDataset, researchSweepRunSegments, saveDatasetSnapshot, saveResearchResults, validateResearchSweep } from "@newbeing/storage";
 import { randomUUID } from "node:crypto";
-import { assertResearchAvailable, assertSameOutcome, originalResearchInput, outcomeIdentity, reproductionFor, ResearchError, resolveResearchStrategy } from "./research-inputs.js";
+import { assertResearchAvailable, assertSameOutcome, originalResearchInput, outcomeIdentity, reproductionFor, ResearchError, resolveResearchStrategy, type OriginalResearchInput } from "./research-inputs.js";
 import { sweepCartesian } from "./sweep-values.js";
 export { SWEEP_MAX_RUNS, sweepValues, sweepCartesian } from "./sweep-values.js";
 
@@ -48,11 +48,21 @@ export async function runBacktestSweep(request: SweepRequest, dependencies: { no
   const reproduction = reproductionFor(datasetId);
   const storedResults: BacktestResult[] = [];
   const segments: Array<{ start: number; end: number }> = [];
+  const segmentDatasetIds = new Map<string, string>();
   const execute = (start: number, end: number, value: number): BacktestResult => {
     if (end - start < 2) throw new Error("Every sweep segment requires at least two usable candles.");
     const segmentCandles = candles.slice(start, end);
     const segmentInput = { exchange, symbol: request.symbol, timeframe: request.timeframe, candles: segmentCandles };
-    const segmentDatasetId = request.mode === "walk-forward" ? saveDatasetSnapshot(segmentInput) : datasetId;
+    let segmentDatasetId = datasetId;
+    if (request.mode === "walk-forward") {
+      const key = `${start}:${end}`;
+      const existing = segmentDatasetIds.get(key);
+      if (existing) segmentDatasetId = existing;
+      else {
+        segmentDatasetId = saveDatasetSnapshot(segmentInput);
+        segmentDatasetIds.set(key, segmentDatasetId);
+      }
+    }
     const run = runBacktest({ ...input, candles: segmentCandles, datasetId: segmentDatasetId, strategy, parameters: { ...parameters, [request.parameter]: value }, config: request.config, resultId: randomUUID() });
     storedResults.push(run);
     segments.push({ start, end });
@@ -111,7 +121,7 @@ export async function runBacktestSweep(request: SweepRequest, dependencies: { no
   for (let index = 0; index < storedResults.length; index++) {
     const result = storedResults[index]!;
     const segmentDatasetId = result.datasetId;
-    const segmentReproduction = segmentDatasetId === datasetId ? reproduction : reproductionFor(segmentDatasetId);
+    const segmentReproduction = segmentDatasetId === datasetId ? reproduction : { ...reproduction, snapshotId: segmentDatasetId };
     result.reproduction = { ...segmentReproduction };
   }
   const sweep: SweepResult = {
@@ -146,15 +156,40 @@ export function rerunBacktestSweep(id: string): SweepResult {
     const segments = researchSweepRunSegments(saved);
     if (saved.runs.length < segments.size || saved.bars !== snapshot.candles.length || wf.boundaries.total !== snapshot.candles.length || saved.runs.some((run) => !segments.has(run.resultId))) throw new ResearchError("Saved walk-forward bindings mismatch.", 422);
     const idMap = new Map<string, BacktestResult>();
-    const results = saved.runs.map((run) => {
-      const original = getExperiment(run.resultId);
+    const segmentInputs = new Map<string, OriginalResearchInput>();
+    const legacySegmentDatasetIds = new Map<string, string>();
+    const results = saved.runs.map((run, index) => {
+      const original = originals[index]!;
       const segment = run.segment ?? segments.get(run.resultId);
-      if (!original || !segment || run.value !== original.parameters[saved.parameter] || canonicalJson(run.metrics) !== canonicalJson(original.metrics)) throw new ResearchError("Saved walk-forward bindings mismatch.", 422);
+      if (!segment || run.value !== original.parameters[saved.parameter] || canonicalJson(run.metrics) !== canonicalJson(original.metrics)) throw new ResearchError("Saved walk-forward bindings mismatch.", 422);
       if (saved.outcomeVersion === 2 && run.outcomeId !== outcomeIdentity(original)) throw new ResearchError("Saved walk-forward outcome mismatch.", 422);
-      const segmentSnapshot = run.segment ? originalResearchInput({ ...saved, datasetId: run.segment.datasetId, reproduction: run.segment.reproduction }).snapshot : snapshot;
-      const result = runBacktest({ candles: segmentSnapshot.candles, exchange: segmentSnapshot.exchange, symbol: segmentSnapshot.symbol, timeframe: segmentSnapshot.timeframe, datasetId: run.segment?.datasetId ?? saved.datasetId, strategy, parameters: { ...saved.parameters, [saved.parameter]: run.value }, config: saved.config, resultId: randomUUID() });
+      let segmentCandles: typeof snapshot.candles;
+      let segmentDatasetId = original.datasetId;
+      if (run.segment) {
+        const cached = segmentInputs.get(run.segment.datasetId);
+        let segmentInput = cached;
+        const reference = run.segment.reproduction;
+        if (cached && (cached.reproduction.format !== reference.format || cached.reproduction.snapshotId !== reference.snapshotId || cached.reproduction.implementationHash !== reference.implementationHash)) throw new ResearchError("Saved walk-forward bindings mismatch.", 422);
+        if (!segmentInput) {
+          segmentInput = originalResearchInput({ ...saved, datasetId: run.segment.datasetId, reproduction: reference }, reproduction.implementationHash);
+          segmentInputs.set(run.segment.datasetId, segmentInput);
+        }
+        segmentCandles = segmentInput.snapshot.candles;
+        segmentDatasetId = run.segment.datasetId;
+      } else {
+        segmentCandles = snapshot.candles.slice(segment.start, segment.end);
+        const key = `${segment.start}:${segment.end}`;
+        const existing = legacySegmentDatasetIds.get(key);
+        if (existing) segmentDatasetId = existing;
+        else {
+          segmentDatasetId = saveDatasetSnapshot({ exchange: snapshot.exchange, symbol: snapshot.symbol, timeframe: snapshot.timeframe, candles: segmentCandles });
+          legacySegmentDatasetIds.set(key, segmentDatasetId);
+        }
+      }
+      const result = runBacktest({ candles: segmentCandles, exchange: snapshot.exchange, symbol: snapshot.symbol, timeframe: snapshot.timeframe, datasetId: original.datasetId, strategy, parameters: { ...saved.parameters, [saved.parameter]: run.value }, config: saved.config, resultId: randomUUID() });
       assertSameOutcome(original, result);
-      result.reproduction = { ...(run.segment?.reproduction ?? reproduction) };
+      result.datasetId = segmentDatasetId;
+      result.reproduction = { ...(run.segment?.reproduction ?? { ...reproduction, snapshotId: segmentDatasetId }) };
       result.rerunOf = original.resultId;
       idMap.set(run.resultId, result);
       return result;
@@ -174,8 +209,8 @@ export function rerunBacktestSweep(id: string): SweepResult {
   const results: BacktestResult[] = saved.values.map((value, index) => {
     const result = runBacktest({ candles: snapshot.candles, exchange: snapshot.exchange, symbol: snapshot.symbol, timeframe: snapshot.timeframe, datasetId: saved.datasetId, strategy, parameters: { ...saved.parameters, [saved.parameter]: value }, config: saved.config, resultId: randomUUID() });
     const run = saved.runs[index]!;
-    const original = getExperiment(run.resultId);
-    if (!original || run.value !== value || canonicalJson(run.metrics) !== canonicalJson(original.metrics)) throw new ResearchError("Saved sweep bindings mismatch.", 422);
+    const original = originals[index]!;
+    if (run.value !== value || canonicalJson(run.metrics) !== canonicalJson(original.metrics)) throw new ResearchError("Saved sweep bindings mismatch.", 422);
     if (saved.outcomeVersion === 2 && run.outcomeId !== outcomeIdentity(original)) throw new ResearchError("Saved sweep outcome mismatch.", 422);
     assertSameOutcome(original, result);
     result.reproduction = { ...reproduction };

@@ -50,7 +50,7 @@ export interface RunBacktestInput {
   createdAt?: string;
 }
 
-function validateInput(input: RunBacktestInput): void {
+function validateInput(input: RunBacktestInput): number {
   if (input.config.accountMode !== undefined && !["spot", "legacy-margin"].includes(input.config.accountMode)) throw new Error("Unsupported account mode.");
   if (input.config.accountMode !== "legacy-margin") {
     validateMoney(input.config.initialCapital);
@@ -68,6 +68,9 @@ function validateInput(input: RunBacktestInput): void {
   if (!(input.config.slippageRate >= 0 && input.config.slippageRate <= 0.05)) {
     throw new Error("Slippage rate is outside the supported range.");
   }
+  let firstDurationMs: number | undefined;
+  let irregularDurationsMs: number[] | null = null;
+
   for (let index = 0; index < input.candles.length; index += 1) {
     const candle = input.candles[index]!;
     if (
@@ -97,7 +100,15 @@ function validateInput(input: RunBacktestInput): void {
       throw new Error(`Inconsistent OHLC range at index ${index}.`);
     }
     const previous = index > 0 ? input.candles[index - 1] : undefined;
-    if (previous && candle.timestamp <= previous.timestamp) throw new Error("Candles must have strictly increasing timestamps.");
+    if (previous) {
+      if (candle.timestamp <= previous.timestamp) throw new Error("Candles must have strictly increasing timestamps.");
+      const durationMs = candle.timestamp - previous.timestamp;
+      if (firstDurationMs === undefined) firstDurationMs = durationMs;
+      else if (durationMs !== firstDurationMs && irregularDurationsMs === null) {
+        irregularDurationsMs = new Array<number>(index - 1).fill(firstDurationMs);
+        irregularDurationsMs.push(durationMs);
+      } else if (irregularDurationsMs !== null) irregularDurationsMs.push(durationMs);
+    }
   }
   if (input.config.stopLossPct !== undefined && !(input.config.stopLossPct > 0 && input.config.stopLossPct < 1)) {
     throw new Error("Stop loss percentage must be between 0 and 1.");
@@ -108,60 +119,46 @@ function validateInput(input: RunBacktestInput): void {
   if (input.config.allowShorts && input.config.takeProfitPct !== undefined && input.config.takeProfitPct >= 1) {
     throw new Error("Short take-profit percentage must be less than 1 so its target remains positive.");
   }
+  const durations = irregularDurationsMs;
+  let medianDurationMs = firstDurationMs ?? 0;
+  if (durations !== null) {
+    durations.sort((left, right) => left - right);
+    const middleIndex = Math.floor(durations.length / 2);
+    const upperMiddle = durations[middleIndex] ?? 0;
+    medianDurationMs = durations.length % 2 === 0
+      ? ((durations[middleIndex - 1] ?? 0) + upperMiddle) / 2
+      : upperMiddle;
+  }
+  const medianDurationSeconds = medianDurationMs / 1000;
+  return medianDurationSeconds > 0 ? (365.25 * 24 * 60 * 60) / medianDurationSeconds : 0;
 }
 
 function withSlippage(price: number, orderSide: "buy" | "sell", rate: number): number {
   return price * (orderSide === "buy" ? 1 + rate : 1 - rate);
 }
 
-function annualizationFactor(candles: readonly Candle[]): number {
-  if (candles.length < 2) return 0;
-  const first = candles[1];
-  const previous = candles[0];
-  if (!first || !previous) return 0;
-  const firstDuration = (first.timestamp - previous.timestamp) / 1000;
-  let regular = true;
-  for (let index = 2; index < candles.length; index += 1) {
-    const current = candles[index];
-    const prior = candles[index - 1];
-    if (current && prior && (current.timestamp - prior.timestamp) / 1000 !== firstDuration) {
-      regular = false;
-      break;
-    }
-  }
-  if (regular) return firstDuration > 0 ? (365.25 * 24 * 60 * 60) / firstDuration : 0;
-
-  const durations: number[] = [];
-  for (let index = 1; index < candles.length; index += 1) {
-    const current = candles[index];
-    const prior = candles[index - 1];
-    if (current && prior) {
-      const duration = (current.timestamp - prior.timestamp) / 1000;
-      if (duration > 0) durations.push(duration);
-    }
-  }
-  if (durations.length === 0) return 0;
-  durations.sort((a, b) => a - b);
-  const medianSeconds = durations[Math.floor(durations.length / 2)] ?? 0;
-  return medianSeconds > 0 ? (365.25 * 24 * 60 * 60) / medianSeconds : 0;
-}
-
 function buildMetrics(
-  equityCurve: readonly EquityPoint[],
+  equityCurve: EquityPoint[],
   trades: readonly BacktestTrade[],
   initialCapital: number,
   totalFees: number,
-  candles: readonly Candle[],
-  maxDrawdown: number,
+  annualizationFactor: number,
 ): BacktestMetrics {
   const finalEquity = equityCurve.at(-1)?.equity ?? initialCapital;
   const totalReturn = finalEquity / initialCapital - 1;
+  let peak = initialCapital;
+  let maxDrawdown = 0;
   let returnCount = 0;
   let returnSum = 0;
-  for (let index = 1; index < equityCurve.length; index += 1) {
-    const previous = equityCurve[index - 1];
+  for (let index = 0; index < equityCurve.length; index += 1) {
     const current = equityCurve[index];
-    if (previous && current && previous.equity !== 0) {
+    if (!current) continue;
+    peak = Math.max(peak, current.equity);
+    current.drawdown = peak > 0 ? Math.max(0, (peak - current.equity) / peak) : 0;
+    maxDrawdown = Math.max(maxDrawdown, current.drawdown);
+    if (index === 0) continue;
+    const previous = equityCurve[index - 1];
+    if (previous && previous.equity !== 0) {
       returnSum += current.equity / previous.equity - 1;
       returnCount += 1;
     }
@@ -180,7 +177,7 @@ function buildMetrics(
   }
   const variance = returnCount > 1 ? squaredDeviation / (returnCount - 1) : 0;
   const deviation = Math.sqrt(variance);
-  const sharpeRatio = deviation > 0 ? (mean / deviation) * Math.sqrt(annualizationFactor(candles)) : null;
+  const sharpeRatio = deviation > 0 ? (mean / deviation) * Math.sqrt(annualizationFactor) : null;
   let winCount = 0;
   let grossWins = 0;
   let grossLosses = 0;
@@ -206,7 +203,7 @@ function buildMetrics(
 }
 
 export function runBacktest(input: RunBacktestInput): BacktestResult {
-  validateInput(input);
+  const annualizationFactor = validateInput(input);
   const { candles, config, strategy } = input;
   const signalStream = strategy.createSignalStream?.(input.parameters) ?? null;
   const fallbackSignals = signalStream ? null : strategySignalSides(strategy, candles, input.parameters);
@@ -347,13 +344,6 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
     const lastPoint = equityCurve.at(-1);
     if (lastPoint) lastPoint.equity = cash;
   }
-  let peak = config.initialCapital;
-  let maxDrawdown = 0;
-  for (const point of equityCurve) {
-    peak = Math.max(peak, point.equity);
-    point.drawdown = peak > 0 ? Math.max(0, (peak - point.equity) / peak) : 0;
-    maxDrawdown = Math.max(maxDrawdown, point.drawdown);
-  }
   return {
     resultId: input.resultId,
     datasetId: input.datasetId,
@@ -368,7 +358,7 @@ export function runBacktest(input: RunBacktestInput): BacktestResult {
     execution: { ...BACKTEST_EXECUTION_ASSUMPTIONS, ...(!spot ? { intrabarStops: LEGACY_MARGIN_EXECUTION_POLICY.protection } : {}) },
     engineVersion: ENGINE_VERSION,
     createdAt: input.createdAt ?? new Date().toISOString(),
-    metrics: buildMetrics(equityCurve, trades, config.initialCapital, totalFees, candles, maxDrawdown),
+    metrics: buildMetrics(equityCurve, trades, config.initialCapital, totalFees, annualizationFactor),
     equityCurve,
     trades,
     signals: signalResults,

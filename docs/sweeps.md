@@ -18,7 +18,7 @@ The fold metrics describe the specified historical intervals. They are not stati
 
 ## Saved results and reruns
 
-The parent dataset identifies the complete fetched sample. Every walk-forward result also records its half-open bar-index segment, segment dataset ID and reproduction reference. Each segment is stored as an immutable snapshot. The saved sweep contains compact metrics and result IDs for every candidate training run, validation run, final training candidate and final test; complete equity curves, trades and signals remain with each individual backtest result.
+The parent dataset identifies the complete fetched sample. Every walk-forward result also records its half-open bar-index segment, segment dataset ID and reproduction reference. Parameter candidates over the same interval share one immutable segment snapshot. Older reports without per-run segment metadata reconstruct intervals from the saved fold boundaries. The saved sweep contains compact metrics and result IDs for every candidate training run, validation run, final training candidate and final test; complete equity curves, trades and signals remain with each individual backtest result.
 
 `POST /api/sweeps/{sweepId}/rerun` reruns all saved runs from their exact snapshots without network access or input overrides, verifies the outcomes and saves a new sweep linked to the original. The list, detail, create and rerun responses expose the compact report rather than per-bar arrays.
 
