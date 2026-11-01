@@ -234,11 +234,12 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-wider">Quantity ({base})</span>
                 <button
                   type="button"
+                  aria-pressed={sizingSide === "buy"}
                   aria-label="Toggle sizing side"
                   onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
                   className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
@@ -277,7 +278,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
                   +
                 </button>
               </div>
-            </label>
+            </div>
           </div>
 
           <div className="space-y-1">

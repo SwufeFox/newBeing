@@ -266,8 +266,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
         summaryGate.release();
         const response = await delivered;
         expect(response.ok()).toBeTruthy();
-        // The summary payload carries quotes only; fixture provenance is asserted on
-        // the candle response, which is the only market route that reports a source.
+        // Summary responses include both quote values and their data-source label.
         const summary = await response.json() as { last: number | null; ask: number | null };
         expect(typeof summary.last).toBe("number");
         await expect(page.locator(".exchange-time")).toHaveText(/^Updated:/);
@@ -276,6 +275,28 @@ test.describe("evaluation and shared spot browser regressions", () => {
         await summaryGate.unroute();
       }
     }
+  });
+
+  test("shared spot sizing toggle exposes its active side to keyboard users", async ({ page, request }) => {
+    await trainingCandles(request);
+    await prepareWorkspace(request, "terminal");
+    await readJson(await request.post("/api/spot", { data: { action: "open", exchange: "binance", quote: "USDT" } }));
+    await page.goto("/");
+    const ticket = await openSharedTicket(page);
+    await expect(ticket).toHaveAttribute("data-loaded", "true");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const toggle = ticket.getByRole("button", { name: "Toggle sizing side" });
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await toggle.focus();
+    await toggle.press("Space");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(ticket).toContainText("SIZING · SELL");
+    await toggle.press("Space");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(ticket).toContainText("SIZING · BUY");
+    const { viewportWidth, documentWidth } = await page.evaluate(() => ({ viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth }));
+    expect(documentWidth).toBeLessThanOrEqual(viewportWidth);
   });
 
   test("shared wallet waits for reads, shares an account across pairs, and discards a stale venue read", async ({ page, request }) => {
