@@ -87,6 +87,22 @@ describe("event-driven backtest", () => {
     expect(() => runBacktest({ ...base, candles: [candle(1, 10, 11, 9, 10), candle(1, 10, 11, 9, 10)] })).toThrow(/increasing/);
     expect(() => runBacktest({ ...base, candles: [candle(1, 10, 9, 8, 10), candle(2, 10, 11, 9, 10)] })).toThrow(/OHLC/);
   });
+  it("rejects fractional and unsafe Unix-millisecond candle timestamps", () => {
+    const base = {
+      symbol: "BTC/USDT",
+      timeframe: "1m" as const,
+      datasetId: "dataset-timestamp",
+      strategy: alwaysLongFromFirst,
+      parameters: {},
+      config,
+      resultId: "result-timestamp",
+      exchange: "binance" as const,
+    };
+    for (const timestamp of [0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => runBacktest({ ...base, candles: [candle(0, 10, 11, 9, 10), candle(timestamp, 10, 11, 9, 10)] })).toThrow(/Invalid OHLCV bar at index 1/);
+    }
+  });
+
 
   it("keeps signals and earlier fills invariant when only future bars change", () => {
     const candles = Array.from({ length: 80 }, (_, index) => {

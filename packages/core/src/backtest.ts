@@ -71,7 +71,7 @@ function validateInput(input: RunBacktestInput): void {
   for (let index = 0; index < input.candles.length; index += 1) {
     const candle = input.candles[index]!;
     if (
-      !Number.isFinite(candle.timestamp)
+      !Number.isSafeInteger(candle.timestamp)
       || !Number.isFinite(candle.open)
       || !Number.isFinite(candle.high)
       || !Number.isFinite(candle.low)
