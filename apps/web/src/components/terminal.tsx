@@ -111,9 +111,10 @@ function readItems<T>(payload: unknown): T[] {
   return payload.items as T[];
 }
 
-function parseSummary(payload: unknown): MarketSummary | null {
+type MarketSummaryPayload = MarketSummary & { source?: string };
+function parseSummary(payload: unknown): MarketSummaryPayload | null {
   if (typeof payload !== "object" || payload === null || !("symbol" in payload) || typeof payload.symbol !== "string" || !("last" in payload)) return null;
-  return payload as MarketSummary;
+  return payload as MarketSummaryPayload;
 }
 
 function formatPrice(value: number | null | undefined): string {
@@ -142,9 +143,9 @@ function parseReplayEnvelope(payload: unknown): ReplayEnvelope | null {
   return payload as ReplayEnvelope;
 }
 
-function useSummary(symbol: string, exchange: WorkspaceState["exchange"], enabled: boolean): { summary: MarketSummary | null; error: string | null; retry: () => void } {
+function useSummary(symbol: string, exchange: WorkspaceState["exchange"], enabled: boolean): { summary: MarketSummaryPayload | null; error: string | null; retry: () => void } {
   const key = `${exchange}|${symbol}`;
-  const [snapshot, setSnapshot] = useState<{ key: string; summary: MarketSummary | null; error: string | null } | null>(null);
+  const [snapshot, setSnapshot] = useState<{ key: string; summary: MarketSummaryPayload | null; error: string | null } | null>(null);
   const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
@@ -348,7 +349,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
   );
 }
 
-const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replayMode, replayPrice, subject, onRetry }: { summary: MarketSummary | null; error: string | null; replayMode: boolean; replayPrice: number | null; subject: string; onRetry: () => void }): React.JSX.Element {
+const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replayMode, replayPrice, subject, onRetry }: { summary: MarketSummaryPayload | null; error: string | null; replayMode: boolean; replayPrice: number | null; subject: string; onRetry: () => void }): React.JSX.Element {
   const change = summary?.changePct24h;
   const currentPrice = replayMode ? replayPrice : summary?.last;
   const last = formatPrice(currentPrice);
@@ -1317,7 +1318,7 @@ export function Terminal(): React.JSX.Element {
               <span className={`relative inline-flex rounded-full h-2 w-2 ${summaryError ? "bg-rose-500" : workspace === "replay" ? "bg-cyan-400" : summary ? "bg-emerald-500" : "bg-amber-400"}`} />
             </span>
             <span className={summaryError ? "text-rose-400" : workspace === "replay" ? "text-cyan-400" : summary ? "text-emerald-400" : "text-amber-400"}>
-              {workspace === "replay" ? "REPLAY DATA" : summaryError ? "DELAYED" : summary ? "PUBLIC REALTIME" : "CONNECTING"}
+              {workspace === "replay" ? "REPLAY DATA" : summaryError ? "DELAYED" : summary?.source?.toLowerCase().includes("fixture") ? "TEST FIXTURE" : summary ? "PUBLIC REALTIME" : "CONNECTING"}
             </span>
           </div>
         </div>

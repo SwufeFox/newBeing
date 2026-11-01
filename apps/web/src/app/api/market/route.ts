@@ -26,7 +26,10 @@ export async function GET(request: Request): Promise<NextResponse> {
       return NextResponse.json({ error: "Live quotes and depth are suppressed during Replay." }, { status: 409 });
     }
     const adapter = getWebMarketAdapter(exchange);
-    if (kind === "summary") return NextResponse.json(await adapter.fetchSummary(symbol), { headers: { "Cache-Control": "no-store" } });
+    if (kind === "summary") {
+      const summary = await adapter.fetchSummary(symbol);
+      return NextResponse.json({ ...summary, source: marketDataSourceLabel(exchange) }, { headers: { "Cache-Control": "no-store" } });
+    }
     if (kind === "tickers") {
       const symbols = (url.searchParams.get("symbols") ?? "").split(",").filter(Boolean).slice(0, 40);
       return NextResponse.json({ items: await adapter.fetchSummaries(symbols) }, { headers: { "Cache-Control": "no-store" } });

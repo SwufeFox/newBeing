@@ -47,6 +47,7 @@ test("chart, backtest, source draft, Paper order, Replay and workspace sync use 
   expect((await marketResponse.json()).source).toBe("Deterministic test fixture");
   const chart = page.getByRole("region", { name: "Interactive market chart" });
   await expect(chart).toBeVisible();
+  await expect(page.getByText("TEST FIXTURE", { exact: true })).toBeVisible();
   await expect(chart.locator("canvas").first()).toBeVisible();
 
   await activate(page.getByRole("tab", { name: "Strategy lab" }), useKeyboard);
