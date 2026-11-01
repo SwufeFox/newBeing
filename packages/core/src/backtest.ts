@@ -181,17 +181,24 @@ function buildMetrics(
   const variance = returnCount > 1 ? squaredDeviation / (returnCount - 1) : 0;
   const deviation = Math.sqrt(variance);
   const sharpeRatio = deviation > 0 ? (mean / deviation) * Math.sqrt(annualizationFactor(candles)) : null;
-  const wins = trades.filter((trade) => trade.netPnl > 0);
-  const losses = trades.filter((trade) => trade.netPnl < 0);
-  const grossWins = wins.reduce((sum, trade) => sum + trade.netPnl, 0);
-  const grossLosses = Math.abs(losses.reduce((sum, trade) => sum + trade.netPnl, 0));
+  let winCount = 0;
+  let grossWins = 0;
+  let grossLosses = 0;
+  for (const trade of trades) {
+    if (trade.netPnl > 0) {
+      winCount += 1;
+      grossWins += trade.netPnl;
+    } else if (trade.netPnl < 0) {
+      grossLosses -= trade.netPnl;
+    }
+  }
   return {
     initialCapital,
     finalEquity,
     totalReturn,
     sharpeRatio: Number.isFinite(sharpeRatio) ? sharpeRatio : null,
     maxDrawdown,
-    winRate: trades.length > 0 ? wins.length / trades.length : 0,
+    winRate: trades.length > 0 ? winCount / trades.length : 0,
     profitFactor: grossLosses > 0 ? grossWins / grossLosses : null,
     tradeCount: trades.length,
     totalFees,

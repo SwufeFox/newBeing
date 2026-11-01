@@ -36,6 +36,30 @@ describe("backtest metric and protective-level validation", () => {
     expect(result.equityCurve[1]?.equity).toBe(10_500);
     expect(result.metrics.sharpeRatio).toBeNull();
   });
+  it("aggregates win rate and profit factor across winning and losing trades", () => {
+    const bars = [100, 100, 110, 100, 90].map((price, index) => ({
+      timestamp: 1_700_000_000_000 + index * 60_000,
+      open: price,
+      high: price,
+      low: price,
+      close: price,
+      volume: 10,
+    }));
+    const alternating: StrategyDefinition = {
+      ...alwaysLong,
+      signalAt: (_bars, index) => index === 0 || index === 2 ? "long" : "flat",
+    };
+    const result = runBacktest({
+      ...baseInput,
+      candles: bars,
+      strategy: alternating,
+      config: { ...baseInput.config, initialCapital: 1_000 },
+    });
+
+    expect(result.trades.map((trade) => trade.netPnl)).toEqual([50, -52.5]);
+    expect(result.metrics).toMatchObject({ tradeCount: 2, winRate: 0.5, profitFactor: 50 / 52.5 });
+  });
+
 
   it("rejects non-positive short take-profit targets", () => {
     expect(() => runBacktest({
