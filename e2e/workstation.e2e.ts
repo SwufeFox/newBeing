@@ -104,6 +104,21 @@ test("chart, backtest, source draft, Paper order, Replay and workspace sync use 
   }
 });
 
+test("Paper recovery stays mounted when a successful response is malformed", async ({ page }) => {
+  await installApiMocks(page);
+  await page.route("**/api/paper/recovery", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({}),
+  }));
+
+  await page.goto("/");
+  const recoveryPanel = page.getByTestId("paper-recovery");
+  await expect(recoveryPanel).toBeVisible();
+  await expect(recoveryPanel).toContainText("Pending Paper status unavailable.");
+  await expect(recoveryPanel).toHaveAttribute("data-loaded", "false");
+});
+
 test("state-changing APIs reject rebinding hosts and cross-origin writes", async ({ request, baseURL }) => {
   test.skip(process.env.PLAYWRIGHT_API_STUBS === "1", "This local UI-only run stubs all APIs; CI verifies the real proxy guard.");
   if (!baseURL) throw new Error("Playwright baseURL is not configured.");

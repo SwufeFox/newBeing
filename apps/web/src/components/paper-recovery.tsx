@@ -56,7 +56,8 @@ export function PaperRecoveryPanel(): React.JSX.Element {
       try {
         const response = await fetch("/api/paper/recovery", { cache: "no-store" });
         if (!response.ok) throw new Error("Pending Paper status unavailable.");
-        const payload = await response.json() as { pending: PaperOrder[]; recoveries: Recovery[] };
+        const payload = await response.json() as Partial<{ pending: PaperOrder[]; recoveries: Recovery[] }>;
+        if (!Array.isArray(payload.pending) || !Array.isArray(payload.recoveries)) throw new Error("Pending Paper status unavailable.");
         if (!disposed) { setPending(payload.pending); setRecoveries(payload.recoveries); setError(null); setLoaded(true); }
       } catch (failure) {
         if (!disposed) setError(failure instanceof Error ? failure.message : "Pending Paper read failed.");

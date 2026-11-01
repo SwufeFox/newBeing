@@ -1,6 +1,6 @@
 import { ENGINE_VERSION, runBacktest, type BacktestConfig, type BacktestResult, type BacktestSweepResult, type ExchangeId, type StrategyParameters, type Timeframe } from "@newbeing/core";
 import { fetchLatestCompletedCandles, findCandleGaps, getExchangeAdapter, type ExchangeAdapter } from "@newbeing/market-data";
-import { canonicalJson, getExperiment, getSavedSweep, getWorkspaceState, identifyDataset, saveDatasetSnapshot, saveResearchResults, validateResearchSweep } from "@newbeing/storage";
+import { canonicalJson, getExperiment, getSavedSweep, getWorkspaceState, identifyDataset, researchSweepRunSegments, saveDatasetSnapshot, saveResearchResults, validateResearchSweep } from "@newbeing/storage";
 import { randomUUID } from "node:crypto";
 import { assertResearchAvailable, assertSameOutcome, originalResearchInput, outcomeIdentity, reproductionFor, ResearchError, resolveResearchStrategy } from "./research-inputs.js";
 import { sweepCartesian } from "./sweep-values.js";
@@ -143,27 +143,8 @@ export function rerunBacktestSweep(id: string): SweepResult {
   if (saved.values.length < 1 || saved.values.length > 40 || saved.values.some((value) => !Number.isFinite(value))) throw new ResearchError("Saved sweep values are invalid.", 422);
   if (saved.walkForward) {
     const wf = saved.walkForward;
-    const segments = new Map<string, { start: number; end: number }>();
-    for (const fold of wf.folds) {
-      segments.set(fold.trainingResultId, { start: 0, end: fold.trainEnd });
-      segments.set(fold.validationResultId, { start: fold.validationStart, end: fold.validationEnd });
-    }
-    segments.set(wf.finalTrainingResultId, { start: 0, end: wf.boundaries.train80 });
-    segments.set(wf.finalTestResultId, { start: wf.boundaries.train80, end: wf.boundaries.total });
-    const legacySegments = new Map<string, { start: number; end: number }>();
-    if (saved.runs.some((run) => !run.segment)) {
-      let offset = 0;
-      for (const [trainEnd, validationEnd] of [[wf.boundaries.train50, wf.boundaries.train60], [wf.boundaries.train60, wf.boundaries.train70], [wf.boundaries.train70, wf.boundaries.train80]] as const) {
-        for (let candidate = 0; candidate < saved.values.length; candidate++) legacySegments.set(saved.runs[offset + candidate]!.resultId, { start: 0, end: trainEnd });
-        offset += saved.values.length;
-        legacySegments.set(saved.runs[offset++]!.resultId, { start: trainEnd, end: validationEnd });
-      }
-      for (let candidate = 0; candidate < saved.values.length; candidate++) legacySegments.set(saved.runs[offset + candidate]!.resultId, { start: 0, end: wf.boundaries.train80 });
-      offset += saved.values.length;
-      legacySegments.set(saved.runs[offset]!.resultId, { start: wf.boundaries.train80, end: wf.boundaries.total });
-      for (const [resultId, segment] of legacySegments) if (!segments.has(resultId)) segments.set(resultId, segment);
-    }
-    if (saved.runs.length < segments.size || saved.bars !== snapshot.candles.length || wf.boundaries.total !== snapshot.candles.length || saved.runs.some((run) => !run.segment && !segments.has(run.resultId))) throw new ResearchError("Saved walk-forward bindings mismatch.", 422);
+    const segments = researchSweepRunSegments(saved);
+    if (saved.runs.length < segments.size || saved.bars !== snapshot.candles.length || wf.boundaries.total !== snapshot.candles.length || saved.runs.some((run) => !segments.has(run.resultId))) throw new ResearchError("Saved walk-forward bindings mismatch.", 422);
     const idMap = new Map<string, BacktestResult>();
     const results = saved.runs.map((run) => {
       const original = getExperiment(run.resultId);

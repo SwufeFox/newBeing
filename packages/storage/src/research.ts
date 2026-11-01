@@ -12,6 +12,32 @@ export function outcomeIdentity(result: BacktestResult): string {
   return createHash("sha256").update(canonicalJson(["outcome-2", computation])).digest("hex");
 }
 
+/** Reconstructs result ranges for current and pre-segment walk-forward sweeps. */
+export function researchSweepRunSegments(sweep: BacktestSweepResult): Map<string, { start: number; end: number }> {
+  const segments = new Map<string, { start: number; end: number }>();
+  const report = sweep.walkForward;
+  if (!report) return segments;
+  for (const run of sweep.runs) {
+    if (run.segment) segments.set(run.resultId, { start: run.segment.start, end: run.segment.end });
+  }
+  if (sweep.runs.some((run) => !run.segment)) {
+    if (sweep.runs.some((run) => Boolean(run.segment)) || sweep.runs.length !== sweep.values.length * 4 + 4) return segments;
+    const { train50, train60, train70, train80, total } = report.boundaries;
+    let offset = 0;
+    for (const [trainEnd, validationEnd] of [[train50, train60], [train60, train70], [train70, train80]] as const) {
+      for (let candidate = 0; candidate < sweep.values.length; candidate++) {
+        segments.set(sweep.runs[offset++]!.resultId, { start: 0, end: trainEnd });
+      }
+      segments.set(sweep.runs[offset++]!.resultId, { start: trainEnd, end: validationEnd });
+    }
+    for (let candidate = 0; candidate < sweep.values.length; candidate++) {
+      segments.set(sweep.runs[offset++]!.resultId, { start: 0, end: train80 });
+    }
+    segments.set(sweep.runs[offset]!.resultId, { start: train80, end: total });
+  }
+  return segments;
+}
+
 /** Legacy input-only outcome IDs are accepted only when reading originals for comparison. */
 export function validateResearchSweep(results: readonly BacktestResult[], sweep: BacktestSweepResult, allowLegacy = false): void {
   const same = (a: unknown, b: unknown) => canonicalJson(a) === canonicalJson(b);
@@ -24,19 +50,9 @@ export function validateResearchSweep(results: readonly BacktestResult[], sweep:
       !sweep.reproduction || sweep.reproduction.format !== 1 || sweep.reproduction.snapshotId !== sweep.datasetId) fail();
   const snapshot = loadDatasetSnapshot(sweep.datasetId);
   if (snapshot.exchange !== sweep.exchange || snapshot.symbol !== sweep.symbol || snapshot.timeframe !== sweep.timeframe || snapshot.candles.length !== sweep.bars) fail();
-  const legacySegments = new Map<string, { start: number; end: number }>();
-  if (sweep.walkForward && sweep.runs.some((run) => !run.segment)) {
-    if (!allowLegacy || sweep.runs.some((run) => Boolean(run.segment)) || sweep.runs.length !== sweep.values.length * 4 + 4) fail();
-    const n = snapshot.candles.length;
-    const boundaries = [Math.floor(0.5 * n), Math.floor(0.6 * n), Math.floor(0.7 * n), Math.floor(0.8 * n)];
-    let offset = 0;
-    for (let index = 0; index < 3; index++) {
-      for (let candidate = 0; candidate < sweep.values.length; candidate++) legacySegments.set(sweep.runs[offset++]!.resultId, { start: 0, end: boundaries[index]! });
-      legacySegments.set(sweep.runs[offset++]!.resultId, { start: boundaries[index]!, end: boundaries[index + 1]! });
-    }
-    for (let candidate = 0; candidate < sweep.values.length; candidate++) legacySegments.set(sweep.runs[offset++]!.resultId, { start: 0, end: boundaries[3]! });
-    legacySegments.set(sweep.runs[offset]!.resultId, { start: boundaries[3]!, end: n });
-  }
+  if (sweep.walkForward && sweep.runs.some((run) => !run.segment) &&
+      (!allowLegacy || sweep.runs.some((run) => Boolean(run.segment)) || sweep.runs.length !== sweep.values.length * 4 + 4)) fail();
+  const legacySegments = researchSweepRunSegments(sweep);
   results.forEach((result, index) => {
     const run = sweep.runs[index]!;
     const value = sweep.walkForward ? result.parameters[sweep.parameter] as number : sweep.values[index]!;

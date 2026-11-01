@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DEFAULT_WORKSPACE_STATE, type Candle } from "@newbeing/core";
-import { canonicalJson, closeDatabaseForTests, datasetSnapshotPath, getDatabase, getExperiment, getSavedSweep, getWorkspaceState, listExperiments, listSavedSweeps, loadDatasetSnapshot, saveResearchResults, saveExperiment, saveWorkspaceState } from "@newbeing/storage";
+import { canonicalJson, closeDatabaseForTests, datasetSnapshotPath, getDatabase, getExperiment, getSavedSweep, getWorkspaceState, identifyDataset, listExperiments, listSavedSweeps, loadDatasetSnapshot, researchSweepRunSegments, saveResearchResults, saveExperiment, saveWorkspaceState } from "@newbeing/storage";
 import type { ExchangeAdapter } from "@newbeing/market-data";
 import { outcomeIdentity } from "../src/research-inputs.js";
 import { rerunBacktestSweep, rerunResearchBacktest, runBacktestSweep, runResearchBacktest } from "../src/index.js";
@@ -102,6 +102,22 @@ describe("saved research inputs", () => {
     getDatabase().run(`UPDATE experiments SET result = '${canonicalJson(original).replaceAll("'", "''")}' WHERE result_id = '${original.resultId}'`);
     expect(() => rerunBacktestSweep(saved.sweepId)).toThrow(/drift/);
     expect(listSavedSweeps()).toHaveLength(2);
+  });
+  it("shares walk-forward run mapping and reruns current saved sweeps", async () => {
+    const bars: Candle[] = Array.from({ length: 50 }, (_, index) => {
+      const close = 100 + Math.sin(index / 3) * 5 + index / 10;
+      return { timestamp: index * 60_000, open: close, high: close + 1, low: close - 1, close, volume: index + 1 };
+    });
+    const saved = await runBacktestSweep({ ...request, limit: bars.length, parameter: "thresholdPct", from: 1, to: 2, step: 1, mode: "walk-forward" }, { marketAdapter: market(bars), now: () => bars.length * 60_000 });
+    const expected = saved.runs.map((run) => ({ start: run.segment!.start, end: run.segment!.end }));
+    const legacyShape = structuredClone(saved);
+    for (const run of legacyShape.runs) delete run.segment;
+    delete legacyShape.outcomeVersion;
+    const recovered = researchSweepRunSegments(legacyShape);
+    expect(legacyShape.runs.map((run) => recovered.get(run.resultId))).toEqual(expected);
+
+    const rerun = rerunBacktestSweep(saved.sweepId);
+    expect(rerun.runs.map((run) => ({ start: run.segment!.start, end: run.segment!.end }))).toEqual(expected);
   });
   it.each(["venue", "instrument", "timeframe", "strategy", "strategyVersion", "engineVersion", "config", "parameters", "values", "metrics", "outcome", "provenance", "bars", "duplicate-run", "legacy"])("rejects inconsistent %s at publication without inserting any rows", async (field) => {
     const sweep = await runBacktestSweep({ ...request, parameter: "thresholdPct", from: 1, to: 2, step: 1 }, { marketAdapter: market() });

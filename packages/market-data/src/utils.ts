@@ -9,6 +9,10 @@ export function timeframeMilliseconds(timeframe: Timeframe): number {
   return amount * multiplier;
 }
 
+function isCandleCompletedBy(candle: Candle, interval: number, cutoff: number): boolean {
+  return candle.timestamp + interval <= cutoff;
+}
+
 /** Latest N completed fixed-duration UTC bars: [floor(now / d) * d - N*d, floor(now / d) * d). */
 export function recentCompletedWindow(timeframe: Timeframe, limit: number, now = Date.now()): { since: number; through: number } {
   if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(now) || now < 0) throw new Error("Invalid candle window.");
@@ -19,20 +23,23 @@ export function recentCompletedWindow(timeframe: Timeframe, limit: number, now =
 
 export function removeFormingCandles(candles: readonly Candle[], timeframe: Timeframe, now = Date.now()): Candle[] {
   const interval = timeframeMilliseconds(timeframe);
-  return candles.filter((candle) => candle.timestamp + interval <= now);
+  return candles.filter((candle) => isCandleCompletedBy(candle, interval, now));
 }
 
 export function completedBarsThrough(candles: readonly Candle[], timeframe: Timeframe, endAt: number, now = Date.now()): Candle[] {
   const interval = timeframeMilliseconds(timeframe);
   const cutoff = Math.min(endAt, now);
-  return candles.filter((candle) => candle.timestamp + interval <= cutoff).sort((a, b) => a.timestamp - b.timestamp);
+  return candles.filter((candle) => isCandleCompletedBy(candle, interval, cutoff)).sort((a, b) => a.timestamp - b.timestamp);
 }
 
 export function nextCompletedBarAfter(candles: readonly Candle[], timeframe: Timeframe, cursor: number, now = Date.now()): Candle | null {
   const interval = timeframeMilliseconds(timeframe);
-  return candles
-    .filter((candle) => candle.timestamp > cursor && candle.timestamp + interval <= now)
-    .sort((a, b) => a.timestamp - b.timestamp)[0] ?? null;
+  let next: Candle | null = null;
+  for (const candle of candles) {
+    if (!(candle.timestamp > cursor && isCandleCompletedBy(candle, interval, now))) continue;
+    if (!next || candle.timestamp < next.timestamp) next = candle;
+  }
+  return next;
 }
 
 export function mergeCandles(existing: readonly Candle[], incoming: readonly Candle[]): Candle[] {

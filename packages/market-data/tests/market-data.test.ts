@@ -151,6 +151,7 @@ describe("market data normalization", () => {
   it("releases exactly one completed bar after the replay cursor", () => {
     const next = nextCompletedBarAfter([candle(60_000, 2), candle(120_000, 3), candle(180_000, 4)], "1m", 0, 300_000);
     expect(next).toEqual(candle(60_000, 2));
+    expect(nextCompletedBarAfter([candle(120_000, 3), candle(60_000, 2), candle(180_000, 4)], "1m", 0, 300_000)).toEqual(candle(60_000, 2));
     expect(nextCompletedBarAfter([candle(60_000, 2)], "1m", 0, 119_999)).toBeNull();
   });
 

@@ -55,6 +55,7 @@ export async function installApiMocks(page: Page): Promise<ApiMockState> {
   let draft: Record<string, unknown> | null = null;
   let replay = {
     id: "e2e-replay-fixture",
+    exchange: "binance",
     symbol: SYMBOL,
     timeframe: TIMEFRAME,
     startAt: candles[0]!.timestamp,
@@ -154,6 +155,8 @@ export async function installApiMocks(page: Page): Promise<ApiMockState> {
       }
       return json({ portfolio, orders: [], previews: [] });
     }
+
+    if (path === "/api/paper/recovery") return json({ pending: [], recoveries: [] });
 
     if (path === "/api/order-previews") return json({ previews: [], items: [] });
 
