@@ -40,7 +40,7 @@ pnpm mcp:smoke
 pnpm bench
 ```
 
-GitHub Actions runs tests, typecheck, lint, production build, deterministic Playwright E2E, and an isolated real stdio MCP tool-call smoke test. E2E enables `NEWBEING_E2E_FIXTURES=1`, which supplies deterministic synthetic OHLCV data without contacting Binance; it uses a fresh temporary SQLite directory. `pnpm bench` exercises 1k, 10k and 100k bars for all built-in strategies and reports elapsed time plus heap/RSS observations (informational, not a CI timing gate).
+GitHub Actions runs tests, typecheck, lint, production build, deterministic Playwright E2E, and an isolated real stdio MCP tool-call smoke test. E2E enables `NEWBEING_E2E_FIXTURES=1`, which supplies deterministic synthetic OHLCV data without contacting Binance; fixture-fed market summaries are labeled **TEST FIXTURE** to distinguish them from **PUBLIC REALTIME**. It uses a fresh temporary SQLite directory. `pnpm bench` exercises 1k, 10k and 100k bars for all built-in strategies and reports elapsed time plus heap/RSS observations (informational, not a CI timing gate).
 
 ## Safety and feature boundaries
 
