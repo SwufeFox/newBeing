@@ -119,6 +119,59 @@ test("Paper recovery stays mounted when a successful response is malformed", asy
   await expect(recoveryPanel).toHaveAttribute("data-loaded", "false");
 });
 
+test("workspace panels remain side-by-side on desktop and stack on mobile", async ({ page }) => {
+  await installApiMocks(page);
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Interactive market chart" })).toBeVisible();
+
+  const chartColumn = page.locator(".chart-column");
+  const inspectorSlot = page.locator(".inspector-slot");
+  const resultsSlot = page.locator(".dock-slot");
+  const viewportMeasurements = async () => page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+  }));
+  const assertNoHorizontalOverflow = async () => {
+    const { viewportWidth, documentWidth } = await viewportMeasurements();
+    expect(documentWidth).toBeLessThanOrEqual(viewportWidth);
+    return { viewportWidth, documentWidth };
+  };
+
+  const desktopChart = await chartColumn.boundingBox();
+  const desktopInspector = await inspectorSlot.boundingBox();
+  expect(desktopChart).not.toBeNull();
+  expect(desktopInspector).not.toBeNull();
+  expect(Math.abs(desktopChart!.y - desktopInspector!.y)).toBeLessThan(5);
+  expect(desktopChart!.x + desktopChart!.width).toBeLessThanOrEqual(desktopInspector!.x);
+  const desktopViewport = await assertNoHorizontalOverflow();
+  console.log("Desktop workspace measurements", {
+    viewport: `${desktopViewport.viewportWidth}px`,
+    document: `${desktopViewport.documentWidth}px`,
+    chart: `${Math.round(desktopChart!.width)}×${Math.round(desktopChart!.height)}px`,
+    inspector: `${Math.round(desktopInspector!.width)}×${Math.round(desktopInspector!.height)}px`,
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileChart = await chartColumn.boundingBox();
+  const mobileInspector = await inspectorSlot.boundingBox();
+  const mobileResults = await resultsSlot.boundingBox();
+  expect(mobileChart).not.toBeNull();
+  expect(mobileInspector).not.toBeNull();
+  expect(mobileResults).not.toBeNull();
+  expect(mobileChart!.width).toBeGreaterThan(350);
+  expect(mobileInspector!.width).toBeGreaterThan(350);
+  expect(mobileInspector!.y).toBeGreaterThanOrEqual(mobileChart!.y + mobileChart!.height);
+  expect(mobileResults!.y).toBeGreaterThanOrEqual(mobileInspector!.y + mobileInspector!.height);
+  const mobileViewport = await assertNoHorizontalOverflow();
+  console.log("Mobile workspace measurements", {
+    viewport: `${mobileViewport.viewportWidth}px`,
+    document: `${mobileViewport.documentWidth}px`,
+    chart: `${Math.round(mobileChart!.width)}×${Math.round(mobileChart!.height)}px`,
+    inspector: `${Math.round(mobileInspector!.width)}×${Math.round(mobileInspector!.height)}px`,
+    results: `${Math.round(mobileResults!.width)}×${Math.round(mobileResults!.height)}px`,
+  });
+});
+
 test("state-changing APIs reject rebinding hosts and cross-origin writes", async ({ request, baseURL }) => {
   test.skip(process.env.PLAYWRIGHT_API_STUBS === "1", "This local UI-only run stubs all APIs; CI verifies the real proxy guard.");
   if (!baseURL) throw new Error("Playwright baseURL is not configured.");

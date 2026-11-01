@@ -2741,11 +2741,21 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
     padding-bottom: 80px;
   }
   .workspace-grid {
+    flex: 0 0 auto;
     height: auto;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(400px, auto) minmax(420px, 60vh) minmax(220px, auto) !important;
     overflow: visible;
   }
+  .workspace-grid > .chart-column { grid-column: 1 !important; grid-row: 1 !important; }
+  .workspace-grid > .inspector-slot {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 420px;
+  }
+  .workspace-grid > .dock-slot { grid-column: 1 !important; grid-row: 3 !important; }
   .drag-horizontal, .drag-vertical { display: none; }
   .left-rail { display: none; }
   .chart-column { min-height: 400px; }
