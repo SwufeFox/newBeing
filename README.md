@@ -19,6 +19,8 @@ Open <http://localhost:3000>. No API key or third-party SaaS account is required
 
 The local SQLite database and saved experiments live under `.newbeing/` (ignored by Git). `NEWBEING_DATA_DIR` can move that state elsewhere. Public exchange requests are made server-side through CCXT; the browser subscribes only to Binance's public kline stream. This workspace is not a hosted service.
 
+Research refreshes the Experiments list after each completed backtest. Position allocation controls the share of available cash used per entry and displays a high-allocation warning at 90% or above.
+
 ## Derivatives
 
 Open **Derivatives** from the main navigation (or `/derivatives`). The dedicated workspace keeps native product identities, contract quantities and settlement currencies separate from spot symbols. It includes OKX USDT linear perpetuals, Deribit USDC linear dated futures, plus Deribit options with expiry, strike and call/put selection. Public data needs no exchange credentials.

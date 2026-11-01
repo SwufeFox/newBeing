@@ -391,12 +391,14 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         )}
         {parameterEntries.map(([key, defaultValue]) => {
           const value = params[key] ?? defaultValue;
+          const inputId = `strategy-parameter-${key}`;
           if (typeof defaultValue === "boolean") {
             return (
               <div className="toggle-row flex items-center justify-between py-1" key={key}>
-                <span className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(key)}</span>
+                <label htmlFor={inputId} className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(key)}</label>
                 <AkChoice
                   variant="switch"
+                  id={inputId}
                   checked={Boolean(value)}
                   onChange={(event) => updateParameter(key, event.target.checked)}
                 />
@@ -405,9 +407,10 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           }
           return (
             <div className="param-row flex items-center justify-between gap-2 py-1" key={key}>
-              <span className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(key)}</span>
+              <label htmlFor={inputId} className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(key)}</label>
               <AkInput
                 className="compact-input w-24 h-7 text-xs font-mono text-right"
+                id={inputId}
                 type="number"
                 min={0}
                 max={1000}
@@ -447,10 +450,12 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
             }}
           />
         </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">POSITION %</span>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="position-fraction-input" className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">POSITION %</label>
           <AkInput
             className="compact-input h-7 text-xs font-mono"
+            id="position-fraction-input"
+            aria-describedby="position-allocation-description"
             type="number"
             min={1}
             max={100}
@@ -463,7 +468,15 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
               }
             }}
           />
-        </label>
+          <span
+            id="position-allocation-description"
+            className={`text-[9px] leading-tight ${config.positionFraction >= 0.9 ? "text-[var(--ak-signal-action)]" : "text-[var(--ak-text-secondary)]"}`}
+          >
+            {config.positionFraction >= 0.9
+              ? `High allocation · ${Math.round(config.positionFraction * 100)}% of available cash per entry.`
+              : "Share of available cash used per entry."}
+          </span>
+        </div>
         <label className="flex flex-col gap-1">
           <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">FEE (BPS)</span>
           <AkInput

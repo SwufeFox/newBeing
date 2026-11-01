@@ -571,7 +571,7 @@ function Metric({ label, value, tone, title }: { label: string; value: string; t
   );
 }
 
-function ExperimentHistoryContent({ onSelect }: { onSelect: (id: string) => void }): React.JSX.Element {
+function ExperimentHistoryContent({ onSelect, refreshKey }: { onSelect: (id: string) => void; refreshKey: string | null }): React.JSX.Element {
   const [items, setItems] = useState<ExperimentSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [comparison, setComparison] = useState<BacktestResult[] | null>(null);
@@ -583,6 +583,7 @@ function ExperimentHistoryContent({ onSelect }: { onSelect: (id: string) => void
 
   useEffect(() => {
     let disposed = false;
+    setRefreshing(true);
     void fetch("/api/backtests?view=summary&limit=30", { cache: "no-store" }).then(async (response) => {
       const payload: unknown = await response.json();
       if (!response.ok) throw new Error("Experiment history is unavailable.");
@@ -595,7 +596,7 @@ function ExperimentHistoryContent({ onSelect }: { onSelect: (id: string) => void
     }).catch((reason: unknown) => { if (!disposed) setError(reason instanceof Error ? reason.message : "History load failed."); })
       .finally(() => { if (!disposed) setRefreshing(false); });
     return () => { disposed = true; };
-  }, [refreshToken]);
+  }, [refreshKey, refreshToken]);
 
   const compareSelected = async (): Promise<void> => {
     setLoadingComparison(true);
@@ -637,8 +638,8 @@ function ExperimentHistoryContent({ onSelect }: { onSelect: (id: string) => void
     return (
       <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]">
         <Clock3 size={18} className="mx-auto mb-2 text-[var(--ak-signal-info)]" />
-        <strong>No saved experiments</strong>
-        <span>Each completed backtest is stored in local SQLite.</span>
+        <strong>{refreshing ? "Loading saved runs…" : "No saved experiments"}</strong>
+        <span>{refreshing ? "Checking local history." : "Each completed backtest is stored in local SQLite."}</span>
         <Button
           variant="outline"
           size="sm"
@@ -675,12 +676,7 @@ function ExperimentHistoryContent({ onSelect }: { onSelect: (id: string) => void
           size="sm"
           className="h-6 text-[10px] px-2"
           disabled={refreshing || loadingComparison}
-          onClick={() => {
-            setRefreshToken((token) => {
-              setRefreshing(true);
-              return token + 1;
-            });
-          }}
+          onClick={() => setRefreshToken((token) => token + 1)}
           icon={<RotateCcw size={11} className={refreshing ? "spin" : undefined} />}
         >
           {refreshing ? "Refreshing…" : "Refresh"}
@@ -984,7 +980,7 @@ export const BottomDock = memo(function BottomDock({
         )}
         {!replayMode && (historyPanelVisited || showHistoryPanel) && (
           <div hidden={!showHistoryPanel}>
-            <ExperimentHistory onSelect={selectResult} />
+            <ExperimentHistory onSelect={selectResult} refreshKey={activeBacktestId} />
           </div>
         )}
         {activeTab === "backtest" && workspace === "research" && replayMode && (
