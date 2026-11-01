@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Candle } from "@newbeing/core";
 import type { ExchangeAdapter } from "../src/types.js";
-import { fetchLatestCompletedCandles } from "../src/completed-window.js";
+import { fetchCompletedCandlesRange, fetchLatestCompletedCandles } from "../src/completed-window.js";
 
 const bar = (timestamp: number): Candle => ({ timestamp, open: 100, high: 101, low: 99, close: 100, volume: 1 });
 const adapter = (fetchOHLCVSince: ExchangeAdapter["fetchOHLCVSince"]) => ({ fetchOHLCVSince } as ExchangeAdapter);
@@ -37,5 +37,34 @@ describe("exact latest completed candles", () => {
     const fetch = vi.fn<ExchangeAdapter["fetchOHLCVSince"]>(async (_symbol, _timeframe, since, limit) => Array.from({ length: Math.min(300, limit!) }, (_, i) => bar(since + i * 60_000)));
     expect(await fetchLatestCompletedCandles(adapter(fetch), "BTC/USDT", "1m", 1000, 60_000_000)).toHaveLength(1000);
     expect(fetch).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("exact historical completed candle ranges", () => {
+  it("paginates a half-open range and excludes the current forming bar", async () => {
+    const fetch = vi.fn<ExchangeAdapter["fetchOHLCVSince"]>()
+      .mockResolvedValueOnce([bar(0), bar(60_000)])
+      .mockResolvedValueOnce([bar(60_000), bar(120_000), bar(180_000), bar(240_000)]);
+    const result = await fetchCompletedCandlesRange(adapter(fetch), "BTC/USDT", "1m", 0, 240_000, 245_000);
+    expect(result).toEqual([bar(0), bar(60_000), bar(120_000), bar(180_000)]);
+    expect(fetch.mock.calls).toEqual([["BTC/USDT", "1m", 0, 5], ["BTC/USDT", "1m", 120_000, 3]]);
+  });
+  it("pins the latest completed boundary before paging", async () => {
+    const fetch = vi.fn<ExchangeAdapter["fetchOHLCVSince"]>().mockResolvedValue([bar(0), bar(60_000), bar(120_000)]);
+    expect(await fetchCompletedCandlesRange(adapter(fetch), "BTC/USDT", "1m", 0, undefined, 125_000)).toEqual([bar(0), bar(60_000)]);
+  });
+  it("rejects unaligned, future, oversized and incomplete ranges", async () => {
+    const fetch = vi.fn<ExchangeAdapter["fetchOHLCVSince"]>().mockResolvedValue([]);
+    const source = adapter(fetch);
+    await expect(fetchCompletedCandlesRange(source, "BTC/USDT", "1m", 1, 180_000, 240_000)).rejects.toThrow(/aligned/);
+    await expect(fetchCompletedCandlesRange(source, "BTC/USDT", "1m", 0, 240_000, 239_999)).rejects.toThrow(/completed/);
+    await expect(fetchCompletedCandlesRange(source, "BTC/USDT", "1m", 0, 300_060_000, 300_060_000)).rejects.toThrow(/exceeds/);
+    await expect(fetchCompletedCandlesRange(source, "BTC/USDT", "1m", 0, 180_000, 180_000)).rejects.toThrow(/Expected exactly 3/);
+  });
+  it("rejects conflicting duplicate candles across pages", async () => {
+    const fetch = vi.fn<ExchangeAdapter["fetchOHLCVSince"]>()
+      .mockResolvedValueOnce([bar(0), bar(60_000)])
+      .mockResolvedValueOnce([bar(60_000), { ...bar(60_000), close: 101 }, bar(120_000)]);
+    await expect(fetchCompletedCandlesRange(adapter(fetch), "BTC/USDT", "1m", 0, 180_000, 180_000)).rejects.toThrow(/Conflicting/);
   });
 });

@@ -8,7 +8,11 @@ export function researchReadGuard(): NextResponse | null {
 }
 export function researchFailure(error: unknown): NextResponse {
   const status = error instanceof SyntaxError ? 400 : error instanceof ResearchError ? error.status : 422;
-  return NextResponse.json({ error: error instanceof Error ? error.message : "Research operation failed." }, { status, headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({
+    error: error instanceof Error ? error.message : "Research operation failed.",
+    ...(error instanceof ResearchError && error.code !== undefined ? { code: error.code } : {}),
+    ...(error instanceof ResearchError && error.nextAction !== undefined ? { nextAction: error.nextAction } : {}),
+  }, { status, headers: { "Cache-Control": "no-store" } });
 }
 /** Saved reruns accept no overrides, including empty-looking unknown keys. */
 export async function validateRerunBody(request: Request): Promise<boolean> {

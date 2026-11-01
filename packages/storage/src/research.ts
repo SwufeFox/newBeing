@@ -79,9 +79,17 @@ export function validateResearchSweep(results: readonly BacktestResult[], sweep:
   });
   if (sweep.walkForward) {
     const report = sweep.walkForward;
+    const selectionMetric = report.selectionMetric ?? "totalReturn";
+    if (report.selectionMetric !== undefined && report.selectionMetric !== "totalReturn" && report.selectionMetric !== "sharpeRatio") fail();
+    const expectedSelectionRule = selectionMetric === "sharpeRatio" ? "training-sharpeRatio-desc/parameter-value-asc" : "training-totalReturn-desc/parameter-value-asc";
     const total = snapshot.candles.length;
     const expected = { train50: Math.floor(0.5 * total), train60: Math.floor(0.6 * total), train70: Math.floor(0.7 * total), train80: Math.floor(0.8 * total), total };
-    if (report.mode !== "walk-forward" || report.selectionRule !== "training-totalReturn-desc/parameter-value-asc" ||
+    const maxTrainingDrawdown = report.selectionConstraints?.maxTrainingDrawdown;
+    if (report.selectionConstraints !== undefined) {
+      const constraints = report.selectionConstraints;
+      if (Object.keys(constraints).length !== 1 || typeof constraints.maxTrainingDrawdown !== "number" || !Number.isFinite(constraints.maxTrainingDrawdown) || constraints.maxTrainingDrawdown < 0 || constraints.maxTrainingDrawdown > 1) fail();
+    }
+    if (report.mode !== "walk-forward" || report.selectionRule !== expectedSelectionRule ||
         !same(report.boundaries, expected) || report.folds.length !== 3 ||
         expected.train50 < 2 || expected.train60 - expected.train50 < 2 || expected.train70 - expected.train60 < 2 || expected.train80 - expected.train70 < 2 || total - expected.train80 < 2 ||
         results.length !== sweep.values.length * 4 + 4) fail();
@@ -106,7 +114,13 @@ export function validateResearchSweep(results: readonly BacktestResult[], sweep:
       const candidateValues = candidates.map((run) => run.value).sort((a, b) => a - b);
       const expectedValues = [...sweep.values].sort((a, b) => a - b);
       if (candidates.length !== expectedValues.length || !same(candidateValues, expectedValues)) fail();
-      return [...candidates].sort((a, b) => b.metrics.totalReturn - a.metrics.totalReturn || a.value - b.value)[0]!;
+      const selectionScore = (run: BacktestSweepResult["runs"][number]) => selectionMetric === "sharpeRatio" ? run.metrics.sharpeRatio : run.metrics.totalReturn;
+      const eligibleCandidates = candidates.filter((run) => {
+        const score = selectionScore(run);
+        return score !== null && Number.isFinite(score) && (maxTrainingDrawdown === undefined || run.metrics.maxDrawdown <= maxTrainingDrawdown);
+      });
+      if (eligibleCandidates.length === 0) fail();
+      return [...eligibleCandidates].sort((a, b) => selectionScore(b)! - selectionScore(a)! || a.value - b.value)[0]!;
     };
     const folds = [
       { trainEnd: expected.train50, validationStart: expected.train50, validationEnd: expected.train60 },

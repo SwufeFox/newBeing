@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { MAX_RESEARCH_BARS } from "@newbeing/core";
 import { closeDatabaseForTests, datasetSnapshotPath, getDatabase, identifyDataset, loadDatasetSnapshot, recoverDatasetSnapshots, saveDatasetSnapshot, type SnapshotStage } from "../src/index.js";
 const bars = [0, 60_000].map((timestamp) => ({ timestamp, open: 100, high: 110, low: 90, close: 105, volume: 1 }));
 const input = { exchange: "binance" as const, symbol: "BTC/USDT", timeframe: "1m" as const, candles: bars };
@@ -55,5 +56,12 @@ describe("immutable snapshot publication and recovery", () => {
     expect(() => loadDatasetSnapshot(id)).toThrow(/metadata/);
     expect(recoverDatasetSnapshots().errors).toEqual([{ datasetId: id, error: "Snapshot metadata integrity check failed." }]);
     expect(() => loadDatasetSnapshot("../escape")).toThrow(/ID/);
+  });
+  it("persists a complete snapshot at the bounded research range size", () => {
+    const candles = Array.from({ length: MAX_RESEARCH_BARS }, (_, index) => ({ ...bars[0]!, timestamp: index * 60_000 }));
+    const id = saveDatasetSnapshot({ ...input, candles });
+    const snapshot = loadDatasetSnapshot(id);
+    expect(snapshot.candles).toHaveLength(MAX_RESEARCH_BARS);
+    expect(snapshot.candles.at(-1)?.timestamp).toBe((MAX_RESEARCH_BARS - 1) * 60_000);
   });
 });

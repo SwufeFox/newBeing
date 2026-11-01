@@ -79,10 +79,14 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
   const [price, setPrice] = useState<number | null>(null);
   const [stale, setStale] = useState(false);
   const [closing, setClosing] = useState(false);
-
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const [closeNeedsRefresh, setCloseNeedsRefresh] = useState(false);
+  const closeAttemptRef = useRef(0);
+  const closeInFlightRef = useRef(false);
   useEffect(() => {
     let disposed = false;
     const refresh = async (): Promise<void> => {
+      const refreshAttempt = closeAttemptRef.current;
       try {
         const [accountResponse, tickerResponse] = await Promise.all([
           fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" }),
@@ -90,14 +94,15 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
         ]);
         const account: unknown = await accountResponse.json();
         const ticker: unknown = await tickerResponse.json();
-        if (disposed) return;
+        if (disposed || refreshAttempt !== closeAttemptRef.current || closeInFlightRef.current) return;
         if (!accountResponse.ok || typeof account !== "object" || account === null || !("portfolio" in account) || !("orders" in account)) throw new Error("Paper account unavailable.");
         setPayload(account as PaperPayload);
+        setCloseNeedsRefresh(false);
         const tickerValid = tickerResponse.ok && typeof ticker === "object" && ticker !== null && "last" in ticker && typeof ticker.last === "number";
         if (tickerValid) setPrice((ticker as { last: number }).last);
         setStale(!tickerValid);
       } catch {
-        if (!disposed) setStale(true);
+        if (!disposed && refreshAttempt === closeAttemptRef.current) setStale(true);
       }
     };
     void refresh();
@@ -138,11 +143,15 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
     );
   }
   const closePosition = async (): Promise<void> => {
-    if (!payload || payload.portfolio.baseBalance <= 0) return;
+    if (!payload || payload.portfolio.baseBalance <= 0 || closeNeedsRefresh || hasUnresolvedPaperOrder) return;
+    closeAttemptRef.current += 1;
+    closeInFlightRef.current = true;
     setClosing(true);
+    setCloseError(null);
+    let closeWasFilled = false;
     try {
       const clientOrderId = `close-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const res = await fetch("/api/paper", {
+      const response = await fetch("/api/paper", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -154,16 +163,54 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
           exchange,
         }),
       });
-      if (res.ok) {
-        const refreshResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
-        const account: unknown = await refreshResponse.json();
-        if (refreshResponse.ok && typeof account === "object" && account !== null && "portfolio" in account) {
-          setPayload(account as PaperPayload);
-        }
+      const responsePayload: unknown = await response.json();
+      const responseBody = typeof responsePayload === "object" && responsePayload !== null
+        ? responsePayload as { order?: PaperOrder; portfolio?: PaperPortfolio; error?: string }
+        : null;
+      const order = responseBody?.order;
+      const portfolio = responseBody?.portfolio;
+      if (order && portfolio) {
+        const savedOrder = order;
+        const savedPortfolio = portfolio;
+        setPayload((current) => current ? {
+          portfolio: savedPortfolio,
+          orders: [savedOrder, ...current.orders.filter((currentOrder) => currentOrder.clientOrderId !== savedOrder.clientOrderId)].slice(0, 30),
+        } : current);
+        setCloseNeedsRefresh(false);
       }
-    } catch {
-      // ignore
+      if (!response.ok || !order || !portfolio || order.status !== "filled") {
+        if (!order || !portfolio) setCloseNeedsRefresh(true);
+        const status = order?.status;
+        const statusMessage = status === "created" || status === "submitted" || status === "unknown"
+          ? `Paper close order is ${status}. Inspect its saved status before retrying.`
+          : status
+            ? `Paper close order is ${status}. The latest account and order state is shown.`
+            : "Paper close outcome is unknown. Refresh account state before retrying.";
+        setCloseError(responseBody?.error ?? statusMessage);
+        return;
+      }
+      closeWasFilled = true;
+      const refreshResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
+      const account: unknown = await refreshResponse.json();
+      if (refreshResponse.ok && typeof account === "object" && account !== null && "portfolio" in account && "orders" in account) {
+        setPayload(account as PaperPayload);
+        setCloseNeedsRefresh(false);
+        setCloseError(null);
+      } else {
+        setCloseError("Paper close filled, but refreshed order history is unavailable. The confirmed portfolio is shown; check order history before continuing.");
+      }
+    } catch (reason) {
+      if (closeWasFilled) {
+        setCloseError("Paper close filled, but refreshed order history could not be loaded. The confirmed portfolio is shown.");
+      } else {
+        setCloseNeedsRefresh(true);
+        setCloseError(reason instanceof Error
+          ? `Paper close outcome could not be confirmed: ${reason.message}. Refresh account state before another close.`
+          : "Paper close outcome could not be confirmed. Refresh account state before another close.");
+      }
     } finally {
+      closeInFlightRef.current = false;
+      closeAttemptRef.current += 1;
       setClosing(false);
     }
   };
@@ -173,10 +220,13 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
     ? (price - portfolio.averageEntryPrice) * portfolio.baseBalance
     : 0;
   const quoteCurrency = symbol.split("/")[1] ?? "USDT";
+  const hasUnresolvedPaperOrder = payload.orders.some((order) => order.status === "created" || order.status === "submitted" || order.status === "unknown");
 
   return (
     <div className="position-table-wrap p-2 font-mono text-xs">
       {stale && <div className="table-footnote text-xs text-[var(--ak-signal-action)] mb-2">STALE · Showing last account snapshot; mark price may be delayed.</div>}
+      {closeError && <div role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)] mb-2">{closeError}</div>}
+      {(closeNeedsRefresh || hasUnresolvedPaperOrder) && <div role="status" className="table-footnote text-xs text-[var(--ak-signal-action)] mb-2">Refresh the account or resolve its pending Paper order before another close.</div>}
       <div className="overflow-auto border border-[var(--ak-border-subtle)] shadow-sm">
         <table className="data-table w-full text-left">
           <thead>
@@ -219,12 +269,12 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
                   <Button
                     size="sm"
                     variant="danger"
-                    disabled={closing}
+                    disabled={closing || closeNeedsRefresh || hasUnresolvedPaperOrder}
                     onClick={() => void closePosition()}
                     className="h-6 text-[10px] px-2 font-bold transition-transform active:scale-95"
-                    title="Liquidate/close position at market"
+                    title={hasUnresolvedPaperOrder ? "Resolve the pending Paper order before another close." : closeNeedsRefresh ? "Wait for a fresh Paper account snapshot before retrying." : "Liquidate/close position at market"}
                   >
-                    {closing ? "Closing…" : "Close"}
+                    {closing ? "Closing…" : hasUnresolvedPaperOrder ? "Order pending" : closeNeedsRefresh ? "Refresh required" : "Close"}
                   </Button>
                 ) : (
                   <span className="text-[10px] text-[var(--ak-text-secondary)] opacity-40">—</span>
@@ -364,6 +414,7 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
 function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy, replayError, selectionRequestRef }: { result: BacktestResult | null; onOpenStrategy: () => void; onStartReplay: (result: BacktestResult) => void; replayBusy: boolean; replayError: string | null; selectionRequestRef: React.MutableRefObject<number> }): React.JSX.Element {
   const [filter, setFilter] = useState<"all" | "long" | "short" | "win" | "loss">("all");
   const [rerunning, setRerunning] = useState(false);
+  const [rerunError, setRerunError] = useState<{ resultId: string; message: string } | null>(null);
   const setBacktest = useWorkspaceStore((state) => state.setBacktest);
 
   if (!result) {
@@ -393,15 +444,24 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
   const rerunBacktest = async (): Promise<void> => {
     const requestId = ++selectionRequestRef.current;
     const canApply = captureWorkspaceSelection();
+    const isCurrent = () => requestId === selectionRequestRef.current && canApply() && useWorkspaceStore.getState().backtest === result;
     setRerunning(true);
+    setRerunError(null);
     try {
       const response = await fetch(`/api/backtests/${encodeURIComponent(result.resultId)}/rerun`, { method: "POST" });
       const payload: unknown = await response.json();
-      if (response.ok && typeof payload === "object" && payload !== null && "resultId" in payload && requestId === selectionRequestRef.current && canApply() && useWorkspaceStore.getState().backtest === result) {
-        setBacktest(payload as BacktestResult);
+      if (!response.ok) {
+        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
+          ? payload.error
+          : `Backtest rerun failed (${response.status}).`;
+        throw new Error(message);
       }
-    } catch {
-      // ignore
+      if (typeof payload !== "object" || payload === null || !("resultId" in payload) || typeof payload.resultId !== "string") {
+        throw new Error("Backtest rerun returned an invalid result.");
+      }
+      if (isCurrent()) setBacktest(payload as BacktestResult);
+    } catch (reason) {
+      if (isCurrent()) setRerunError({ resultId: result.resultId, message: reason instanceof Error ? reason.message : "Backtest rerun failed." });
     } finally {
       setRerunning(false);
     }
@@ -479,6 +539,7 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
           >
             {replayBusy ? "Starting replay…" : "Continue to Replay"}
           </Button>
+          {rerunError?.resultId === result.resultId && <span role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)]">{rerunError.message}</span>}
           {replayError && <span role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)]">{replayError}</span>}
         </div>
       </div>
@@ -993,7 +1054,7 @@ export const BottomDock = memo(function BottomDock({
         )}
         {activeTab === "sweep" && workspace === "research" && (
           replayMode ? (
-            <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Sweeps suppressed during replay</strong><span>A sweep reads future bars.</span></div>
+            <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Saved sweeps hidden during Replay</strong><span>Saved sweep history and new sweeps are hidden to avoid future-derived results.</span></div>
           ) : (
             <SweepPanel symbol={symbol} timeframe={timeframe} exchange={exchange} strategyId={STRATEGIES.find((s) => s.id === selectedStrategyId)?.id ?? selectedStrategyId} parameters={strategyParameters} config={config} />
           )

@@ -50,6 +50,8 @@ describe("research HTTP contracts", () => {
     const response = await createSweep(post("/api/sweeps", sweepBody)); expect(response.status).toBe(201);
     const original = await response.json() as BacktestSweepResult;
     expect(original.values).toEqual([0.05, 0.15, 0.25, 0.35]);
+    expect(original.mode).toBe("full-sample");
+    expect(original.walkForward).toBeUndefined();
     expect(await (await getSweep(new Request("http://localhost"), context(original.sweepId))).json()).toEqual(original);
     expect((await (await listSweeps(new Request("http://localhost/api/sweeps?limit=1"))).json()).items).toEqual([original]);
     fixture.fetch.mockRejectedValue(new Error("network disabled")); fixture.fetch.mockClear();
@@ -62,6 +64,38 @@ describe("research HTTP contracts", () => {
       expect(getExperiment(run.resultId)!.equityCurve).toEqual(getExperiment(original.runs[i]!.resultId)!.equityCurve);
     }
     expect(fixture.fetch).not.toHaveBeenCalled();
+  });
+  it("passes walk-forward selection settings into the saved report", async () => {
+    const response = await createSweep(post("/api/sweeps", { ...sweepBody, mode: "walk-forward", selectionMetric: "totalReturn", maxTrainingDrawdown: 1 }));
+    expect(response.status).toBe(201);
+    const saved = await response.json() as BacktestSweepResult;
+    expect(saved.mode).toBe("walk-forward");
+    expect(saved.walkForward?.selectionMetric).toBe("totalReturn");
+    expect(saved.walkForward?.selectionConstraints).toEqual({ maxTrainingDrawdown: 1 });
+    expect(saved.walkForward?.selectionRule).toBe("training-totalReturn-desc/parameter-value-asc");
+  });
+  it("returns stable candidate-selection errors with recovery guidance", async () => {
+    fixture.bars = Array.from({ length: 50 }, (_, index) => ({
+      timestamp: index * 60_000,
+      open: 100,
+      high: 101,
+      low: 99,
+      close: 100,
+      volume: index + 1,
+    }));
+    const response = await createSweep(post("/api/sweeps", {
+      ...sweepBody,
+      mode: "walk-forward",
+      selectionMetric: "sharpeRatio",
+      maxTrainingDrawdown: 1,
+    }));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      code: "SWEEP_NO_FINITE_TRAINING_SHARPE",
+      nextAction: expect.stringContaining("total_return"),
+      maxRuns: 40,
+    });
+    expect((await (await listSweeps(new Request("http://localhost/api/sweeps"))).json()).items).toEqual([]);
   });
   it("uses 400 for malformed bodies/overrides, 404 for unknown IDs, and 422 for unsupported input", async () => {
     expect((await createRun(new Request("http://localhost/api/backtests", { method: "POST", body: "{" }))).status).toBe(400);

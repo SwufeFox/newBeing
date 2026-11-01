@@ -2,10 +2,13 @@ import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { randomUUID } from "node:crypto";
 import { SPOT_EXECUTION_POLICY, estimatePaperAmounts, fillPaperOrder, SIMULATION_PRECISION, DEFAULT_WORKSPACE_STATE, logEvent, STRATEGIES, type Timeframe, type WorkspaceState } from "@newbeing/core";
-import { findCandleGaps, getExchangeAdapter, removeFormingCandles } from "@newbeing/market-data";
+import { findCandleGaps, getExchangeAdapter, removeFormingCandles, timeframeMilliseconds } from "@newbeing/market-data";
 import {
   getSpotAccount,
   getExperiment,
+  getSavedSweep,
+  loadDatasetSnapshot,
+  researchSweepRunSegments,
   getReplaySession,
   getReplayExecution,
   getPaperPortfolio,
@@ -21,10 +24,13 @@ import {
   saveOrderPreview,
   saveWorkspaceState,
 } from "@newbeing/storage";
-import { runResearchBacktest } from "@newbeing/application";
+import { ResearchError, rerunBacktestSweep, rerunResearchBacktest, runBacktestSweep, runResearchBacktest, type SweepResult } from "@newbeing/application";
+import { registerAIGuidance } from "./ai-guidance.js";
 import { registerDerivativesTools } from "./derivatives-tools.js";
 
 const timeframe = z.enum(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]);
+const exchangeSchema = z.enum(["binance", "coinbaseexchange", "kraken", "okx"]);
+const dateTimeSchema = z.iso.datetime({ offset: true });
 const symbolSchema = z.string().regex(/^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/);
 const parametersSchema = z.record(z.string(), z.union([z.number().finite(), z.boolean()]));
 
@@ -36,6 +42,43 @@ function errorResult(error: unknown): { content: Array<{ type: "text"; text: str
   const message = error instanceof Error ? error.message : "The research operation failed.";
   logEvent("warn", "mcp.tool_failed", { message });
   return { content: [{ type: "text", text: message }], isError: true };
+}
+
+function researchResult(data: Record<string, unknown>, artifactType: "backtest-result" | "research-sweep", artifactId: string, source: string): { content: Array<{ type: "text"; text: string }>; structuredContent: Record<string, unknown> } {
+  const envelope = {
+    schemaVersion: 1,
+    ok: true,
+    data,
+    provenance: {
+      exchange: data.exchange ?? null,
+      symbol: data.symbol ?? null,
+      timeframe: data.timeframe ?? null,
+      source,
+      asOf: new Date().toISOString(),
+      datasetId: data.datasetId ?? null,
+      barRange: data.barRange ?? null,
+    },
+    warnings: [],
+    artifacts: [{ type: artifactType, id: artifactId }],
+  };
+  return { content: [{ type: "text", text: JSON.stringify(envelope) }], structuredContent: envelope };
+}
+
+function researchError(error: unknown): { content: Array<{ type: "text"; text: string }>; structuredContent: Record<string, unknown>; isError: true } {
+  const message = error instanceof Error ? error.message : "The research operation failed.";
+  const research = error instanceof ResearchError ? error : null;
+  logEvent("warn", "mcp.research_failed", { message, ...(research?.code === undefined ? {} : { code: research.code }) });
+  const envelope = {
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: research?.code ?? "RESEARCH_OPERATION_FAILED",
+      message,
+      retryable: false,
+      nextAction: research?.nextAction ?? "Check Replay state, instrument and range bounds, and strategy parameters before retrying.",
+    },
+  };
+  return { content: [{ type: "text", text: JSON.stringify(envelope) }], structuredContent: envelope, isError: true };
 }
 
 function publicStrategyList(): Array<{ id: string; name: string; version: string; description: string; parameters: unknown; executable: boolean }> {
@@ -62,6 +105,7 @@ function summarizeExperiment(result: NonNullable<ReturnType<typeof getExperiment
     executionPolicy: result.executionPolicy ?? null,
     reproduction: result.reproduction ?? null,
     exchange: result.exchange,
+    barRange: summarizeBarRange(result),
     engineVersion: result.engineVersion,
     createdAt: result.createdAt,
     metrics: result.metrics,
@@ -75,8 +119,77 @@ function summarizeExperiment(result: NonNullable<ReturnType<typeof getExperiment
   };
 }
 
+function summarizeBarRange(result: NonNullable<ReturnType<typeof getExperiment>>): { startAt: number; endAtExclusive: number; bars: number } | null {
+  const first = result.equityCurve[0];
+  const last = result.equityCurve.at(-1);
+  return first && last ? { startAt: first.timestamp, endAtExclusive: last.timestamp + timeframeMilliseconds(result.timeframe), bars: result.equityCurve.length } : null;
+}
+
+function summarizeSweep(sweep: SweepResult | NonNullable<ReturnType<typeof getSavedSweep>>): Record<string, unknown> {
+  const snapshot = loadDatasetSnapshot(sweep.datasetId);
+  const first = snapshot.candles[0];
+  const last = snapshot.candles.at(-1);
+  const candidateRuns = sweep.walkForward ? (() => {
+    const segments = researchSweepRunSegments(sweep);
+    const trainingEnds = new Set([
+      sweep.walkForward!.boundaries.train50,
+      sweep.walkForward!.boundaries.train60,
+      sweep.walkForward!.boundaries.train70,
+      sweep.walkForward!.boundaries.train80,
+    ]);
+    return sweep.runs.flatMap((run) => {
+      const segment = run.segment ?? segments.get(run.resultId);
+      if (!segment || segment.start !== 0 || !trainingEnds.has(segment.end)) return [];
+      return [{
+        value: run.value,
+        resultId: run.resultId,
+        segment: {
+          start: segment.start,
+          end: segment.end,
+          ...(run.segment ? { datasetId: run.segment.datasetId } : {}),
+        },
+        metrics: {
+          totalReturn: run.metrics.totalReturn,
+          maxDrawdown: run.metrics.maxDrawdown,
+          sharpeRatio: run.metrics.sharpeRatio,
+          winRate: run.metrics.winRate,
+          profitFactor: run.metrics.profitFactor,
+          tradeCount: run.metrics.tradeCount,
+          totalFees: run.metrics.totalFees,
+          finalEquity: run.metrics.finalEquity,
+        },
+      }];
+    });
+  })() : [];
+  return {
+    sweepId: sweep.sweepId,
+    rerunOf: sweep.rerunOf ?? null,
+    mode: sweep.mode ?? "full-sample",
+    exchange: sweep.exchange,
+    symbol: sweep.symbol,
+    timeframe: sweep.timeframe,
+    strategyId: sweep.strategyId,
+    strategyVersion: sweep.strategyVersion,
+    parameter: sweep.parameter,
+    values: sweep.values,
+    datasetId: sweep.datasetId,
+    bars: sweep.bars,
+    barRange: first && last ? { startAt: first.timestamp, endAtExclusive: last.timestamp + timeframeMilliseconds(sweep.timeframe), bars: snapshot.candles.length } : null,
+    createdAt: sweep.createdAt,
+    ...(sweep.walkForward ? {
+      walkForward: sweep.walkForward,
+      runCount: sweep.runs.length,
+      candidateRuns,
+      candidateRunCount: candidateRuns.length,
+      candidateRunLimit: sweep.values.length * 4,
+    } : {
+      runs: sweep.runs.map(({ value, resultId, metrics }) => ({ value, resultId, metrics })),
+    }),
+  };
+}
 export function createNewBeingMcpServer(): McpServer {
   const server = new McpServer({ name: "newbeing-local-research", version: "0.1.0" });
+  registerAIGuidance(server);
   registerDerivativesTools(server);
 
   server.registerTool("get_workspace_context", {
@@ -96,47 +209,56 @@ export function createNewBeingMcpServer(): McpServer {
 
   server.registerTool("get_market_data", {
     title: "Get selected venue public OHLCV",
-    description: "Fetch completed public Spot bars from the selected venue. Returns normalized UTC timestamps, detected gaps and source metadata. Backtest, Replay and Paper support all configured spot venues.",
+    description: "Read completed public Spot bars from the selected venue. Returns range/gap/source metadata by default; request include_bars for at most 500 bars. Replay returns only the matching active session prefix.",
     inputSchema: z.object({
       symbol: symbolSchema,
+      exchange: exchangeSchema.optional(),
       timeframe,
       limit: z.number().int().min(50).max(500).default(300),
+      include_bars: z.boolean().default(false),
     }),
     annotations: { readOnlyHint: true },
-  }, async ({ symbol, timeframe: tf, limit }) => {
+  }, async ({ symbol, exchange: requestedExchange, timeframe: tf, limit, include_bars }) => {
     try {
       const workspace = getWorkspaceState().state;
+      const selectedExchange = requestedExchange ?? workspace.exchange;
       if (workspace.activeWorkspace === "replay") {
         const session = workspace.activeReplayId ? getReplaySession(workspace.activeReplayId) : undefined;
-        if (!session || session.exchange !== workspace.exchange || session.symbol !== symbol || session.timeframe !== tf) {
+        if (!session || session.exchange !== workspace.exchange || session.exchange !== selectedExchange || session.symbol !== symbol || session.timeframe !== tf) {
           return errorResult(new Error("Market data is limited to the active Replay session's revealed bars. Exit Replay to query other market history."));
         }
-        return textResult({ symbol, timeframe: tf, source: "Local Replay session; future bars withheld", candles: session.bars, gaps: findCandleGaps(session.bars, tf as Timeframe), futureBarsLoaded: 0 });
+        const candles = session.bars.slice(-limit);
+        const first = candles[0];
+        const last = candles.at(-1);
+        return textResult({ exchange: session.exchange, symbol, timeframe: tf, source: "Local Replay session; future bars withheld", summary: { bars: candles.length, startAt: first?.timestamp ?? null, endAtExclusive: last ? last.timestamp + timeframeMilliseconds(tf as Timeframe) : null }, gaps: findCandleGaps(candles, tf as Timeframe), ...(include_bars ? { candles } : {}), futureBarsLoaded: 0 });
       }
-      const adapter = getExchangeAdapter(workspace.exchange);
+      const adapter = getExchangeAdapter(selectedExchange);
       const raw = await adapter.fetchOHLCV(symbol, tf as Timeframe, limit);
       const candles = removeFormingCandles(raw, tf as Timeframe);
-      const exchangeName = { binance: "Binance Spot", coinbaseexchange: "Coinbase Exchange", kraken: "Kraken Spot", okx: "OKX Spot" }[workspace.exchange];
-      return textResult({ exchange: workspace.exchange, symbol, timeframe: tf, source: `${exchangeName} public market data via CCXT`, candles, gaps: findCandleGaps(candles, tf as Timeframe) });
+      const exchangeName = { binance: "Binance Spot", coinbaseexchange: "Coinbase Exchange", kraken: "Kraken Spot", okx: "OKX Spot" }[selectedExchange];
+      const first = candles[0];
+      const last = candles.at(-1);
+      return textResult({ exchange: selectedExchange, symbol, timeframe: tf, source: `${exchangeName} public market data via CCXT`, summary: { bars: candles.length, startAt: first?.timestamp ?? null, endAtExclusive: last ? last.timestamp + timeframeMilliseconds(tf as Timeframe) : null }, gaps: findCandleGaps(candles, tf as Timeframe), ...(include_bars ? { candles } : {}) });
     } catch (error) { return errorResult(error); }
   });
 
   server.registerTool("get_portfolio", {
     title: "Get isolated Paper portfolio",
     description: "Read the local Paper simulator wallet for a symbol. This is not an exchange account and never includes API credentials.",
-    inputSchema: z.object({ symbol: symbolSchema.default("BTC/USDT"), account_mode: z.enum(["legacy", "shared-spot"]).default("legacy") }),
+    inputSchema: z.object({ symbol: symbolSchema.default("BTC/USDT"), exchange: exchangeSchema.optional(), account_mode: z.enum(["legacy", "shared-spot"]).default("legacy") }),
     annotations: { readOnlyHint: true },
-  }, async ({ symbol, account_mode }) => {
+  }, async ({ symbol, exchange: requestedExchange, account_mode }) => {
     try {
       const workspace = getWorkspaceState().state;
+      const selectedExchange = requestedExchange ?? workspace.exchange;
       if (account_mode === "shared-spot" && workspace.activeWorkspace === "replay") return errorResult(new Error("Shared spot accounts are hidden during Replay."));
       if (workspace.activeWorkspace === "replay") {
         const session = workspace.activeReplayId ? getReplaySession(workspace.activeReplayId) : undefined;
-        if (!session || session.exchange !== workspace.exchange || session.symbol !== symbol) return errorResult(new Error("Replay portfolio is available only for the active replay symbol."));
-        return textResult({ mode: "replay", source: "isolated local replay simulator", symbol, sessionId: session.id, portfolio: getReplayExecution(session.id)?.portfolio ?? getPaperPortfolio(replayAccountId(session.id, symbol, session.exchange)) });
+        if (!session || session.exchange !== workspace.exchange || session.exchange !== selectedExchange || session.symbol !== symbol) return errorResult(new Error("Replay portfolio is available only for the active replay venue and symbol."));
+        return textResult({ mode: "replay", source: "isolated local replay simulator", exchange: session.exchange, symbol, sessionId: session.id, portfolio: getReplayExecution(session.id)?.portfolio ?? getPaperPortfolio(replayAccountId(session.id, symbol, session.exchange)) });
       }
-      if (account_mode === "shared-spot") return textResult({ mode: "paper", accountMode: "shared-spot", account: getSpotAccount(workspace.exchange, symbol.split("/")[1]!) ?? null, policy: SPOT_EXECUTION_POLICY, note: "Open and trade the shared account explicitly in the trusted UI. Legacy previews remain bound to legacy pair wallets." });
-      return textResult({ mode: "paper", source: "local simulator", symbol, portfolio: getPaperPortfolio(paperAccountId(symbol, workspace.exchange)) });
+      if (account_mode === "shared-spot") return textResult({ mode: "paper", accountMode: "shared-spot", exchange: selectedExchange, account: getSpotAccount(selectedExchange, symbol.split("/")[1]!) ?? null, policy: SPOT_EXECUTION_POLICY, note: "Open and trade the shared account explicitly in the trusted UI. Legacy previews remain bound to legacy pair wallets." });
+      return textResult({ mode: "paper", source: "local simulator", exchange: selectedExchange, symbol, portfolio: getPaperPortfolio(paperAccountId(symbol, selectedExchange)) });
     } catch (error) { return errorResult(error); }
   });
 
@@ -200,10 +322,15 @@ export function createNewBeingMcpServer(): McpServer {
 
   server.registerTool("run_backtest", {
     title: "Run deterministic historical backtest",
-    description: "Run a closed-bar OHLCV backtest using next-bar-open fills, explicit fees/slippage and a reviewed built-in strategy; persist the experiment and select it in the local workspace.",
+    description: "Run a deterministic built-in strategy against completed public candles. Persist the result; select it in the local workspace only when open_in_workspace is true.",
     inputSchema: z.object({
       symbol: symbolSchema,
+      exchange: exchangeSchema.optional(),
       timeframe,
+      limit: z.number().int().min(50).max(1_000).optional(),
+      start_at: dateTimeSchema.optional(),
+      end_at: dateTimeSchema.optional(),
+      open_in_workspace: z.boolean().default(true),
       strategy_id: z.string().min(1).max(120),
       parameters: parametersSchema.default({}),
       initial_capital: z.number().positive().max(1_000_000_000),
@@ -229,15 +356,109 @@ export function createNewBeingMcpServer(): McpServer {
         ...(input.take_profit_pct === undefined ? {} : { takeProfitPct: input.take_profit_pct }),
       };
       const result = await runResearchBacktest({
+        ...(input.exchange === undefined ? {} : { exchange: input.exchange }),
         symbol: input.symbol,
         timeframe: input.timeframe as Timeframe,
         strategyId: input.strategy_id,
         parameters: input.parameters,
         config,
-        openInWorkspace: true,
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+        ...(input.start_at === undefined ? {} : { startAt: Date.parse(input.start_at) }),
+        ...(input.end_at === undefined ? {} : { endAt: Date.parse(input.end_at) }),
+        openInWorkspace: input.open_in_workspace,
       });
       return textResult({ ...summarizeExperiment(result), note: "Full result details are available through get_backtest_result and the local workspace." });
     } catch (error) { return errorResult(error); }
+  });
+
+  server.registerTool("run_research_sweep", {
+    title: "Run bounded walk-forward strategy sweep",
+    description: "Compare up to 40 values of one built-in numeric parameter. Reuse an immutable dataset with dataset_id or fetch a bounded range. Walk-forward ranks candidates by training total return by default; set selection_metric=sharpe_ratio to rank by finite training Sharpe. Optional max_training_drawdown filters training candidates before ranking. Validation and final-test drawdowns are reported, not constrained.",
+    inputSchema: z.object({
+      exchange: exchangeSchema.optional(),
+      dataset_id: z.string().min(1).max(120).optional(),
+      symbol: symbolSchema,
+      timeframe,
+      strategy_id: z.string().min(1).max(120),
+      parameters: parametersSchema.default({}),
+      parameter: z.string().min(1).max(80),
+      from: z.number().finite(),
+      to: z.number().finite(),
+      step: z.number().positive(),
+      limit: z.number().int().min(50).max(1_000).optional(),
+      start_at: dateTimeSchema.optional(),
+      end_at: dateTimeSchema.optional(),
+      mode: z.enum(["full-sample", "walk-forward"]).default("walk-forward"),
+      selection_metric: z.enum(["total_return", "sharpe_ratio"]).default("total_return"),
+      max_training_drawdown: z.number().finite().min(0).max(1).optional(),
+      initial_capital: z.number().positive().max(1_000_000_000),
+      position_fraction: z.number().positive().max(1),
+      fee_rate: z.number().min(0).max(0.05),
+      slippage_rate: z.number().min(0).max(0.05),
+      account_mode: z.enum(["spot", "legacy-margin"]).default("spot"),
+      allow_shorts: z.boolean().default(false),
+      stop_loss_pct: z.number().positive().max(0.99).optional(),
+      take_profit_pct: z.number().positive().max(9.99).optional(),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async (input) => {
+    try {
+      const config = {
+        accountMode: input.account_mode,
+        initialCapital: input.initial_capital,
+        positionFraction: input.position_fraction,
+        feeRate: input.fee_rate,
+        slippageRate: input.slippage_rate,
+        allowShorts: input.allow_shorts,
+        ...(input.stop_loss_pct === undefined ? {} : { stopLossPct: input.stop_loss_pct }),
+        ...(input.take_profit_pct === undefined ? {} : { takeProfitPct: input.take_profit_pct }),
+      };
+      const sweep = await runBacktestSweep({
+        ...(input.exchange === undefined ? {} : { exchange: input.exchange }),
+        symbol: input.symbol,
+        timeframe: input.timeframe as Timeframe,
+        strategyId: input.strategy_id,
+        parameters: input.parameters,
+        config,
+        parameter: input.parameter,
+        from: input.from,
+        to: input.to,
+        step: input.step,
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+        ...(input.start_at === undefined ? {} : { startAt: Date.parse(input.start_at) }),
+        ...(input.end_at === undefined ? {} : { endAt: Date.parse(input.end_at) }),
+        ...(input.dataset_id === undefined ? {} : { datasetId: input.dataset_id }),
+        ...(input.max_training_drawdown === undefined ? {} : { maxTrainingDrawdown: input.max_training_drawdown }),
+        selectionMetric: input.selection_metric === "sharpe_ratio" ? "sharpeRatio" : "totalReturn",
+        mode: input.mode,
+      });
+      return researchResult(summarizeSweep(sweep), "research-sweep", sweep.sweepId, input.dataset_id === undefined ? "public exchange candles" : "saved immutable candle snapshot");
+    } catch (error) { return researchError(error); }
+  });
+
+  server.registerTool("rerun_backtest", {
+    title: "Reproduce a saved backtest",
+    description: "Rerun a saved result against its immutable candle snapshot and compare the complete deterministic outcome.",
+    inputSchema: z.object({ result_id: z.string().min(1).max(120) }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async ({ result_id }) => {
+    try {
+      const result = rerunResearchBacktest(result_id);
+      return researchResult({ ...summarizeExperiment(result), note: "rerunOf identifies the saved result that was reproduced." }, "backtest-result", result.resultId, "saved immutable candle snapshot");
+    } catch (error) { return researchError(error); }
+  });
+
+  server.registerTool("rerun_backtest_sweep", {
+    title: "Reproduce a saved parameter sweep",
+    description: "Rerun a saved sweep from its immutable dataset and verify the saved results; accepts only a saved sweep ID.",
+    inputSchema: z.object({ sweep_id: z.string().min(1).max(120) }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async ({ sweep_id }) => {
+    try {
+      const sweep = rerunBacktestSweep(sweep_id);
+      return researchResult(summarizeSweep(sweep), "research-sweep", sweep.sweepId, "saved immutable candle snapshot");
+    }
+    catch (error) { return researchError(error); }
   });
 
   server.registerTool("get_backtest_result", {
@@ -255,6 +476,19 @@ export function createNewBeingMcpServer(): McpServer {
       const result = getExperiment(result_id);
       return result ? textResult(summarizeExperiment(result, trade_limit, include_equity_curve)) : errorResult(new Error("Backtest result not found."));
     } catch (error) { return errorResult(error); }
+  });
+
+  server.registerTool("get_research_sweep", {
+    title: "Get saved research sweep",
+    description: "Read a saved parameter sweep, its dataset range, fold results, and reproducibility identifiers.",
+    inputSchema: z.object({ sweep_id: z.string().min(1).max(120) }),
+    annotations: { readOnlyHint: true },
+  }, async ({ sweep_id }) => {
+    try {
+      if (getWorkspaceState().state.activeWorkspace === "replay") return researchError(new Error("Saved sweeps are hidden during Replay to prevent future-result leakage."));
+      const sweep = getSavedSweep(sweep_id);
+      return sweep ? researchResult(summarizeSweep(sweep), "research-sweep", sweep.sweepId, "saved immutable candle snapshot") : researchError(new Error("Research sweep not found."));
+    } catch (error) { return researchError(error); }
   });
 
   server.registerTool("list_experiments", {

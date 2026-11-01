@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { runBacktestSweep, SWEEP_MAX_RUNS } from "@newbeing/application";
+import { ResearchError, runBacktestSweep, SWEEP_MAX_RUNS } from "@newbeing/application";
 import { getWorkspaceState, listSavedSweeps } from "@newbeing/storage";
 import { researchFailure, researchReadGuard } from "@/lib/research-route";
 import { EXCHANGE_TIMEFRAMES, logEvent, type ExchangeId } from "@newbeing/core";
@@ -30,6 +30,8 @@ const requestSchema = z.object({
   to: z.number().finite(),
   step: z.number().finite().positive(),
   mode: z.enum(["full-sample", "walk-forward"]).optional(),
+  selectionMetric: z.enum(["totalReturn", "sharpeRatio"]).optional(),
+  maxTrainingDrawdown: z.number().finite().min(0).max(1).optional(),
   limit: z.number().int().min(50).max(1000).optional(),
 });
 
@@ -82,6 +84,8 @@ export async function POST(request: Request): Promise<NextResponse> {
         to: parsed.data.to,
         step: parsed.data.step,
         mode: parsed.data.mode ?? "full-sample",
+        ...(parsed.data.selectionMetric === undefined ? {} : { selectionMetric: parsed.data.selectionMetric }),
+        ...(parsed.data.maxTrainingDrawdown === undefined ? {} : { maxTrainingDrawdown: parsed.data.maxTrainingDrawdown }),
         ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
       },
       { marketAdapter: getWebMarketAdapter(exchange) },
@@ -95,6 +99,11 @@ export async function POST(request: Request): Promise<NextResponse> {
        to fix it. */
     const failure = researchFailure(error);
     if (failure.status !== 422) return failure;
-    return NextResponse.json({ error: message, maxRuns: SWEEP_MAX_RUNS }, { status: 422 });
+    return NextResponse.json({
+      error: message,
+      maxRuns: SWEEP_MAX_RUNS,
+      ...(error instanceof ResearchError && error.code !== undefined ? { code: error.code } : {}),
+      ...(error instanceof ResearchError && error.nextAction !== undefined ? { nextAction: error.nextAction } : {}),
+    }, { status: 422, headers: { "Cache-Control": "no-store" } });
   }
 }

@@ -105,6 +105,61 @@ test("chart, backtest, source draft, Paper order, Replay and workspace sync use 
   }
 });
 
+test("shows failed backtest reruns and Paper closes without replacing known state", async ({ page }) => {
+  await installApiMocks(page);
+  await page.route("**/api/backtests/*/rerun", (route) => route.fulfill({
+    status: 503,
+    contentType: "application/json",
+    body: JSON.stringify({ error: "Saved rerun unavailable." }),
+  }));
+  await page.goto("/");
+  await page.getByTestId("workspace-research").click();
+  const backtestRequest = page.waitForResponse((response) => response.url().endsWith("/api/backtests") && response.request().method() === "POST");
+  const runBacktest = page.getByRole("button", { name: "Run backtest" }).first();
+  await runBacktest.focus();
+  await runBacktest.press("Enter");
+  expect((await backtestRequest).ok()).toBeTruthy();
+
+  await page.getByRole("tab", { name: "Results" }).click();
+  const resultView = page.locator(".backtest-view");
+  await expect(resultView.getByText("+1.00%")).toBeVisible();
+  await resultView.getByRole("button", { name: "Rerun backtest" }).click();
+  await expect(resultView.getByRole("alert")).toHaveText("Saved rerun unavailable.");
+  await expect(resultView.getByText("+1.00%")).toBeVisible();
+
+  await page.route(/\/api\/paper(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ error: "Paper close quote unavailable." }) });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        portfolio: { quoteBalance: 9_915, baseBalance: 0.001, averageEntryPrice: 85_000, realizedPnl: 0, totalFees: 0 },
+        orders: [],
+        mode: "paper",
+        exchange: "binance",
+      }),
+    });
+  });
+  await page.getByTestId("workspace-terminal").click();
+  await page.getByRole("tab", { name: "Positions" }).click();
+  const positionView = page.locator(".position-table-wrap");
+  const closeButton = positionView.getByRole("button", { name: "Close" });
+  await expect(closeButton).toBeVisible();
+  await expect(positionView.getByText("0.00100", { exact: true })).toBeVisible();
+  await closeButton.click();
+  await expect(positionView.getByRole("alert")).toHaveText("Paper close quote unavailable.");
+  await expect(positionView.getByText("0.00100", { exact: true })).toBeVisible();
+  await expect(positionView.getByRole("status")).toContainText("Refresh the account");
+  await expect(positionView.getByRole("button", { name: "Refresh required", exact: true })).toBeDisabled();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(positionView.getByRole("alert")).toBeVisible();
+  const dimensions = await page.evaluate(() => ({ viewportWidth: window.innerWidth, documentWidth: document.documentElement.scrollWidth }));
+  expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
+});
+
 test("Paper recovery stays mounted when a successful response is malformed", async ({ page }) => {
   await installApiMocks(page);
   await page.route("**/api/paper/recovery", (route) => route.fulfill({

@@ -4,7 +4,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { getDatabase, storageDirectory } from "./db.js";
 import { datasetSnapshots } from "./schema.js";
-import type { Candle, ExchangeId, Timeframe } from "@newbeing/core";
+import { MAX_RESEARCH_BARS, type Candle, type ExchangeId, type Timeframe } from "@newbeing/core";
 
 /** Sorted object keys, array order preserved, finite numbers as Number.toString; -0 is 0. */
 export function canonicalJson(value: unknown): string {
@@ -105,7 +105,7 @@ const durations: Record<Timeframe, number> = { "1m": 60_000, "5m": 300_000, "15m
 export function identifyDataset(input: DatasetInput): { datasetId: string; bytes: string; payload: DatasetPayload } {
   if (!["binance", "coinbaseexchange", "okx", "kraken"].includes(input.exchange) || !/^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/.test(input.symbol)) throw new Error("Invalid dataset instrument.");
   const duration = durations[input.timeframe];
-  if (!duration || !Array.isArray(input.candles) || input.candles.length < 2 || input.candles.length > 1000) throw new Error("Dataset requires 2 to 1000 candles and a supported timeframe.");
+  if (!duration || !Array.isArray(input.candles) || input.candles.length < 2 || input.candles.length > MAX_RESEARCH_BARS) throw new Error(`Dataset requires 2 to ${MAX_RESEARCH_BARS} candles and a supported timeframe.`);
   const candles = input.candles.map((c, index) => {
     const { timestamp, open, high, low, close, volume } = c;
     if (![timestamp, open, high, low, close, volume].every(Number.isFinite) || !Number.isSafeInteger(timestamp) || timestamp < 0 || timestamp % duration !== 0 || Math.min(open, high, low, close) <= 0 || volume < 0 || high < Math.max(open, low, close) || low > Math.min(open, high, close)) throw new Error(`Invalid dataset candle at index ${index}.`);

@@ -7,7 +7,21 @@ import { canonicalJson, getWorkspaceState, loadDatasetSnapshot, outcomeIdentity,
 export { outcomeIdentity } from "@newbeing/storage";
 
 export class ResearchError extends Error {
-  constructor(message: string, public readonly status: 404 | 409 | 422) { super(message); }
+  readonly code?: string;
+  readonly nextAction?: string;
+
+  constructor(
+    message: string,
+    public readonly status: 404 | 409 | 422,
+    details?: { code: string; nextAction: string },
+  ) {
+    super(message);
+    this.name = "ResearchError";
+    if (details) {
+      this.code = details.code;
+      this.nextAction = details.nextAction;
+    }
+  }
 }
 export interface OriginalResearchInput {
   strategy: StrategyDefinition;

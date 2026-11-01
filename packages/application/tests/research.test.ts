@@ -119,6 +119,101 @@ describe("saved research inputs", () => {
     const rerun = rerunBacktestSweep(saved.sweepId);
     expect(rerun.runs.map((run) => ({ start: run.segment!.start, end: run.segment!.end }))).toEqual(expected);
   });
+
+  it("runs sweeps from saved snapshots without refetching or relabeling data", async () => {
+    const source = await runResearchBacktest(request, { marketAdapter: market() });
+    const { limit: _limit, ...baseRequest } = request;
+    const adapter = market();
+    const datasetRequest = { ...baseRequest, datasetId: source.datasetId, parameter: "thresholdPct", from: 1, to: 2, step: 1, mode: "full-sample" as const };
+    const sweep = await runBacktestSweep(datasetRequest, { marketAdapter: adapter });
+    expect(sweep.datasetId).toBe(source.datasetId);
+    expect(sweep.exchange).toBe(source.exchange);
+    expect(sweep.symbol).toBe(source.symbol);
+    expect(sweep.timeframe).toBe(source.timeframe);
+    expect(adapter.fetchOHLCVSince).not.toHaveBeenCalled();
+    await expect(runBacktestSweep({ ...datasetRequest, symbol: "ETH/USDT" }, { marketAdapter: adapter })).rejects.toThrow(/does not match/);
+    await expect(runBacktestSweep({ ...datasetRequest, startAt: 0 }, { marketAdapter: adapter })).rejects.toThrow(/cannot be combined/);
+  });
+
+  it("filters walk-forward training winners by max drawdown and preserves the constraint on rerun", async () => {
+    const bars: Candle[] = Array.from({ length: 50 }, (_, index) => {
+      const close = 100 + Math.sin(index / 3) * 5 + index / 10;
+      return { timestamp: index * 60_000, open: close, high: close + 1, low: close - 1, close, volume: index + 1 };
+    });
+    const sweepRequest = { ...request, limit: bars.length, parameter: "thresholdPct", from: 1, to: 2, step: 1, mode: "walk-forward" as const };
+    const dependencies = { marketAdapter: market(bars), now: () => bars.length * 60_000 };
+    const unconstrained = await runBacktestSweep(sweepRequest, dependencies);
+    const trainingEnds = [25, 30, 35, 40];
+    const minimumDrawdowns = trainingEnds.map((end) => Math.min(...unconstrained.runs
+      .filter((run) => run.segment?.start === 0 && run.segment.end === end)
+      .map((run) => run.metrics.maxDrawdown)));
+    const maxTrainingDrawdown = Math.max(...minimumDrawdowns);
+    const constrained = await runBacktestSweep({ ...sweepRequest, maxTrainingDrawdown }, dependencies);
+    const report = constrained.walkForward!;
+    const expectedWinner = (end: number) => {
+      const eligible = constrained.runs
+        .filter((run) => run.segment?.start === 0 && run.segment.end === end)
+        .filter((run) => run.metrics.maxDrawdown <= maxTrainingDrawdown);
+      return eligible.sort((a, b) => b.metrics.totalReturn - a.metrics.totalReturn || a.value - b.value)[0]!;
+    };
+
+    for (let index = 0; index < 3; index += 1) expect(report.folds[index]!.candidateValue).toBe(expectedWinner(trainingEnds[index]!).value);
+    expect(report.finalCandidateValue).toBe(expectedWinner(40).value);
+    expect(report.selectionConstraints).toEqual({ maxTrainingDrawdown });
+    const rerun = rerunBacktestSweep(constrained.sweepId);
+    expect(rerun.walkForward?.selectionConstraints).toEqual({ maxTrainingDrawdown });
+    expect(rerun.walkForward?.finalCandidateValue).toBe(report.finalCandidateValue);
+    if (Math.min(...minimumDrawdowns) > 0) {
+      await expect(runBacktestSweep({ ...sweepRequest, maxTrainingDrawdown: Math.min(...minimumDrawdowns) / 2 }, dependencies)).rejects.toMatchObject({
+        code: "SWEEP_TRAINING_DRAWDOWN_EXCLUDES_ALL",
+        status: 422,
+        nextAction: expect.stringContaining("max_training_drawdown"),
+      });
+    }
+    await expect(runBacktestSweep({ ...request, parameter: "thresholdPct", from: 1, to: 2, step: 1, mode: "full-sample", maxTrainingDrawdown: 0.4 }, dependencies)).rejects.toThrow(/only in walk-forward mode/);
+    await expect(runBacktestSweep({ ...sweepRequest, maxTrainingDrawdown: 1.01 }, dependencies)).rejects.toThrow(/between 0 and 1/);
+    await expect(runBacktestSweep({ ...request, parameter: "thresholdPct", from: 1, to: 2, step: 1, mode: "full-sample", selectionMetric: "sharpeRatio" }, dependencies)).rejects.toThrow(/only in walk-forward mode/);
+  });
+  it("selects finite training Sharpe when requested and preserves the rule on rerun", async () => {
+    const bars: Candle[] = Array.from({ length: 80 }, (_, index) => {
+      const close = 100 + Math.sin(index / 2.7) * 8 + Math.sin(index / 7) * 3 + index * 0.03;
+      return { timestamp: index * 60_000, open: close, high: close + 1, low: close - 1, close, volume: index + 1 };
+    });
+    const maxTrainingDrawdown = 0.9;
+    const sweepRequest = { ...request, limit: bars.length, parameter: "thresholdPct", from: 0.5, to: 5, step: 0.5, mode: "walk-forward" as const, selectionMetric: "sharpeRatio" as const, maxTrainingDrawdown };
+    const dependencies = { marketAdapter: market(bars), now: () => bars.length * 60_000 };
+    const sweep = await runBacktestSweep(sweepRequest, dependencies);
+    const report = sweep.walkForward!;
+    const candidates = sweep.runs.filter((run) => run.segment?.start === 0 && run.segment.end === report.boundaries.train80);
+    const winner = (metric: "totalReturn" | "sharpeRatio") => [...candidates]
+      .filter((run) => run.metrics.maxDrawdown <= maxTrainingDrawdown && (metric === "totalReturn" || run.metrics.sharpeRatio !== null))
+      .sort((a, b) => {
+        const aScore = metric === "sharpeRatio" ? a.metrics.sharpeRatio! : a.metrics.totalReturn;
+        const bScore = metric === "sharpeRatio" ? b.metrics.sharpeRatio! : b.metrics.totalReturn;
+        return bScore - aScore || a.value - b.value;
+      })[0]!;
+    const sharpeWinner = winner("sharpeRatio");
+    const returnWinner = winner("totalReturn");
+    expect(report.selectionMetric).toBe("sharpeRatio");
+    expect(report.selectionRule).toBe("training-sharpeRatio-desc/parameter-value-asc");
+    expect(report.finalCandidateValue).toBe(sharpeWinner.value);
+    expect(sharpeWinner.value).not.toBe(returnWinner.value);
+    const rerun = rerunBacktestSweep(sweep.sweepId);
+    expect(rerun.walkForward?.selectionMetric).toBe("sharpeRatio");
+    expect(rerun.walkForward?.selectionRule).toBe(report.selectionRule);
+    expect(rerun.walkForward?.finalCandidateValue).toBe(report.finalCandidateValue);
+
+    const constantBars = bars.map((bar) => ({ ...bar, open: 100, high: 101, low: 99, close: 100 }));
+    const experimentCount = listExperiments().length;
+    const savedSweepCount = listSavedSweeps().length;
+    await expect(runBacktestSweep(sweepRequest, { ...dependencies, marketAdapter: market(constantBars) })).rejects.toMatchObject({
+      code: "SWEEP_NO_FINITE_TRAINING_SHARPE",
+      status: 422,
+      nextAction: expect.stringContaining("total_return"),
+    });
+    expect(listExperiments()).toHaveLength(experimentCount);
+    expect(listSavedSweeps()).toHaveLength(savedSweepCount);
+  });
   it.each(["venue", "instrument", "timeframe", "strategy", "strategyVersion", "engineVersion", "config", "parameters", "values", "metrics", "outcome", "provenance", "bars", "duplicate-run", "legacy"])("rejects inconsistent %s at publication without inserting any rows", async (field) => {
     const sweep = await runBacktestSweep({ ...request, parameter: "thresholdPct", from: 1, to: 2, step: 1 }, { marketAdapter: market() });
     const results = sweep.runs.map((run) => getExperiment(run.resultId)!);

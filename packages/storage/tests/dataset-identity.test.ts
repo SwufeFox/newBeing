@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_RESEARCH_BARS } from "@newbeing/core";
 import { canonicalJson, identifyDataset } from "../src/snapshots.js";
 const candle = { timestamp: 60_000, open: 100, high: 110, low: 90, close: 105, volume: 1 };
 const input = { exchange: "binance" as const, symbol: "BTC/USDT", timeframe: "1m" as const, candles: [candle, { ...candle, timestamp: 120_000 }] };
@@ -19,5 +20,10 @@ describe("canonical dataset identity", () => {
       expect(() => identifyDataset({ ...input, candles })).toThrow();
     }
     expect(() => canonicalJson({ missing: undefined })).toThrow();
+  });
+  it("accepts the research bar ceiling and rejects the next candle", () => {
+    const candles = Array.from({ length: MAX_RESEARCH_BARS + 1 }, (_, index) => ({ ...candle, timestamp: index * 60_000 }));
+    expect(identifyDataset({ ...input, candles: candles.slice(0, MAX_RESEARCH_BARS) }).payload.candles).toHaveLength(MAX_RESEARCH_BARS);
+    expect(() => identifyDataset({ ...input, candles })).toThrow(`Dataset requires 2 to ${MAX_RESEARCH_BARS} candles and a supported timeframe.`);
   });
 });

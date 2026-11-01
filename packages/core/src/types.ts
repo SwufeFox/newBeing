@@ -1,6 +1,7 @@
 export const ENGINE_VERSION = "newbeing-backtest/0.2.0";
 
 export type Timeframe = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+export const MAX_RESEARCH_BARS = 5_000;
 export type ExchangeId = "binance" | "coinbaseexchange" | "okx" | "kraken";
 export const SUPPORTED_EXCHANGES: readonly ExchangeId[] = ["binance", "coinbaseexchange", "okx", "kraken"];
 export const EXCHANGE_TIMEFRAMES: Readonly<Record<ExchangeId, readonly Timeframe[]>> = {
@@ -122,7 +123,9 @@ export interface WalkForwardFold {
 export interface WalkForwardReport {
   mode: "walk-forward";
   boundaries: { train50: number; train60: number; train70: number; train80: number; total: number };
-  selectionRule: "training-totalReturn-desc/parameter-value-asc";
+  selectionMetric?: "totalReturn" | "sharpeRatio";
+  selectionRule: "training-totalReturn-desc/parameter-value-asc" | "training-sharpeRatio-desc/parameter-value-asc";
+  selectionConstraints?: { maxTrainingDrawdown: number };
   finalTrainingStartTimestamp: number;
   finalTrainingEndTimestamp: number;
   finalTestStartTimestamp: number;

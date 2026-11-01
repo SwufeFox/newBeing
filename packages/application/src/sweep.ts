@@ -1,13 +1,14 @@
-import { ENGINE_VERSION, runBacktest, type BacktestConfig, type BacktestResult, type BacktestSweepResult, type ExchangeId, type StrategyParameters, type Timeframe } from "@newbeing/core";
-import { fetchLatestCompletedCandles, findCandleGaps, getExchangeAdapter, type ExchangeAdapter } from "@newbeing/market-data";
-import { canonicalJson, getExperiment, getSavedSweep, getWorkspaceState, identifyDataset, researchSweepRunSegments, saveDatasetSnapshot, saveResearchResults, validateResearchSweep } from "@newbeing/storage";
 import { randomUUID } from "node:crypto";
+import { ENGINE_VERSION, runBacktest, type BacktestConfig, type BacktestResult, type BacktestSweepResult, type Candle, type ExchangeId, type StrategyParameters, type Timeframe } from "@newbeing/core";
+import { fetchCompletedCandlesRange, fetchLatestCompletedCandles, findCandleGaps, getExchangeAdapter, type ExchangeAdapter } from "@newbeing/market-data";
+import { canonicalJson, getExperiment, getSavedSweep, getWorkspaceState, identifyDataset, loadDatasetSnapshot, researchSweepRunSegments, saveDatasetSnapshot, saveResearchResults, validateResearchSweep } from "@newbeing/storage";
 import { assertResearchAvailable, assertSameOutcome, originalResearchInput, outcomeIdentity, reproductionFor, ResearchError, resolveResearchStrategy, type OriginalResearchInput } from "./research-inputs.js";
 import { sweepCartesian } from "./sweep-values.js";
 export { SWEEP_MAX_RUNS, sweepValues, sweepCartesian } from "./sweep-values.js";
 
 export interface SweepRequest {
   exchange?: ExchangeId;
+  datasetId?: string;
   symbol: string;
   timeframe: Timeframe;
   strategyId: string;
@@ -17,21 +18,42 @@ export interface SweepRequest {
   from: number;
   to: number;
   step: number;
+  startAt?: number;
+  endAt?: number;
   limit?: number;
+  maxTrainingDrawdown?: number;
+  selectionMetric?: "totalReturn" | "sharpeRatio";
   mode?: "full-sample" | "walk-forward";
 }
 export type SweepResult = BacktestSweepResult;
 export type SweepRun = BacktestSweepResult["runs"][number];
 
-/** One fetch, one snapshot, bounded enumeration, atomic publication of all runs. */
+/** One verified snapshot, bounded enumeration, atomic publication of all runs. */
 export async function runBacktestSweep(request: SweepRequest, dependencies: { now?: () => number; marketAdapter?: ExchangeAdapter } = {}): Promise<SweepResult> {
   assertResearchAvailable();
+  if (request.endAt !== undefined && request.startAt === undefined) throw new Error("endAt requires startAt.");
+  if (request.datasetId !== undefined && (request.limit !== undefined || request.startAt !== undefined || request.endAt !== undefined)) throw new Error("datasetId cannot be combined with limit or an explicit historical range.");
+  if (request.startAt !== undefined && request.limit !== undefined) throw new Error("limit cannot be combined with an explicit historical range.");
+  if (request.maxTrainingDrawdown !== undefined && (!Number.isFinite(request.maxTrainingDrawdown) || request.maxTrainingDrawdown < 0 || request.maxTrainingDrawdown > 1)) throw new Error("maxTrainingDrawdown must be between 0 and 1.");
+  if (request.maxTrainingDrawdown !== undefined && request.mode !== "walk-forward") throw new Error("maxTrainingDrawdown is available only in walk-forward mode.");
+  if (request.selectionMetric !== undefined && request.selectionMetric !== "totalReturn" && request.selectionMetric !== "sharpeRatio") throw new Error("selectionMetric must be totalReturn or sharpeRatio.");
+  if (request.selectionMetric === "sharpeRatio" && request.mode !== "walk-forward") throw new Error("selectionMetric=sharpeRatio is available only in walk-forward mode.");
   const { strategy, parameters } = resolveResearchStrategy(request.strategyId, request.parameters);
   if (!Object.hasOwn(strategy.defaults, request.parameter) || typeof strategy.defaults[request.parameter] !== "number") throw new Error(`${request.strategyId} has no numeric parameter named "${request.parameter}".`);
   const values = sweepCartesian([{ parameter: request.parameter, from: request.from, to: request.to, step: request.step }]).map((row) => row[request.parameter] as number);
-  const exchange = request.exchange ?? getWorkspaceState().state.exchange;
-  const adapter = dependencies.marketAdapter ?? getExchangeAdapter(exchange);
-  const candles = await fetchLatestCompletedCandles(adapter, request.symbol, request.timeframe, request.limit ?? 600, dependencies.now?.() ?? Date.now());
+  const savedDataset = request.datasetId === undefined ? undefined : loadDatasetSnapshot(request.datasetId);
+  if (savedDataset && (savedDataset.symbol !== request.symbol || savedDataset.timeframe !== request.timeframe || (request.exchange !== undefined && savedDataset.exchange !== request.exchange))) throw new Error("Saved dataset does not match the requested exchange, symbol and timeframe.");
+  const exchange = savedDataset?.exchange ?? request.exchange ?? getWorkspaceState().state.exchange;
+  let candles: readonly Candle[];
+  if (savedDataset) {
+    candles = savedDataset.candles;
+  } else {
+    const adapter = dependencies.marketAdapter ?? getExchangeAdapter(exchange);
+    const now = dependencies.now?.() ?? Date.now();
+    candles = request.startAt === undefined
+      ? await fetchLatestCompletedCandles(adapter, request.symbol, request.timeframe, request.limit ?? 600, now)
+      : await fetchCompletedCandlesRange(adapter, request.symbol, request.timeframe, request.startAt, request.endAt, now);
+  }
   assertResearchAvailable();
   if (request.mode === "walk-forward") {
     const gaps = findCandleGaps(candles, request.timeframe);
@@ -68,15 +90,41 @@ export async function runBacktestSweep(request: SweepRequest, dependencies: { no
     segments.push({ start, end });
     return run;
   };
+  const selectionMetric = request.selectionMetric ?? "totalReturn";
   let walkForward: BacktestSweepResult["walkForward"];
   if (request.mode === "walk-forward") {
     const select = (end: number) => {
-      let best: { value: number; result: BacktestResult } | undefined;
+      let best: { value: number; result: BacktestResult; score: number } | undefined;
+      let finiteMetricCandidates = 0;
+      let drawdownEligibleCandidates = 0;
       for (const value of values) {
         const candidate = execute(0, end, value);
-        if (!best || candidate.metrics.totalReturn > best.result.metrics.totalReturn) best = { value, result: candidate };
+        const score = selectionMetric === "sharpeRatio" ? candidate.metrics.sharpeRatio : candidate.metrics.totalReturn;
+        if (score === null || !Number.isFinite(score)) continue;
+        finiteMetricCandidates += 1;
+        if (request.maxTrainingDrawdown !== undefined && candidate.metrics.maxDrawdown > request.maxTrainingDrawdown) continue;
+        drawdownEligibleCandidates += 1;
+        if (!best || score > best.score || (score === best.score && value < best.value)) best = { value, result: candidate, score };
       }
-      return best!;
+      if (!best) {
+        if (selectionMetric === "sharpeRatio" && finiteMetricCandidates === 0) {
+          throw new ResearchError("No sweep candidate has a finite training Sharpe ratio.", 422, {
+            code: "SWEEP_NO_FINITE_TRAINING_SHARPE",
+            nextAction: "Choose total_return, use a training range with variable returns, or sweep values that produce training trades; do not treat null Sharpe as zero.",
+          });
+        }
+        if (request.maxTrainingDrawdown !== undefined && drawdownEligibleCandidates === 0) {
+          throw new ResearchError(`No sweep candidate meets maxTrainingDrawdown <= ${request.maxTrainingDrawdown}.`, 422, {
+            code: "SWEEP_TRAINING_DRAWDOWN_EXCLUDES_ALL",
+            nextAction: "Raise max_training_drawdown within [0,1] or remove the cap, then rerun; the limit applies only to training candidate selection.",
+          });
+        }
+        throw new ResearchError("No sweep candidate has a finite eligible training selection metric.", 422, {
+          code: "SWEEP_NO_ELIGIBLE_TRAINING_CANDIDATE",
+          nextAction: "Check the training metric and candidate range; use total_return if finite training Sharpe is unavailable.",
+        });
+      }
+      return best;
     };
     const folds = [];
     for (const [trainEnd, validationEnd] of [[boundaries.train50, boundaries.train60], [boundaries.train60, boundaries.train70], [boundaries.train70, boundaries.train80]] as const) {
@@ -102,7 +150,9 @@ export async function runBacktestSweep(request: SweepRequest, dependencies: { no
     walkForward = {
       mode: "walk-forward",
       boundaries,
-      selectionRule: "training-totalReturn-desc/parameter-value-asc",
+      selectionMetric,
+      selectionRule: selectionMetric === "sharpeRatio" ? "training-sharpeRatio-desc/parameter-value-asc" : "training-totalReturn-desc/parameter-value-asc",
+      ...(request.maxTrainingDrawdown === undefined ? {} : { selectionConstraints: { maxTrainingDrawdown: request.maxTrainingDrawdown } }),
       finalTrainingStartTimestamp: candles[0]!.timestamp,
       finalTrainingEndTimestamp: candles[boundaries.train80 - 1]!.timestamp,
       finalTestStartTimestamp: candles[boundaries.train80]!.timestamp,

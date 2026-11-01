@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getStrategy, runBacktest, type BacktestConfig, type BacktestResult, type StrategyParameters } from "@newbeing/core";
-import { fetchLatestCompletedCandles, findCandleGaps, getExchangeAdapter, type ExchangeAdapter } from "@newbeing/market-data";
+import { fetchCompletedCandlesRange, fetchLatestCompletedCandles, findCandleGaps, getExchangeAdapter, type ExchangeAdapter } from "@newbeing/market-data";
 import type { ExchangeId, Timeframe } from "@newbeing/core";
 import { getExperiment, getWorkspaceState, identifyDataset, saveDatasetSnapshot, saveResearchResults } from "@newbeing/storage";
 import { assertResearchAvailable, assertSameOutcome, originalResearchInput, reproductionFor, ResearchError, resolveResearchStrategy } from "./research-inputs.js";
@@ -21,6 +21,9 @@ export interface ResearchBacktestRequest {
   strategyId: string;
   parameters: StrategyParameters;
   config: BacktestConfig;
+  /** Optional inclusive UTC bar-open timestamp; endAt is exclusive. */
+  startAt?: number;
+  endAt?: number;
   limit?: number;
   openInWorkspace?: boolean;
 }
@@ -31,13 +34,18 @@ export async function runResearchBacktest(
   dependencies: { now?: () => number; marketAdapter?: ExchangeAdapter; candleProvenance?: () => { source: "live" | "local-cache"; cachedAt: string | null; fallback: boolean } | null } = {},
 ): Promise<BacktestResult> {
   assertResearchAvailable();
+  if (request.endAt !== undefined && request.startAt === undefined) throw new Error("endAt requires startAt.");
+  if (request.startAt !== undefined && request.limit !== undefined) throw new Error("limit cannot be combined with an explicit historical range.");
   const { strategy, parameters } = resolveResearchStrategy(request.strategyId, request.parameters);
   /* One venue for the whole run: sourcing candles from one place and labelling
      the result with another would make the result untraceable. */
   const workspace = getWorkspaceState();
   const exchange = request.exchange ?? workspace.state.exchange;
   const adapter = dependencies.marketAdapter ?? getExchangeAdapter(exchange);
-  const candles = await fetchLatestCompletedCandles(adapter, request.symbol, request.timeframe, request.limit ?? 600, dependencies.now?.() ?? Date.now());
+  const now = dependencies.now?.() ?? Date.now();
+  const candles = request.startAt === undefined
+    ? await fetchLatestCompletedCandles(adapter, request.symbol, request.timeframe, request.limit ?? 600, now)
+    : await fetchCompletedCandlesRange(adapter, request.symbol, request.timeframe, request.startAt, request.endAt, now);
   assertResearchAvailable();
   if (candles.length < 2) throw new Error(`${exchange} returned fewer than two completed bars; no backtest was saved.`);
   const gaps = findCandleGaps(candles, request.timeframe);

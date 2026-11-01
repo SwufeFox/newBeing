@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/client";
-import { DEFAULT_WORKSPACE_STATE, type ReplaySession } from "@newbeing/core";
-import { beginPaperIntent, listPaperRecoveries, paperAccountId, advanceReplaySession, closeDatabaseForTests, commandReplay, createConfiguredReplaySession, saveWorkspaceState } from "@newbeing/storage";
+import { DEFAULT_WORKSPACE_STATE, MAX_RESEARCH_BARS, type ReplaySession } from "@newbeing/core";
+import { beginPaperIntent, identifyDataset, listPaperRecoveries, paperAccountId, advanceReplaySession, closeDatabaseForTests, commandReplay, createConfiguredReplaySession, saveDatasetSnapshot, saveWorkspaceState } from "@newbeing/storage";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,11 +37,101 @@ try {
   await client.connect(transport);
   const tools = await client.listTools();
   const names = tools.tools.map((tool) => tool.name);
-  const required = ["get_workspace_context", "get_market_data", "run_backtest", "prepare_order"];
+  const required = ["get_workspace_context", "get_market_data", "run_backtest", "run_research_sweep", "rerun_backtest", "rerun_backtest_sweep", "get_research_sweep", "prepare_order"];
   const missing = required.filter((name) => !names.includes(name));
   if (missing.length > 0) throw new Error(`MCP tool registration missing: ${missing.join(", ")}`);
-  const expected = ["get_workspace_context", "get_market_data", "list_strategies", "get_strategy", "create_strategy", "run_backtest", "list_experiments", "get_backtest_result", "update_strategy", "open_workspace_view", "get_portfolio", "prepare_order", "list_derivative_instruments", "get_derivative_market", "get_derivative_portfolio"];
+  const expected = ["get_workspace_context", "get_market_data", "list_strategies", "get_strategy", "create_strategy", "run_backtest", "run_research_sweep", "rerun_backtest", "rerun_backtest_sweep", "get_research_sweep", "list_experiments", "get_backtest_result", "update_strategy", "open_workspace_view", "get_portfolio", "prepare_order", "list_derivative_instruments", "get_derivative_market", "get_derivative_portfolio"];
   if (names.length !== expected.length || expected.some((name) => !names.includes(name))) throw new Error("MCP execution surface changed; only the approved tools may be registered.");
+  const prompts = await client.listPrompts();
+  if (["research_question", "explain_result", "replay_review"].some((name) => !prompts.prompts.some((prompt) => prompt.name === name))) throw new Error("MCP prompt registration is incomplete.");
+  const prompt = await client.getPrompt({ name: "research_question", arguments: { question: "Compare a bounded strategy range." } });
+  if (!JSON.stringify(prompt).includes("run_research_sweep")) throw new Error("MCP research prompt omitted the bounded sweep workflow.");
+  const resources = await client.listResources();
+  if (["newbeing://agent-guide/v1", "newbeing://safety/v1"].some((uri) => !resources.resources.some((resource) => resource.uri === uri))) throw new Error("MCP policy resources are incomplete.");
+  const guide = await client.readResource({ uri: "newbeing://agent-guide/v1" });
+  if (!guide.contents.some((item) => "text" in item && item.text.includes(`${MAX_RESEARCH_BARS.toLocaleString("en-US")} completed bars`) && item.text.includes("candidateRuns") && item.text.includes("SWEEP_NO_FINITE_TRAINING_SHARPE"))) throw new Error("MCP agent guide omitted bounded sweep evidence or stable failure guidance.");
+  const researchBars = Array.from({ length: 80 }, (_, index) => {
+    const close = 100 + Math.sin(index / 2.7) * 8 + Math.sin(index / 7) * 3 + index * 0.03;
+    return { timestamp: index * 60_000, open: close, high: close + 1, low: close - 1, close, volume: index + 1 };
+  });
+  const researchInput = { exchange: "binance" as const, symbol: "BTC/USDT", timeframe: "1m" as const, candles: researchBars };
+  const researchDatasetId = saveDatasetSnapshot(researchInput);
+  if (identifyDataset(researchInput).datasetId !== researchDatasetId) throw new Error("MCP smoke dataset identity is unstable.");
+  const sweepPayload = readPayload(await client.callTool({
+    name: "run_research_sweep",
+    arguments: {
+      dataset_id: researchDatasetId,
+      symbol: "BTC/USDT",
+      timeframe: "1m",
+      strategy_id: "momentum-reversal",
+      parameters: { lookback: 2, thresholdPct: 1 },
+      parameter: "thresholdPct",
+      from: 0.5,
+      to: 5,
+      step: 0.5,
+      mode: "walk-forward",
+      selection_metric: "sharpe_ratio",
+      max_training_drawdown: 0.9,
+      initial_capital: 1_000,
+      position_fraction: 1,
+      fee_rate: 0,
+      slippage_rate: 0,
+      account_mode: "spot",
+      allow_shorts: false,
+    },
+  }));
+  const sweepData = sweepPayload.data as {
+    sweepId: string;
+    values: number[];
+    candidateRuns: { value: number; resultId: string; segment: { start: number; end: number }; metrics: Record<string, unknown> }[];
+    candidateRunCount: number;
+    candidateRunLimit: number;
+    walkForward: { selectionMetric: string; selectionConstraints?: { maxTrainingDrawdown?: number } };
+  };
+  if (sweepData.walkForward.selectionMetric !== "sharpeRatio" || sweepData.walkForward.selectionConstraints?.maxTrainingDrawdown !== 0.9 ||
+      sweepData.candidateRuns.length !== sweepData.values.length * 4 || sweepData.candidateRunCount !== sweepData.candidateRuns.length ||
+      sweepData.candidateRunLimit !== sweepData.values.length * 4 || sweepData.candidateRuns.length > 160 ||
+      sweepData.candidateRuns.some((run) => run.segment.start !== 0 || !run.resultId || Object.hasOwn(run, "trades") || Object.hasOwn(run, "equityCurve"))) {
+    throw new Error("MCP sweep summary omitted bounded training-candidate evidence or leaked full run data.");
+  }
+  const expectedEvidence = JSON.stringify(sweepData.candidateRuns.map(({ value, segment, metrics }) => ({ value, segment, metrics })));
+  for (const name of ["get_research_sweep", "rerun_backtest_sweep"] as const) {
+    const payload = readPayload(await client.callTool({ name, arguments: { sweep_id: sweepData.sweepId } }));
+    const saved = payload.data as typeof sweepData;
+    if (JSON.stringify(saved.candidateRuns.map(({ value, segment, metrics }) => ({ value, segment, metrics }))) !== expectedEvidence) {
+      throw new Error(`MCP ${name} did not preserve candidate evidence.`);
+    }
+  }
+
+  const flatBars = researchBars.map((bar) => ({ ...bar, open: 100, high: 101, low: 99, close: 100 }));
+  const flatDatasetId = saveDatasetSnapshot({ ...researchInput, candles: flatBars });
+  const failedSweep = await client.callTool({
+    name: "run_research_sweep",
+    arguments: {
+      dataset_id: flatDatasetId,
+      symbol: "BTC/USDT",
+      timeframe: "1m",
+      strategy_id: "momentum-reversal",
+      parameters: { lookback: 2, thresholdPct: 1 },
+      parameter: "thresholdPct",
+      from: 0.5,
+      to: 1.5,
+      step: 0.5,
+      mode: "walk-forward",
+      selection_metric: "sharpe_ratio",
+      initial_capital: 1_000,
+      position_fraction: 1,
+      fee_rate: 0,
+      slippage_rate: 0,
+      account_mode: "spot",
+      allow_shorts: false,
+    },
+  });
+  const failedText = failedSweep.content.find((item) => item.type === "text");
+  const failure = failedText?.type === "text" ? JSON.parse(failedText.text) as { error?: { code?: string; nextAction?: string } } : null;
+  if (!failedSweep.isError || failure?.error?.code !== "SWEEP_NO_FINITE_TRAINING_SHARPE" || !failure.error.nextAction?.includes("total_return")) {
+    throw new Error("MCP sweep errors omitted the stable no-finite-Sharpe code or recovery guidance.");
+  }
   const pendingOwner = paperAccountId("BTC/USD", "kraken");
   beginPaperIntent({ clientOrderId: "mcp-interrupted-order", symbol: "BTC/USD", side: "buy", quantity: 0.1 }, pendingOwner);
   const context = readPayload(await client.callTool({ name: "get_workspace_context", arguments: {} }));
@@ -77,7 +167,10 @@ try {
   const portfolio = readPayload(await client.callTool({ name: "get_portfolio", arguments: { symbol: session.symbol } }));
   const wallet = portfolio.portfolio as { quoteBalance: number; baseBalance: number; feeRate: number };
   if (portfolio.mode !== "replay" || wallet.baseBalance !== 1 || Math.abs(wallet.quoteBalance - (25_000 - 100.1 * 1.002)) > 1e-8 || wallet.feeRate !== 0.002) throw new Error("MCP Replay portfolio diverges from the configured fill ledger.");
-  const market = readPayload(await client.callTool({ name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1m" } }));
+  const marketSummary = readPayload(await client.callTool({ name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1m" } }));
+  const marketSummaryData = marketSummary.summary;
+  if (marketSummary.candles !== undefined || typeof marketSummaryData !== "object" || marketSummaryData === null || !("bars" in marketSummaryData) || typeof marketSummaryData.bars !== "number" || marketSummaryData.bars !== advanced.session.bars.length) throw new Error("MCP market data should return a bounded summary unless bars are requested.");
+  const market = readPayload(await client.callTool({ name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1m", include_bars: true } }));
   if (JSON.stringify(market.candles) !== JSON.stringify(advanced.session.bars) || market.futureBarsLoaded !== 0) throw new Error("MCP returned data beyond the revealed Replay prefix.");
   const blocked = [
     { name: "get_market_data", arguments: { symbol: "ETH/USDT", timeframe: "1m" } },
@@ -87,6 +180,13 @@ try {
     { name: "list_derivative_instruments", arguments: { kind: "option" } },
     { name: "get_derivative_market", arguments: { instrument_id: derivativeInstruments[0]!.id } },
     { name: "get_derivative_portfolio", arguments: { venue: "okx", settle: "USDT" } },
+    { name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1m", exchange: "kraken" } },
+    { name: "get_portfolio", arguments: { symbol: session.symbol, exchange: "kraken" } },
+    { name: "run_backtest", arguments: { symbol: session.symbol, timeframe: "1m", strategy_id: "rsi-mean-reversion", initial_capital: 1_000, position_fraction: 0.5, fee_rate: 0.001, slippage_rate: 0.001 } },
+    { name: "run_research_sweep", arguments: { symbol: session.symbol, timeframe: "1m", strategy_id: "rsi-mean-reversion", parameter: "period", from: 10, to: 12, step: 1, initial_capital: 1_000, position_fraction: 0.5, fee_rate: 0.001, slippage_rate: 0.001 } },
+    { name: "rerun_backtest", arguments: { result_id: "hidden" } },
+    { name: "rerun_backtest_sweep", arguments: { sweep_id: "hidden" } },
+    { name: "get_research_sweep", arguments: { sweep_id: "hidden" } },
     { name: "list_experiments", arguments: {} },
     { name: "get_backtest_result", arguments: { result_id: "hidden" } },
     { name: "prepare_order", arguments: { symbol: session.symbol, side: "buy", quantity: 1 } },
@@ -95,6 +195,9 @@ try {
   for (const call of blocked) {
     if (!(await client.callTool(call)).isError) throw new Error(`MCP Replay/live boundary failed for ${call.name}.`);
   }
+  const blockedSweep = await client.callTool({ name: "get_research_sweep", arguments: { sweep_id: "hidden" } });
+  const blockedSweepText = blockedSweep.content.find((item) => item.type === "text");
+  if (!blockedSweep.isError || !blockedSweepText || blockedSweepText.type !== "text" || JSON.parse(blockedSweepText.text).error?.code !== "RESEARCH_OPERATION_FAILED") throw new Error("MCP research errors must use the stable versioned envelope.");
   saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, exchange: "kraken", activeWorkspace: "replay", activeReplayId: session.id, timeframe: "1m" });
   for (const call of [
     { name: "get_market_data", arguments: { symbol: session.symbol, timeframe: "1m" } },
@@ -106,7 +209,7 @@ try {
     status: "ok",
     transport: "official SDK stdio client",
     toolCount: names.length,
-    invocations: ["get_workspace_context", "list_strategies", "create_strategy", "get_strategy", "get_portfolio", "get_market_data", "list_experiments", "get_backtest_result", "prepare_order"],
+    invocations: ["get_workspace_context", "research_question prompt", "agent-guide resource", "list_strategies", "create_strategy", "get_strategy", "get_portfolio", "get_market_data", "run_research_sweep", "rerun_backtest", "rerun_backtest_sweep", "get_research_sweep", "list_experiments", "get_backtest_result", "prepare_order"],
     replayBoundaries: true,
     isolatedDatabase: true,
   }));

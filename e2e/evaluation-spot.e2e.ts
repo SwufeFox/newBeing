@@ -119,7 +119,7 @@ async function runUiBacktest(page: Page): Promise<BacktestResult> {
   const result = await response.json() as BacktestResult;
   expect(result.datasetId).toMatch(/^sha256:[a-f0-9]{64}$/);
   expect(result.assumptions).toMatchObject(config);
-  await expect(page.getByRole("button", { name: "Replay from final equity point", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue to Replay", exact: true })).toBeVisible();
   return result;
 }
 
@@ -380,7 +380,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
     const bars = canonicalBars(candles, result);
     const limit = Math.min(200, Math.floor(bars.length / 2));
     const pending = postResponse(page, "/api/replay");
-    await page.getByRole("button", { name: "Replay from final equity point", exact: true }).click();
+    await page.getByRole("button", { name: "Continue to Replay", exact: true }).click();
     const response = await pending;
     expect(response.status()).toBe(201);
     expect(response.request().postDataJSON()).toEqual({
@@ -437,7 +437,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
       await expect(page.getByRole("button", { name: "Starting replay…", exact: true })).toBeDisabled();
       await creation.deliver();
       // The busy flag clears in the creation handler's finally block, after its navigation guard.
-      await expect(page.getByRole("button", { name: "Replay from final equity point", exact: true })).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Continue to Replay", exact: true })).toBeEnabled();
       await expect(page.locator("main.mode-layout-research")).toBeVisible();
       await expect(page.getByTestId("replay-step")).toHaveCount(0);
       await expect(page.locator(".replay-ticket")).toHaveCount(0);
