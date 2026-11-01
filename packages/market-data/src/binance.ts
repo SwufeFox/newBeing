@@ -97,7 +97,10 @@ export class CcxtSpotAdapter implements ExchangeAdapter {
       return rows.map((row) => {
         const [timestamp, open, high, low, close, volume] = row;
         if (typeof timestamp !== "number" || typeof open !== "number" || typeof high !== "number" || typeof low !== "number" || typeof close !== "number" || typeof volume !== "number"
-          || ![timestamp, open, high, low, close, volume].every(Number.isFinite)) throw new Error(`${this.id} returned an invalid OHLCV row.`);
+          || ![timestamp, open, high, low, close, volume].every(Number.isFinite)
+          || !Number.isSafeInteger(timestamp) || timestamp < 0
+          || Math.min(open, high, low, close) <= 0 || volume < 0
+          || high < Math.max(open, close, low) || low > Math.min(open, close, high)) throw new Error(`${this.id} returned an invalid OHLCV row.`);
         return { timestamp, open, high, low, close, volume };
       });
     });

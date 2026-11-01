@@ -34,6 +34,11 @@ describe("public spot exchange registry", () => {
     ]);
     expect(fetchOHLCV).toHaveBeenNthCalledWith(2, symbol, "1m", 1_700_000_000_000, 600, paginate ? { paginate: true } : {});
   });
+  it("rejects finite but inconsistent exchange OHLCV rows", async () => {
+    const adapter = new CcxtSpotAdapter("binance");
+    Object.defineProperty(adapter, "exchange", { value: { loadMarkets: vi.fn(async () => ({})), fetchOHLCV: vi.fn(async () => [[1_700_000_000_000, 10, 10.5, 9, 11, 42]]) } });
+    await expect(adapter.fetchOHLCV("BTC/USDT", "1m")).rejects.toThrow("returned an invalid OHLCV row");
+  });
 
   it("uses the newest Kraken trade timestamp when the ticker has none", async () => {
     const adapter = new CcxtSpotAdapter("kraken");
