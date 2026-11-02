@@ -19,7 +19,7 @@ Open <http://localhost:3000>. No API key or third-party SaaS account is required
 
 The local SQLite database and saved experiments live under `.newbeing/` (ignored by Git). `NEWBEING_DATA_DIR` can move that state elsewhere. Public exchange requests are made server-side through CCXT; the browser subscribes only to Binance's public kline stream. This workspace is not a hosted service.
 
-Research refreshes the Experiments list after each completed backtest. Position allocation controls the share of available cash used per entry and displays a high-allocation warning at 90% or above.
+Research refreshes the Experiments list after each completed backtest. Position allocation controls the share of available cash used per entry and displays a high-allocation warning at 90% or above. Walk-forward sweeps select on training total return or Sharpe with an optional training drawdown cap; full-sample sweeps are labeled in-sample, and saved sweeps can be opened and deterministically rerun from their immutable snapshot.
 
 ## Derivatives
 
@@ -28,6 +28,12 @@ Open **Derivatives** from the main navigation (or `/derivatives`). The dedicated
 Paper accounts must be explicitly opened. Contracts support local isolated margin and long/short exposure; options support paid-premium buys and sells that close an existing long. Quotes, collateral, contract multipliers and fees use the instrument's actual settlement units. These accounts never import spot or legacy wallet assets.
 
 The local execution policy, funding coverage, expiry handling and research boundaries are described in [the derivatives guide](docs/derivatives.md). Public derivatives and their normal Paper accounts are blocked while a frozen Replay is active.
+
+## Workspace controls
+
+- **Markets:** Enter a base symbol to use the selected venue’s default quote, or enter an explicit `BASE/QUOTE` pair.
+- **Derivatives:** Paper actions stay paused until a filtered instrument is selected and a fresh quote is available.
+- **Replay:** Use the single speed selector or press Space to play/pause, Right Arrow or N to step, and comma/period or `<`/`>` to change speed. Controls reflow on narrow screens.
 
 ## Checks
 

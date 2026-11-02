@@ -2435,6 +2435,58 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .replay-start-group input { width: 170px; }
 .replay-help { color: var(--c-fg-4); font-size: var(--t-meta); }
 .replay-error { flex-basis: 100%; color: var(--c-down); font-size: var(--t-meta); }
+.replay-actions > button {
+  min-height: max(44px, var(--ak-density-control-height));
+}
+.replay-speed-control {
+  min-height: 44px;
+}
+.replay-speed-control select {
+  min-width: 96px;
+  min-height: 44px;
+}
+@media (max-width: 640px) {
+  .replay-start-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+  .replay-start-group > * {
+    width: auto;
+    min-width: 0;
+  }
+  .replay-start-group input,
+  .replay-start-group select {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+  }
+  .replay-start-group > button {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    justify-content: center;
+  }
+  .replay-session-row { align-items: stretch; }
+  .replay-session-meta,
+  .replay-actions { width: 100%; }
+  .replay-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .replay-actions > button {
+    width: 100%;
+    justify-content: center;
+  }
+  .replay-speed-control {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
+  .replay-speed-control select { max-width: 160px; }
+}
 .replay-session-summary {
   display: flex;
   flex-direction: column;

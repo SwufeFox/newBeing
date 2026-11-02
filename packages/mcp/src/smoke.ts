@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as z from "zod/v4";
 
 const client = new Client({ name: "newbeing-mcp-smoke", version: "0.1.0" });
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -32,6 +33,23 @@ function readPayload(result: Awaited<ReturnType<typeof client.callTool>>): Recor
   if (!text || text.type !== "text") throw new Error("MCP tool invocation returned no text payload.");
   return JSON.parse(text.text) as Record<string, unknown>;
 }
+const structuredSweepSchema = z.object({
+  data: z.object({
+    values: z.array(z.number()),
+    candidateRuns: z.array(z.object({
+      value: z.number(),
+      resultId: z.string(),
+      segment: z.object({ start: z.number(), end: z.number(), datasetId: z.string().optional() }),
+      metrics: z.record(z.string(), z.unknown()),
+    })),
+    candidateRunLimit: z.number(),
+  }),
+});
+const structuredSweepFailureSchema = z.object({
+  schemaVersion: z.literal(1),
+  ok: z.literal(false),
+  error: z.object({ code: z.string(), nextAction: z.string() }),
+});
 
 try {
   await client.connect(transport);
@@ -57,7 +75,7 @@ try {
   const researchInput = { exchange: "binance" as const, symbol: "BTC/USDT", timeframe: "1m" as const, candles: researchBars };
   const researchDatasetId = saveDatasetSnapshot(researchInput);
   if (identifyDataset(researchInput).datasetId !== researchDatasetId) throw new Error("MCP smoke dataset identity is unstable.");
-  const sweepPayload = readPayload(await client.callTool({
+  const sweepResponse = await client.callTool({
     name: "run_research_sweep",
     arguments: {
       dataset_id: researchDatasetId,
@@ -79,7 +97,11 @@ try {
       account_mode: "spot",
       allow_shorts: false,
     },
-  }));
+  });
+  const sweepPayload = readPayload(sweepResponse);
+  if (!sweepResponse.structuredContent || JSON.stringify(sweepResponse.structuredContent) !== JSON.stringify(sweepPayload)) {
+    throw new Error("MCP sweep text and structured success envelopes differ.");
+  }
   const sweepData = sweepPayload.data as {
     sweepId: string;
     values: number[];
@@ -88,6 +110,11 @@ try {
     candidateRunLimit: number;
     walkForward: { selectionMetric: string; selectionConstraints?: { maxTrainingDrawdown?: number } };
   };
+  const structuredSweep = structuredSweepSchema.parse(sweepResponse.structuredContent);
+  if (structuredSweep.data.candidateRuns.length > 160 || structuredSweep.data.candidateRunLimit > 160 ||
+      JSON.stringify(structuredSweep.data.candidateRuns) !== JSON.stringify(sweepData.candidateRuns)) {
+    throw new Error("MCP structured sweep response omitted bounded training-candidate evidence from its text envelope.");
+  }
   if (sweepData.walkForward.selectionMetric !== "sharpeRatio" || sweepData.walkForward.selectionConstraints?.maxTrainingDrawdown !== 0.9 ||
       sweepData.candidateRuns.length !== sweepData.values.length * 4 || sweepData.candidateRunCount !== sweepData.candidateRuns.length ||
       sweepData.candidateRunLimit !== sweepData.values.length * 4 || sweepData.candidateRuns.length > 160 ||
@@ -128,9 +155,13 @@ try {
     },
   });
   const failedText = failedSweep.content.find((item) => item.type === "text");
-  const failure = failedText?.type === "text" ? JSON.parse(failedText.text) as { error?: { code?: string; nextAction?: string } } : null;
-  if (!failedSweep.isError || failure?.error?.code !== "SWEEP_NO_FINITE_TRAINING_SHARPE" || !failure.error.nextAction?.includes("total_return")) {
-    throw new Error("MCP sweep errors omitted the stable no-finite-Sharpe code or recovery guidance.");
+  const failureText = failedText?.type === "text" ? failedText.text : null;
+  const textFailure = failureText === null ? null : structuredSweepFailureSchema.safeParse(JSON.parse(failureText));
+  const structuredFailure = structuredSweepFailureSchema.safeParse(failedSweep.structuredContent);
+  if (!failedSweep.isError || !textFailure?.success || !structuredFailure.success ||
+      JSON.stringify(structuredFailure.data) !== JSON.stringify(textFailure.data) ||
+      textFailure.data.error.code !== "SWEEP_NO_FINITE_TRAINING_SHARPE" || !textFailure.data.error.nextAction.includes("total_return")) {
+    throw new Error("MCP sweep text and structured error envelopes omitted the stable no-finite-Sharpe code or recovery guidance.");
   }
   const pendingOwner = paperAccountId("BTC/USD", "kraken");
   beginPaperIntent({ clientOrderId: "mcp-interrupted-order", symbol: "BTC/USD", side: "buy", quantity: 0.1 }, pendingOwner);

@@ -5,6 +5,7 @@ import { BookmarkCheck, Check, LoaderCircle, Plus, Trash2, WifiOff, X } from "lu
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
 import type { MarketSummary } from "@newbeing/market-data/types";
+import { EXCHANGE_QUOTE } from "@/lib/exchanges";
 import { AkTag, AkCorner, AkInput } from "@swufefox/ak-ui-react";
 import { Decoded } from "@/components/decoded";
 
@@ -25,7 +26,7 @@ function quotePrice(value: number | null | undefined): string {
     : "—";
 }
 
-/** USDT-quoted pairs only, matching what the rest of the app can trade. */
+/** Spot symbols accept the quote currencies supported by the selected venue. */
 const SYMBOL_PATTERN = /^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/;
 
 export const Watchlist = memo(function Watchlist({ disabled = false }: { disabled?: boolean }): React.JSX.Element {
@@ -131,17 +132,17 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
   const error = !disabled && snapshot?.key === watchlistKey ? snapshot.error : null;
 
   const commitAdd = useCallback((raw: string): boolean => {
-    const value = raw.trim().toUpperCase().replace(/\s+/g, "").replace(/^([A-Z0-9]+)(USDT)$/, "$1/USDT");
+    const value = raw.trim().toUpperCase().replace(/\s+/g, "").replace(/^([A-Z0-9]+)(USDT|USD)$/, "$1/$2");
     if (!value) return false;
-    const symbol = value.includes("/") ? value : `${value}/USDT`;
-    if (!SYMBOL_PATTERN.test(symbol)) { setAddError("Use a USDT pair, e.g. SOL/USDT."); return false; }
+    const symbol = value.includes("/") ? value : `${value}/${EXCHANGE_QUOTE[exchange]}`;
+    if (!SYMBOL_PATTERN.test(symbol)) { setAddError("Use a pair like SOL/USD or SOL/USDT."); return false; }
     if (watchlist.includes(symbol)) { setAddError(`${symbol} is already in the list.`); return false; }
     add(symbol);
     setAddError(null);
     setAddOk(true);
     window.setTimeout(() => setAddOk(false), 900);
     return true;
-  }, [add, watchlist]);
+  }, [add, exchange, watchlist]);
 
   // native drop from the search popover (cross-component path)
   const onPanelDragOver = useCallback((event: React.DragEvent): void => {
@@ -207,7 +208,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
             data-slot="ak-input"
             value={draft}
             onChange={(event) => { setDraft(event.target.value); setAddError(null); }}
-            placeholder="SOL or SOL/USDT"
+            placeholder={`SOL or SOL/${EXCHANGE_QUOTE[exchange]}`}
             aria-label="Symbol to add"
             spellCheck={false}
             autoComplete="off"

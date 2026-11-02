@@ -73,6 +73,29 @@ interface PaperPayload {
   portfolio: PaperPortfolio;
   orders: PaperOrder[];
 }
+function isPaperOrder(value: unknown): value is PaperOrder {
+  if (typeof value !== "object" || value === null) return false;
+  const order = value as Partial<PaperOrder>;
+  return typeof order.clientOrderId === "string"
+    && typeof order.symbol === "string"
+    && (order.side === "buy" || order.side === "sell")
+    && typeof order.quantity === "number" && Number.isFinite(order.quantity)
+    && ["created", "submitted", "filled", "rejected", "cancelled", "unknown"].includes(order.status ?? "")
+    && (order.fillPrice === null || (typeof order.fillPrice === "number" && Number.isFinite(order.fillPrice)))
+    && typeof order.fee === "number" && Number.isFinite(order.fee)
+    && typeof order.createdAt === "string";
+}
+
+function isPaperPortfolio(value: unknown): value is PaperPortfolio {
+  if (typeof value !== "object" || value === null) return false;
+  const portfolio = value as Partial<PaperPortfolio>;
+  return typeof portfolio.quoteBalance === "number" && Number.isFinite(portfolio.quoteBalance)
+    && typeof portfolio.baseBalance === "number" && Number.isFinite(portfolio.baseBalance)
+    && (portfolio.averageEntryPrice === null || (typeof portfolio.averageEntryPrice === "number" && Number.isFinite(portfolio.averageEntryPrice)))
+    && typeof portfolio.realizedPnl === "number" && Number.isFinite(portfolio.realizedPnl)
+    && typeof portfolio.feeRate === "number" && Number.isFinite(portfolio.feeRate);
+}
+
 
 function PaperPositions({ symbol, exchange }: { symbol: string; exchange: ExchangeId }): React.JSX.Element {
   const [payload, setPayload] = useState<PaperPayload | null>(null);
@@ -83,6 +106,7 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
   const [closeNeedsRefresh, setCloseNeedsRefresh] = useState(false);
   const closeAttemptRef = useRef(0);
   const closeInFlightRef = useRef(false);
+  const closeClientOrderIdRef = useRef<string | null>(null);
   useEffect(() => {
     let disposed = false;
     const refresh = async (): Promise<void> => {
@@ -96,7 +120,9 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
         const ticker: unknown = await tickerResponse.json();
         if (disposed || refreshAttempt !== closeAttemptRef.current || closeInFlightRef.current) return;
         if (!accountResponse.ok || typeof account !== "object" || account === null || !("portfolio" in account) || !("orders" in account)) throw new Error("Paper account unavailable.");
-        setPayload(account as PaperPayload);
+        const freshPayload = account as PaperPayload;
+        setPayload(freshPayload);
+        if (!freshPayload.orders.some((order) => order.status === "created" || order.status === "submitted" || order.status === "unknown")) closeClientOrderIdRef.current = null;
         setCloseNeedsRefresh(false);
         const tickerValid = tickerResponse.ok && typeof ticker === "object" && ticker !== null && "last" in ticker && typeof ticker.last === "number";
         if (tickerValid) setPrice((ticker as { last: number }).last);
@@ -150,7 +176,8 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
     setCloseError(null);
     let closeWasFilled = false;
     try {
-      const clientOrderId = `close-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const clientOrderId = closeClientOrderIdRef.current ?? `close-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      closeClientOrderIdRef.current = clientOrderId;
       const response = await fetch("/api/paper", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -167,38 +194,49 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
       const responseBody = typeof responsePayload === "object" && responsePayload !== null
         ? responsePayload as { order?: PaperOrder; portfolio?: PaperPortfolio; error?: string }
         : null;
+      const responseErrorMessage = typeof responseBody?.error === "string" ? responseBody.error : null;
       const order = responseBody?.order;
       const portfolio = responseBody?.portfolio;
-      if (order && portfolio) {
-        const savedOrder = order;
-        const savedPortfolio = portfolio;
+      const savedOrder = isPaperOrder(order) ? order : null;
+      const savedPortfolio = isPaperPortfolio(portfolio) ? portfolio : null;
+      if (savedOrder && savedPortfolio) {
         setPayload((current) => current ? {
           portfolio: savedPortfolio,
           orders: [savedOrder, ...current.orders.filter((currentOrder) => currentOrder.clientOrderId !== savedOrder.clientOrderId)].slice(0, 30),
         } : current);
-        setCloseNeedsRefresh(false);
       }
-      if (!response.ok || !order || !portfolio || order.status !== "filled") {
-        if (!order || !portfolio) setCloseNeedsRefresh(true);
-        const status = order?.status;
-        const statusMessage = status === "created" || status === "submitted" || status === "unknown"
-          ? `Paper close order is ${status}. Inspect its saved status before retrying.`
-          : status
-            ? `Paper close order is ${status}. The latest account and order state is shown.`
-            : "Paper close outcome is unknown. Refresh account state before retrying.";
-        setCloseError(responseBody?.error ?? statusMessage);
+      if (savedOrder?.status === "filled" && savedPortfolio) {
+        closeWasFilled = true;
+        closeClientOrderIdRef.current = null;
+        const responseError = response.ok ? null : responseErrorMessage ?? `Paper close returned HTTP ${response.status} after the order filled.`;
+        setCloseError(responseError);
+        const refreshResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
+        const account: unknown = await refreshResponse.json();
+        if (refreshResponse.ok && typeof account === "object" && account !== null && "portfolio" in account && "orders" in account) {
+          setPayload(account as PaperPayload);
+          setCloseNeedsRefresh(false);
+          setCloseError(responseError);
+        } else {
+          setCloseError(responseErrorMessage
+            ? `${responseErrorMessage} Refreshed order history is unavailable; the confirmed portfolio is shown.`
+            : "Paper close filled, but refreshed order history is unavailable. The confirmed portfolio is shown; check order history before continuing.");
+        }
         return;
       }
-      closeWasFilled = true;
-      const refreshResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
-      const account: unknown = await refreshResponse.json();
-      if (refreshResponse.ok && typeof account === "object" && account !== null && "portfolio" in account && "orders" in account) {
-        setPayload(account as PaperPayload);
-        setCloseNeedsRefresh(false);
-        setCloseError(null);
-      } else {
-        setCloseError("Paper close filled, but refreshed order history is unavailable. The confirmed portfolio is shown; check order history before continuing.");
+      const status = savedOrder?.status;
+      const statusMessage = status === "created" || status === "submitted" || status === "unknown"
+        ? `Paper close order is ${status}. Inspect its saved status before retrying.`
+        : status
+          ? `Paper close order is ${status}. The latest account and order state is shown.`
+          : "Paper close outcome is unknown. Refresh account state before retrying.";
+      if (!response.ok || !savedOrder || !savedPortfolio || status === "created" || status === "submitted" || status === "unknown") {
+        setCloseNeedsRefresh(true);
+        setCloseError(responseErrorMessage ?? statusMessage);
+        return;
       }
+      closeClientOrderIdRef.current = null;
+      setCloseNeedsRefresh(false);
+      setCloseError(responseErrorMessage ?? statusMessage);
     } catch (reason) {
       if (closeWasFilled) {
         setCloseError("Paper close filled, but refreshed order history could not be loaded. The confirmed portfolio is shown.");
@@ -640,11 +678,13 @@ function ExperimentHistoryContent({ onSelect, refreshKey }: { onSelect: (id: str
   const [loadingComparison, setLoadingComparison] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
+  const requestKey = JSON.stringify([refreshKey, refreshToken]);
+  const [completedKey, setCompletedKey] = useState<string | null>(null);
+  const refreshing = completedKey !== requestKey;
 
   useEffect(() => {
     let disposed = false;
-    setRefreshing(true);
+    const key = requestKey;
     void fetch("/api/backtests?view=summary&limit=30", { cache: "no-store" }).then(async (response) => {
       const payload: unknown = await response.json();
       if (!response.ok) throw new Error("Experiment history is unavailable.");
@@ -655,9 +695,9 @@ function ExperimentHistoryContent({ onSelect, refreshKey }: { onSelect: (id: str
         setError(null);
       }
     }).catch((reason: unknown) => { if (!disposed) setError(reason instanceof Error ? reason.message : "History load failed."); })
-      .finally(() => { if (!disposed) setRefreshing(false); });
+      .finally(() => { if (!disposed) setCompletedKey(key); });
     return () => { disposed = true; };
-  }, [refreshKey, refreshToken]);
+  }, [requestKey]);
 
   const compareSelected = async (): Promise<void> => {
     setLoadingComparison(true);
@@ -907,11 +947,6 @@ export const BottomDock = memo(function BottomDock({
   const shouldPollPaper = workspace === "terminal" || (workspace === "research" && activeTab === "logs");
   const openStrategy = useCallback(() => setInspectorTab("strategy"), [setInspectorTab]);
 
-  useEffect(() => {
-    if (replayMode || workspace !== "research") return;
-    if (activeTab === "backtest") setBacktestPanelVisited(true);
-    if (activeTab === "history") setHistoryPanelVisited(true);
-  }, [activeTab, replayMode, workspace]);
 
   const [paper, setPaper] = useState<PaperPayload | null>(null);
   const [paperError, setPaperError] = useState<string | null>(null);
@@ -971,7 +1006,12 @@ export const BottomDock = memo(function BottomDock({
   return (
     <section className="bottom-dock flex flex-col h-full bg-[var(--ak-surface-canvas)] border-t border-[var(--ak-border-strong)]">
       <div className="dock-toolbar flex items-center justify-between px-2 bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-strong)]">
-        <Tabs value={activeTab} onValueChange={(value) => setTab(value as typeof tab)}>
+        <Tabs value={activeTab} onValueChange={(value) => {
+          const nextTab = value as typeof tab;
+          setTab(nextTab);
+          if (workspace === "research" && nextTab === "backtest") setBacktestPanelVisited(true);
+          if (workspace === "research" && nextTab === "history") setHistoryPanelVisited(true);
+        }}>
           <TabsList className="dock-tabs flex items-center gap-1">
             {(workspace === "terminal" || workspace === "replay") && (
               <TabsTrigger value="positions" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-bold uppercase tracking-wider">

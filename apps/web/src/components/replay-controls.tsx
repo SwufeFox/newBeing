@@ -202,8 +202,8 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
         </div>
       ) : (
         <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-[var(--ak-surface-sunken)] px-2 py-1 border border-[var(--ak-border-subtle)]">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="replay-session-row flex flex-wrap items-center justify-between gap-2 bg-[var(--ak-surface-sunken)] px-2 py-1 border border-[var(--ak-border-subtle)]">
+            <div className="replay-session-meta flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
                 <strong className="font-mono text-xs">{symbol} · {timeframe}</strong>
@@ -221,7 +221,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               )}
             </div>
 
-            <div className="replay-actions flex items-center gap-2">
+            <div className="replay-actions flex flex-wrap items-center gap-2">
               <Button
                 variant={playing ? "subtle" : "primary"}
                 size="sm"
@@ -247,25 +247,14 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 Step <span className="opacity-60 text-[10px] ml-1">[→]</span>
               </Button>
 
-              <div className="flex items-center gap-1.5 bg-[var(--ak-surface-canvas)] px-2 py-0.5 border border-[var(--ak-border)] text-xs" title="Speed shortcuts: < and >">
-                <FastForward size={11} className="text-[var(--ak-signal-info)]" />
-                <div className="flex gap-0.5">
-                  {[0.5, 1, 2, 5].map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => onSpeedChange(s)}
-                      className={`px-1 py-0.5 text-[10px] font-mono transition-transform active:scale-95 ${speed === s ? "text-[var(--ak-signal-info)] font-bold bg-[var(--ak-surface-sunken)]" : "text-[var(--ak-text-secondary)] opacity-70 hover:opacity-100"}`}
-                    >
-                      {s}×
-                    </button>
-                  ))}
-                </div>
+              <label className="replay-speed-control flex items-center gap-2 bg-[var(--ak-surface-canvas)] px-2 border border-[var(--ak-border)] text-xs" title="Speed shortcuts: < and >">
+                <FastForward size={13} className="text-[var(--ak-signal-info)]" />
+                <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">SPEED</span>
                 <select
                   aria-label="Replay speed"
                   value={speed}
                   onChange={(event) => onSpeedChange(Number(event.target.value))}
-                  className="nb-select bg-transparent text-[11px] font-mono outline-none cursor-pointer border-l border-[var(--ak-border-subtle)] pl-1 ml-0.5"
+                  className="nb-select bg-transparent text-xs font-mono outline-none cursor-pointer border-l border-[var(--ak-border-subtle)] pl-2"
                   title="Speed shortcuts: < and >"
                 >
                   <option value={0.5}>0.5×</option>
@@ -273,7 +262,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                   <option value={2}>2×</option>
                   <option value={5}>5×</option>
                 </select>
-              </div>
+              </label>
 
               <Button
                 variant="outline"

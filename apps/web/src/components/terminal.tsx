@@ -669,16 +669,14 @@ export function Terminal(): React.JSX.Element {
 
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [researchRailVisited, setResearchRailVisited] = useState(false);
   const showResearchRail = workspace === "research" && sidebarOpen;
   const showsWatchlist = workspace === "terminal" && sidebarOpen;
-  const [watchlistVisited, setWatchlistVisited] = useState(false);
-  useEffect(() => {
-    if (showResearchRail) setResearchRailVisited(true);
-  }, [showResearchRail]);
-  useEffect(() => {
-    if (showsWatchlist) setWatchlistVisited(true);
-  }, [showsWatchlist]);
+  const [researchRailVisited, setResearchRailVisited] = useState(showResearchRail);
+  const [watchlistVisited, setWatchlistVisited] = useState(showsWatchlist);
+  // Latch visibility during render so the rails stay mounted (state intact)
+  // when the sidebar collapses; React re-renders before committing.
+  if (showResearchRail && !researchRailVisited) setResearchRailVisited(true);
+  if (showsWatchlist && !watchlistVisited) setWatchlistVisited(true);
   const watchlist = useWorkspaceStore((state) => state.watchlist);
   const runBacktestRef = useRef<() => void>(() => {});
 

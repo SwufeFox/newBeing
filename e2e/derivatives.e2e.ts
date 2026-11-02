@@ -105,6 +105,72 @@ test("ledger navigation and Close follow the selected settlement position", asyn
   await expect(accountPanel.getByText("No open positions.", { exact: true })).toBeVisible();
 });
 
+test("search keeps Paper actions paused until delayed contract results reconcile", async ({ page, request, baseURL }) => {
+  const base = baseURL!;
+  const future = (await instruments(request, base, "future")).find((item) => item.venue === "deribit" && item.settle === "USDC");
+  expect(future).toBeDefined();
+  const quote = await seedLongPosition(request, base, future!, "1", "e2e-ui-search-pending");
+  const intercepted = new Set<string>();
+  const releases = new Map<string, () => void>();
+  await page.route("**/api/derivatives/markets?*", async (route) => {
+    const query = new URL(route.request().url()).searchParams.get("query") ?? "";
+    if (query === "261225" || query === "no-such-contract") {
+      intercepted.add(query);
+      const deferred = Promise.withResolvers<void>();
+      releases.set(query, deferred.resolve);
+      await deferred.promise;
+    }
+    await route.continue();
+  });
+  let orderPosts = 0;
+  page.on("request", (requestEvent) => {
+    if (requestEvent.method() === "POST" && new URL(requestEvent.url()).pathname === "/api/derivatives/account") orderPosts += 1;
+  });
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Derivatives/ }).click();
+  await page.waitForURL("**/derivatives", { timeout: 120000 });
+  const position = page.getByRole("button", { name: `View position ${future!.id}` });
+  await expect(position).toBeVisible({ timeout: 60000 });
+  await position.click();
+  const contractDetails = page.getByRole("region", { name: "Contract market data" });
+  await expect(contractDetails.getByText(future!.id, { exact: true })).toBeVisible({ timeout: 60000 });
+  await page.getByRole("textbox", { name: "Quantity in contracts" }).fill("1");
+  await page.getByRole("textbox", { name: "Price protection" }).fill(String(Math.floor(quote.bid / future!.priceTick) * future!.priceTick));
+  const submit = page.getByRole("button", { name: "Submit Paper order", exact: true });
+  await expect(submit).toBeEnabled({ timeout: 60000 });
+
+  const search = page.getByRole("textbox", { name: "Search derivatives" });
+  await search.fill("261225");
+  const ticket = page.getByRole("region", { name: "Derivatives Paper ticket" });
+  await expect(ticket.getByText("Contract search pending. Paper actions are paused until the filtered contracts load.")).toBeVisible();
+  await expect(contractDetails).not.toContainText(future!.id);
+  await expect(ticket).toContainText("—");
+  await expect(submit).toHaveCount(0);
+  await expect.poll(() => intercepted.has("261225")).toBe(true);
+  expect(orderPosts).toBe(0);
+  releases.get("261225")?.();
+  await expect(contractDetails).toContainText("okx:future:BTC-USDT-261225");
+  await expect(page.getByRole("button", { name: /BTC-USDT-261225/ })).toHaveAttribute("aria-current", "true");
+
+  await search.fill("no-such-contract");
+  await expect(ticket.getByText("Contract search pending. Paper actions are paused until the filtered contracts load.")).toBeVisible();
+  await expect.poll(() => intercepted.has("no-such-contract")).toBe(true);
+  await expect(submit).toHaveCount(0);
+  expect(orderPosts).toBe(0);
+  releases.get("no-such-contract")?.();
+  await expect(page.getByText("No matching contracts.")).toBeVisible();
+  await expect(page.locator('[aria-current="true"]')).toHaveCount(0);
+  await expect(contractDetails).toContainText("—");
+  expect(orderPosts).toBe(0);
+  const closed = await post(request, base, {
+    action: "order", instrumentId: future!.id, clientOrderId: "e2e-ui-search-cleanup", side: "sell", contracts: "1", leverage: 1,
+    reduceOnly: true, limitPrice: String(Math.floor(quote.bid / future!.priceTick) * future!.priceTick),
+  });
+  expect(closed.ok()).toBeTruthy();
+  expect((await closed.json()).account.positions).toHaveLength(0);
+});
+
 test("native derivative identities, explicit capital and atomic contract/option Paper fills", async ({ request, baseURL }) => {
   const base = baseURL!;
   const perpetual = await firstInstrument(request, base, "perpetual");
@@ -165,8 +231,25 @@ test("derivatives navigation, venue coverage labels and narrow layout", async ({
   await page.waitForURL("**/derivatives", { timeout: 120000 });
   await expect(page.getByRole("heading", { name: "/ Derivatives" })).toBeVisible({ timeout: 60000 });
   await expect(page.getByRole("button", { name: /BTC-USDT-SWAP/ })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search derivatives" });
+  await search.fill("no-matching-contract");
+  await expect(page.getByText("No matching contracts.")).toBeVisible();
+  await expect(page.locator('[aria-current="true"]')).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Contract market data" })).toContainText("—");
+  await search.fill("");
+  await expect(page.getByRole("button", { name: /BTC-USDT-SWAP/ })).toBeVisible();
   await page.getByRole("tab", { name: "Futures", exact: true }).click();
   await expect(page.getByText("Deribit + OKX · Linear contracts", { exact: true })).toBeVisible();
+  const deribitFuture = page.getByRole("button", { name: /BTC_USDC-25DEC26/ });
+  await expect(deribitFuture).toBeVisible();
+  await deribitFuture.click();
+  await expect(page.getByRole("region", { name: "Contract market data" })).toContainText("deribit:future:BTC_USDC-25DEC26");
+  await search.fill("261225");
+  const filteredFuture = page.getByRole("button", { name: /BTC-USDT-261225/ });
+  await expect(filteredFuture).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("region", { name: "Contract market data" })).toContainText("okx:future:BTC-USDT-261225");
+  await search.fill("");
+  await expect(page.getByRole("button", { name: /BTC-USDT-261225/ })).toBeVisible();
   await page.getByRole("tab", { name: "Options", exact: true }).click();
   await expect(page.getByText("Deribit · Long options only", { exact: true })).toBeVisible();
   await expect(page.getByText(/BTC_USDC-25DEC26-80000-C/, { exact: false }).first()).toBeVisible();

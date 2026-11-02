@@ -74,6 +74,54 @@ describe("research HTTP contracts", () => {
     expect(saved.walkForward?.selectionConstraints).toEqual({ maxTrainingDrawdown: 1 });
     expect(saved.walkForward?.selectionRule).toBe("training-totalReturn-desc/parameter-value-asc");
   });
+  it("lists, retrieves, and HTTP-reruns a walk-forward report from its saved snapshot", async () => {
+    fixture.bars = Array.from({ length: 80 }, (_, index) => {
+      const close = 100 + Math.sin(index / 2.7) * 8 + Math.sin(index / 7) * 3 + index * 0.03;
+      return { timestamp: index * 60_000, open: close, high: close + 1, low: close - 1, close, volume: index + 1 };
+    });
+    vi.spyOn(Date, "now").mockReturnValue(80 * 60_000);
+    const response = await createSweep(post("/api/sweeps", {
+      ...sweepBody,
+      limit: 80,
+      from: 0.5,
+      to: 5,
+      step: 0.5,
+      mode: "walk-forward",
+      selectionMetric: "sharpeRatio",
+      maxTrainingDrawdown: 1,
+    }));
+    expect(response.status).toBe(201);
+    const original = await response.json() as BacktestSweepResult;
+    const originalReport = original.walkForward!;
+    expect(original.mode).toBe("walk-forward");
+    expect(originalReport.selectionMetric).toBe("sharpeRatio");
+    expect(originalReport.selectionConstraints).toEqual({ maxTrainingDrawdown: 1 });
+    expect((await (await listSweeps(new Request("http://localhost/api/sweeps?limit=20"))).json()).items).toContainEqual(original);
+    expect(await (await getSweep(new Request("http://localhost"), context(original.sweepId))).json()).toEqual(original);
+
+    fixture.fetch.mockRejectedValue(new Error("network disabled"));
+    fixture.fetch.mockClear();
+    const rerunResponse = await rerunSweep(post("/api/sweeps/id/rerun", {}), context(original.sweepId));
+    expect(rerunResponse.status).toBe(201);
+    const rerun = await rerunResponse.json() as BacktestSweepResult;
+    const rerunReport = rerun.walkForward!;
+    expect(rerun.rerunOf).toBe(original.sweepId);
+    expect(rerunReport.selectionMetric).toBe("sharpeRatio");
+    expect(rerunReport.selectionConstraints).toEqual({ maxTrainingDrawdown: 1 });
+    expect(rerunReport.finalCandidateValue).toBe(originalReport.finalCandidateValue);
+    expect(rerunReport.finalTrainingMetrics).toEqual(originalReport.finalTrainingMetrics);
+    expect(rerunReport.finalTestMetrics).toEqual(originalReport.finalTestMetrics);
+    expect(rerunReport.folds.map((fold) => ({
+      candidateValue: fold.candidateValue,
+      trainingMetrics: fold.trainingMetrics,
+      validationMetrics: fold.validationMetrics,
+    }))).toEqual(originalReport.folds.map((fold) => ({
+      candidateValue: fold.candidateValue,
+      trainingMetrics: fold.trainingMetrics,
+      validationMetrics: fold.validationMetrics,
+    })));
+    expect(fixture.fetch).not.toHaveBeenCalled();
+  });
   it("returns stable candidate-selection errors with recovery guidance", async () => {
     fixture.bars = Array.from({ length: 50 }, (_, index) => ({
       timestamp: index * 60_000,

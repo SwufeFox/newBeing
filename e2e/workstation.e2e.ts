@@ -105,6 +105,55 @@ test("chart, backtest, source draft, Paper order, Replay and workspace sync use 
   }
 });
 
+test("watchlist adds a bare symbol with the selected venue's quote currency", async ({ page }) => {
+  await installApiMocks(page);
+  await page.goto("/");
+
+  const watchlist = page.locator(".watchlist-panel");
+  await expect(watchlist).toBeVisible();
+  await page.getByRole("combobox", { name: "Exchange" }).selectOption("kraken");
+  const addToggle = watchlist.getByRole("button", { name: "Add a symbol" });
+  await addToggle.click();
+
+  const symbolInput = watchlist.getByRole("textbox", { name: "Symbol to add" });
+  await expect(symbolInput).toHaveAttribute("placeholder", "SOL or SOL/USD");
+  await symbolInput.fill("ADA/");
+  await symbolInput.press("Enter");
+  await expect(watchlist.getByRole("alert")).toHaveText("Use a pair like SOL/USD or SOL/USDT.");
+
+  await symbolInput.fill("ADA");
+  await symbolInput.press("Enter");
+  await expect(watchlist.locator(".watch-symbol").filter({ hasText: "ADA" })).toContainText("/USD");
+});
+
+test("collapsing the sidebar keeps the watchlist mounted with its draft intact", async ({ page }) => {
+  await installApiMocks(page);
+  await page.goto("/");
+
+  const watchlist = page.locator(".watchlist-panel");
+  await expect(watchlist).toBeVisible();
+
+  await watchlist.getByRole("button", { name: "Add a symbol" }).click();
+  const symbolInput = watchlist.getByRole("textbox", { name: "Symbol to add" });
+  await symbolInput.fill("ADA/");
+
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(watchlist).toBeHidden();
+
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect(watchlist).toBeVisible();
+  await expect(symbolInput).toHaveValue("ADA/");
+
+  // The research rail is latched the same way, including the hotkey toggle.
+  await page.getByTestId("workspace-research").click();
+  const researchRail = page.locator(".primary-rail");
+  await expect(researchRail).toBeVisible();
+  await page.keyboard.press("Control+b");
+  await expect(researchRail).toBeHidden();
+  await page.keyboard.press("Control+b");
+  await expect(researchRail).toBeVisible();
+});
+
 test("shows failed backtest reruns and Paper closes without replacing known state", async ({ page }) => {
   await installApiMocks(page);
   await page.route("**/api/backtests/*/rerun", (route) => route.fulfill({
@@ -173,6 +222,53 @@ test("Paper recovery stays mounted when a successful response is malformed", asy
   await expect(recoveryPanel).toBeVisible();
   await expect(recoveryPanel).toContainText("Pending Paper status unavailable.");
   await expect(recoveryPanel).toHaveAttribute("data-loaded", "false");
+});
+test("applies an authoritative filled Paper close from a non-2xx response", async ({ page }) => {
+  await installApiMocks(page);
+  const filledOrder = {
+    clientOrderId: "close-filled-http-error",
+    symbol: "BTC/USDT",
+    side: "sell",
+    quantity: 0.001,
+    status: "filled",
+    fillPrice: 85_000,
+    fee: 0.085,
+    createdAt: new Date().toISOString(),
+  };
+  let account: { portfolio: { quoteBalance: number; baseBalance: number; averageEntryPrice: number | null; realizedPnl: number; totalFees: number; feeRate: number }; orders: typeof filledOrder[]; mode: string; exchange: string } = {
+    portfolio: { quoteBalance: 9_915, baseBalance: 0.001, averageEntryPrice: 85_000, realizedPnl: 0, totalFees: 0, feeRate: 0.001 },
+    orders: [],
+    mode: "paper",
+    exchange: "binance",
+  };
+  let submitted = false;
+  await page.route(/\/api\/paper(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "POST") {
+      submitted = true;
+      account = {
+        portfolio: { quoteBalance: 9_999.915, baseBalance: 0, averageEntryPrice: null, realizedPnl: -0.085, totalFees: 0.085, feeRate: 0.001 },
+        orders: [filledOrder],
+        mode: "paper",
+        exchange: "binance",
+      };
+      await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ error: "Response delivery failed after fill.", order: filledOrder, portfolio: account.portfolio }) });
+      return;
+    }
+    if (submitted) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Order history unavailable." }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(account) });
+  });
+
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Positions" }).click();
+  const positionView = page.locator(".position-table-wrap");
+  await expect(positionView.getByRole("button", { name: "Close" })).toBeVisible();
+  await positionView.getByRole("button", { name: "Close" }).click();
+  await expect(positionView.getByRole("alert")).toHaveText("Response delivery failed after fill. Refreshed order history is unavailable; the confirmed portfolio is shown.");
+  await expect(positionView.getByText("No open Paper position for BTC.")).toBeVisible();
+  await expect(positionView.getByRole("button", { name: "Close" })).toHaveCount(0);
 });
 
 test("workspace panels remain side-by-side on desktop and stack on mobile", async ({ page }) => {

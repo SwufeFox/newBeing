@@ -269,8 +269,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
   /* remoteReplay null = first poll still outstanding: hide the markets rather
      than flashing a boundary banner that usually resolves to "available". */
   const blocked = globalWorkspace === "replay" || remoteReplay === true;
-  const instrument = !blocked && market?.instrument.id === selectedId ? market.instrument : null;
-  const quote = !blocked && market?.quote.instrumentId === selectedId && !marketError ? market.quote : null;
+  const instrument = !blocked && !listLoading && market?.instrument.id === selectedId ? market.instrument : null;
+  const quote = !blocked && !listLoading && market?.quote.instrumentId === selectedId && !marketError ? market.quote : null;
   const initialBalance = instrument?.settle === "BTC" ? "1" : instrument?.settle === "ETH" ? "10" : "10000";
   const account = instrument && !blocked ? ledgerAccounts?.find((entry) => entry.venue === instrument.venue && entry.settle === instrument.settle) ?? null : null;
   const accountReady = !blocked && ledgerAccounts !== null && ledgerError === null;
@@ -308,8 +308,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
       void readJson<{ instruments: DerivativeInstrument[] }>(`/api/derivatives/markets?kind=${kind}&query=${encodeURIComponent(query)}`, { signal: controller.signal })
         .then((data) => {
           setItems(data.instruments);
-          setSelectedId((id) => id || data.instruments[0]?.id || "");
-        }).catch((error: unknown) => { if (!controller.signal.aborted) { setItems([]); setListError(exchangeErrorMessage(error, "contracts")); } })
+          setSelectedId((id) => data.instruments.some((item) => item.id === id) ? id : data.instruments[0]?.id ?? "");
+        }).catch((error: unknown) => { if (!controller.signal.aborted) { setItems([]); setSelectedId(""); setListError(exchangeErrorMessage(error, "contracts")); } })
         .finally(() => { if (!controller.signal.aborted) setListLoading(false); });
     }, 200);
     return () => { controller.abort(); window.clearTimeout(timer); };
@@ -695,7 +695,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
           <span className="num">{blocked ? "—" : listLoading ? "…" : String(items.length).padStart(2, "0")}</span>
         </div>
         <div className="p-2 border-b border-[var(--c-line)]">
-          <AkInput aria-label="Search derivatives" placeholder="Search contracts" value={query} disabled={busy || blocked} onChange={(event) => setQuery(event.target.value)} />
+          <AkInput aria-label="Search derivatives" placeholder="Search contracts" value={query} disabled={busy || blocked} onChange={(event) => { setListLoading(true); setListError(null); setQuery(event.target.value); }} />
         </div>
         {!blocked && kind === "option" && chain.length > 0 && <div className="flex flex-wrap gap-1 p-2 border-b border-[var(--c-line)]" role="group" aria-label="Expiry and settlement">
           {chain.map((entry) => (
@@ -872,7 +872,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                     <span>ORDER ENTRY PAUSED</span>
                   </div>
                   <p role="status" className="derivatives-ticket-note alert m-0 text-[11px] leading-relaxed">
-                    Order entry is paused until exchange metadata and a fresh quote are available. Existing balances, positions, and history remain readable in the local ledger.
+                    {listLoading ? "Contract search pending. Paper actions are paused until the filtered contracts load." : "Order entry is paused until exchange metadata and a fresh quote are available. Existing balances, positions, and history remain readable in the local ledger."}
                   </p>
                 </div>
                 <div className="p-3 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1 font-mono text-[10px]">
