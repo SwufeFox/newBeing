@@ -101,23 +101,41 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
     };
   }, [dragFrom, dragOver, endGesture, indexAt, move, watchlist]);
 
+  // ── quotes ───────────────────────────────────────────────────────────────
+  // Latest request wins: a newer refresh aborts the in-flight one, and only the
+  // request that still owns the current id may publish results or clear the spinner.
+  const refreshRequestRef = useRef(0);
+  const refreshControllerRef = useRef<AbortController | null>(null);
+
   const refresh = useCallback(async (): Promise<void> => {
     if (disabled || watchlist.length === 0) return;
+    refreshRequestRef.current += 1;
+    const requestId = refreshRequestRef.current;
+    refreshControllerRef.current?.abort();
+    const controller = new AbortController();
+    refreshControllerRef.current = controller;
+    const { signal } = controller;
+    const key = watchlistKey;
     setRefreshing(true);
     try {
-      const response = await fetch(`/api/market?kind=tickers&exchange=${exchange}&symbols=${encodeURIComponent(symbolsKey)}`, { cache: "no-store" });
+      const response = await fetch(`/api/market?kind=tickers&exchange=${exchange}&symbols=${encodeURIComponent(symbolsKey)}`, { cache: "no-store", signal });
       const payload: unknown = await response.json();
       if (!response.ok) throw new Error(`${exchange} watchlist quotes are unavailable.`);
+      if (requestId !== refreshRequestRef.current || signal.aborted) return;
       const next = Object.fromEntries(readSummaries(payload).map((summary) => [summary.symbol, summary]));
-      setSnapshot({ key: watchlistKey, summaries: next, error: null });
+      setSnapshot({ key, summaries: next, error: null });
     } catch (reason) {
+      if (requestId !== refreshRequestRef.current || signal.aborted) return;
       setSnapshot((current) => ({
-        key: watchlistKey,
-        summaries: current?.key === watchlistKey ? current.summaries : {},
+        key,
+        summaries: current?.key === key ? current.summaries : {},
         error: reason instanceof Error ? reason.message : "Could not refresh watchlist quotes.",
       }));
     } finally {
-      setRefreshing(false);
+      if (requestId === refreshRequestRef.current && !signal.aborted) {
+        refreshControllerRef.current = null;
+        setRefreshing(false);
+      }
     }
   }, [disabled, exchange, symbolsKey, watchlist.length, watchlistKey]);
 
@@ -125,7 +143,12 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
     if (disabled || watchlist.length === 0) return;
     void refresh();
     const timer = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, 12_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      refreshRequestRef.current += 1;
+      refreshControllerRef.current?.abort();
+      refreshControllerRef.current = null;
+    };
   }, [refresh, disabled, watchlist.length]);
 
   const summaries = !disabled && snapshot?.key === watchlistKey ? snapshot.summaries : {};

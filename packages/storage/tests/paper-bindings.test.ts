@@ -96,11 +96,12 @@ describe("startup migrations", () => {
     const sqlite = new Database(":memory:");
     try {
       // The missing created_at makes the final account-history index fail, after ALTERs.
-      sqlite.exec("CREATE TABLE paper_orders (client_order_id TEXT PRIMARY KEY); CREATE TABLE paper_accounts (id TEXT PRIMARY KEY)");
+      // status is NOT NULL in every real schema generation, so the fixture keeps it.
+      sqlite.exec("CREATE TABLE paper_orders (client_order_id TEXT PRIMARY KEY, status TEXT NOT NULL); CREATE TABLE paper_accounts (id TEXT PRIMARY KEY)");
       expect(() => migrateDatabase(sqlite)).toThrow();
       expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'candle_cache'").all()).toEqual([]);
       expect((sqlite.pragma("table_info(paper_accounts)") as Array<{ name: string }>).map((c) => c.name)).toEqual(["id"]);
-      expect((sqlite.pragma("table_info(paper_orders)") as Array<{ name: string }>).map((c) => c.name)).toEqual(["client_order_id"]);
+      expect((sqlite.pragma("table_info(paper_orders)") as Array<{ name: string }>).map((c) => c.name)).toEqual(["client_order_id", "status"]);
       sqlite.exec("ALTER TABLE paper_orders ADD COLUMN created_at TEXT");
       migrateDatabase(sqlite);
       migrateDatabase(sqlite);

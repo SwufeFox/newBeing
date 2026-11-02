@@ -8,6 +8,8 @@ import {
   createSeriesMarkers,
   HistogramSeries,
   LineSeries,
+  type ChartOptions,
+  type DeepPartial,
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
@@ -16,10 +18,10 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { AlertTriangle, Clock3, Radio, Wifi, WifiOff } from "lucide-react";
-import { useWorkspaceStore } from "@/store/workspace";
+import { useWorkspaceStore, type ThemeMode } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import type { BacktestResult, Candle } from "@newbeing/core";
-import { findCandleGaps, mergeCandles, reconnectDelayMs, timeframeMilliseconds } from "@newbeing/market-data/utils";
+import { findCandleGaps, reconnectDelayMs, timeframeMilliseconds } from "@newbeing/market-data/utils";
 import { AkSpinner } from "@swufefox/ak-ui-react";
 
 type StreamState = "connecting" | "live" | "reconnecting" | "unavailable" | "polling";
@@ -92,6 +94,35 @@ function parseKlineEvent(value: unknown): { candle: Candle; closed: boolean } | 
   };
 }
 
+type ThemeChartOptions = Required<Pick<DeepPartial<ChartOptions>, "layout" | "grid" | "crosshair" | "rightPriceScale" | "timeScale">>;
+
+/** Theme-dependent chart options only — safe to re-apply with `applyOptions` without touching data or range. */
+function themeOptions(theme: ThemeMode): ThemeChartOptions {
+  const dark = theme === "dark";
+  return {
+    layout: {
+      background: { type: ColorType.Solid, color: dark ? "#0d1117" : "#ffffff" },
+      textColor: dark ? "#8b949e" : "#64748b",
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+      fontSize: 11,
+    },
+    grid: {
+      vertLines: { color: dark ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
+      horzLines: { color: dark ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
+    },
+    crosshair: {
+      vertLine: { color: dark ? "#59636e" : "#94a3b8", labelBackgroundColor: dark ? "#27313a" : "#334155" },
+      horzLine: { color: dark ? "#59636e" : "#94a3b8", labelBackgroundColor: dark ? "#27313a" : "#334155" },
+    },
+    rightPriceScale: { borderColor: dark ? "#232a31" : "#e2e8f0" },
+    timeScale: { borderColor: dark ? "#232a31" : "#e2e8f0" },
+  };
+}
+
+function isAbortError(reason: unknown): boolean {
+  return reason instanceof Error && reason.name === "AbortError";
+}
+
 interface MarketChartProps {
   backtest: BacktestResult | null;
   replayBars: readonly Candle[] | null;
@@ -111,7 +142,9 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const barsRef = useRef<Candle[]>([]);
   const prevReplayLengthRef = useRef<number>(0);
+  const replayBarsRef = useRef<Candle[] | null>(null);
   const [symbol, timeframe, exchange, theme] = useWorkspaceStore(useShallow((state) => [state.symbol, state.timeframe, state.exchange, state.theme]));
+  const initialThemeRef = useRef<ThemeMode>(theme);
   const dataKey = `${exchange}|${symbol}|${timeframe}`;
 
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
@@ -189,6 +222,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     const url = `/api/market?kind=candles&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=600`;
     const response = await fetch(url, { cache: "no-store", ...(signal ? { signal } : {}) });
     const payload: unknown = await response.json();
+    if (signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
     if (!response.ok) {
       const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
         ? payload.error
@@ -229,26 +263,16 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     const container = containerRef.current;
     if (!container) return;
     let rangeTimer: ReturnType<typeof setTimeout> | undefined;
+    const initialThemeOptions = themeOptions(initialThemeRef.current);
     const chart = createChart(container, {
       autoSize: false,
       width: container.clientWidth,
       height: container.clientHeight,
-      layout: {
-        background: { type: ColorType.Solid, color: theme === "dark" ? "#0d1117" : "#ffffff" },
-        textColor: theme === "dark" ? "#8b949e" : "#64748b",
-        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: theme === "dark" ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
-        horzLines: { color: theme === "dark" ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
-      },
-      crosshair: {
-        vertLine: { color: theme === "dark" ? "#59636e" : "#94a3b8", labelBackgroundColor: theme === "dark" ? "#27313a" : "#334155" },
-        horzLine: { color: theme === "dark" ? "#59636e" : "#94a3b8", labelBackgroundColor: theme === "dark" ? "#27313a" : "#334155" },
-      },
-      rightPriceScale: { borderColor: theme === "dark" ? "#232a31" : "#e2e8f0", scaleMargins: { top: 0.08, bottom: 0.24 } },
-      timeScale: { borderColor: theme === "dark" ? "#232a31" : "#e2e8f0", timeVisible: true, secondsVisible: false, rightOffset: 4 },
+      layout: initialThemeOptions.layout,
+      grid: initialThemeOptions.grid,
+      crosshair: initialThemeOptions.crosshair,
+      rightPriceScale: { ...initialThemeOptions.rightPriceScale, scaleMargins: { top: 0.08, bottom: 0.24 } },
+      timeScale: { ...initialThemeOptions.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 4 },
       localization: { locale: "en-US" },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
@@ -395,41 +419,74 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       bbLowerSeriesRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    chartRef.current?.applyOptions(themeOptions(theme));
   }, [theme]);
 
   useEffect(() => {
     const controller = new AbortController();
     if (replayMode) {
       const rawBars = replayBars ?? [];
-      const sanitized = sanitizeCandlesForChart([...rawBars]);
+      const sanitized = sanitizeCandlesForChart(rawBars);
+      const previous = replayBarsRef.current;
+      /* Replay only appends closed bars; a step that merely extends the revealed
+         history can update the series instead of resubmitting every bar. */
+      const appended = previous !== null && sanitized.length > previous.length &&
+        previous.every((bar, index) => sanitized[index]!.timestamp === bar.timestamp);
       barsRef.current = sanitized;
-      candleSeriesRef.current?.setData(sanitized.map((bar) => ({
-        time: asUTCTime(bar.timestamp), open: bar.open, high: bar.high, low: bar.low, close: bar.close,
-      })));
+      if (appended) {
+        for (let index = previous.length; index < sanitized.length; index++) {
+          const bar = sanitized[index]!;
+          candleSeriesRef.current?.update({
+            time: asUTCTime(bar.timestamp), open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+          });
+        }
+      } else {
+        candleSeriesRef.current?.setData(sanitized.map((bar) => ({
+          time: asUTCTime(bar.timestamp), open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+        })));
+      }
       updateIndicators();
       if (sanitized.length > 0 && (prevReplayLengthRef.current === 0 || sanitized.length < prevReplayLengthRef.current)) {
         chartRef.current?.timeScale().fitContent();
       }
+      replayBarsRef.current = sanitized;
       prevReplayLengthRef.current = sanitized.length;
       return () => controller.abort();
     }
     void Promise.resolve().then(() => loadHistory(controller.signal)).catch((reason: unknown) => {
-      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      if (isAbortError(reason)) return;
       setErrorState({ key: dataKey, message: reason instanceof Error ? reason.message : "Market data request failed." });
     });
     return () => controller.abort();
-  }, [loadHistory, symbol, timeframe, theme, replayMode, replayBars, dataKey, updateIndicators]);
+  }, [loadHistory, symbol, timeframe, replayMode, replayBars, dataKey, updateIndicators]);
 
   useEffect(() => {
     const intervalMs = timeframeMilliseconds(timeframe);
     if (replayMode) return;
+    const controller = new AbortController();
+    const refresh = (onSuccess?: () => void, onFailure?: () => void): void => {
+      void loadHistory(controller.signal)
+        .then(() => {
+          if (!controller.signal.aborted) onSuccess?.();
+        })
+        .catch((reason: unknown) => {
+          if (isAbortError(reason) || controller.signal.aborted) return;
+          onFailure?.();
+        });
+    };
     if (exchange !== "binance") {
       const pollingMs = Math.max(15_000, Math.min(60_000, intervalMs / 4));
       const timer = window.setInterval(() => {
         if (typeof document !== "undefined" && document.hidden) return;
-        void loadHistory().then(() => setStream("polling")).catch(() => setStream("unavailable"));
+        refresh(() => setStream("polling"), () => setStream("unavailable"));
       }, pollingMs);
-      return () => window.clearInterval(timer);
+      return () => {
+        window.clearInterval(timer);
+        controller.abort();
+      };
     }
     const streamUrl = `wss://stream.binance.com:9443/ws/${symbol.replace("/", "").toLowerCase()}@kline_${timeframe}`;
     let socket: WebSocket | null = null;
@@ -451,7 +508,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
         const wasReconnect = attempt > 0;
         attempt = 0;
         setStream("live");
-        if (wasReconnect) void loadHistory().catch(() => setStream("reconnecting"));
+        if (wasReconnect) refresh(undefined, () => setStream("reconnecting"));
       };
       socket.onmessage = (event: MessageEvent<string>) => {
         let payload: unknown;
@@ -465,11 +522,15 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
         const existing = barsRef.current;
         const last = existing.at(-1);
         if (last && parsed.candle.timestamp > last.timestamp + intervalMs) {
-          void loadHistory().catch(() => setStream("reconnecting"));
+          refresh(undefined, () => setStream("reconnecting"));
         }
         if (last && parsed.candle.timestamp < last.timestamp) return;
-        const merged = mergeCandles(existing, [parsed.candle]);
-        barsRef.current = merged.slice(-1000);
+        if (last && parsed.candle.timestamp === last.timestamp) {
+          existing[existing.length - 1] = parsed.candle;
+        } else {
+          existing.push(parsed.candle);
+          if (existing.length > 1000) existing.splice(0, existing.length - 1000);
+        }
         const now = performance.now();
         if (now - lastLegendUpdate.current > 150) {
           lastLegendUpdate.current = now;
@@ -516,6 +577,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     connect();
     return () => {
       disposed = true;
+      controller.abort();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
     };
@@ -544,7 +606,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       },
     ]).filter((m) => Number.isFinite(m.time) && (m.time as number) > 0).sort((a, b) => Number(a.time) - Number(b.time)) ?? [];
     markersRef.current.setMarkers(markers);
-  }, [backtest, theme, replayMode]);
+  }, [backtest, replayMode]);
 
   const effectiveStream: StreamState = !replayMode && exchange !== "binance" ? "polling" : stream;
   const streamLabel = replayMode ? "HISTORICAL REPLAY · FUTURE HIDDEN" : effectiveStream === "live" ? "STREAM LIVE" : effectiveStream === "connecting" ? "CONNECTING" : effectiveStream === "polling" ? `REST · ${Math.round(Math.max(15_000, Math.min(60_000, timeframeMilliseconds(timeframe) / 4)) / 1000)}S POLL` : effectiveStream === "unavailable" ? "OFFLINE" : "RECONNECTING";

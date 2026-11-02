@@ -113,17 +113,28 @@ export function calculateBollingerBands(candles: Candle[], period: number = 20, 
   const upper: Array<{ time: UTCTimestamp; value: number }> = [];
   const lower: Array<{ time: UTCTimestamp; value: number }> = [];
 
-  for (let i = p - 1; i < sanitized.length; i++) {
-    let sum = 0;
-    for (let j = i - p + 1; j <= i; j++) {
-      sum += sanitized[j]!.close;
+  // Sliding-window Welford updates are well conditioned at any price scale: both the mean and the
+  // squared-deviation accumulator track the window itself, so no fixed reference is needed.
+  let mean = sanitized[0]!.close;
+  let s = 0;
+
+  for (let i = 1; i < sanitized.length; i++) {
+    if (i < p) {
+      const x = sanitized[i]!.close;
+      const d = x - mean;
+      mean += d / (i + 1);
+      s += d * (x - mean);
+    } else {
+      const a = sanitized[i]!.close;
+      const r = sanitized[i - p]!.close;
+      const oldMean = mean;
+      mean += (a - r) / p;
+      s += (a - r) * (a - mean + r - oldMean);
     }
-    const mean = sum / p;
-    let varianceSum = 0;
-    for (let j = i - p + 1; j <= i; j++) {
-      varianceSum += (sanitized[j]!.close - mean) ** 2;
-    }
-    const stdDev = Math.sqrt(Math.max(0, varianceSum / p));
+    if (i < p - 1) continue;
+
+    const variance = Math.max(0, s / p);
+    const stdDev = Math.sqrt(variance);
     const time = asUTCTime(sanitized[i]!.timestamp);
     const upVal = roundSafe(mean + multiplier * stdDev);
     const lowVal = roundSafe(mean - multiplier * stdDev);

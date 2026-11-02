@@ -16,11 +16,14 @@ const INTERVALS: Record<Timeframe, number> = { "1m": 60000, "5m": 300000, "15m":
 const CANDLE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function saveCachedCandles(exchange: ExchangeId, symbol: string, timeframe: Timeframe, candles: readonly Candle[]): void {
-  const db = getDatabase();
   const now = Date.now();
+  /* A forming candle is filtered out below, so a poll made entirely of the
+     current bar would otherwise open a transaction just to run TTL cleanup. */
+  const settled = candles.filter((candle) => candle.timestamp + INTERVALS[timeframe] <= now);
+  if (settled.length === 0) return;
+  const db = getDatabase();
   db.transaction((tx) => {
-    for (const candle of candles) {
-      if (candle.timestamp + INTERVALS[timeframe] > now) continue;
+    for (const candle of settled) {
       tx.insert(candleCache).values({ exchange, symbol, timeframe, ...candle, cachedAt: now })
         .onConflictDoUpdate({
           target: [candleCache.exchange, candleCache.symbol, candleCache.timeframe, candleCache.timestamp],

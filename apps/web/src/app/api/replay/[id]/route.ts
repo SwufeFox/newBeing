@@ -57,7 +57,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (!next) return NextResponse.json({ ...snapshot(getReplaySession(id)!), bar: null, hasNext: false });
       if (next.timestamp !== session.cursor + interval) throw new Error("A missing OHLCV interval blocks safe replay; cursor was not advanced.");
       const advanced = advanceReplaySession(id, expectedCursor, next, provenance ? { source: provenance.source, cache: { fallback: provenance.cache.fallback, cachedAt: provenance.cache.cachedAt } } : undefined, expectedRevision);
-      return NextResponse.json({ ...snapshot(advanced.session), bar: advanced.session.bars.at(-1), hasNext: true, deduplicated: advanced.deduplicated });
+      if (advanced.deduplicated) {
+        const current = getReplaySession(id)!;
+        return NextResponse.json({ ...snapshot(current), bar: null, hasNext: current.status === "active", deduplicated: true });
+      }
+      return NextResponse.json({ ...snapshot(advanced.session), bar: advanced.session.bars.at(-1), hasNext: true });
     }
     const expectedRevision = action.expectedRevision ?? execution.revision;
     if (action.action === "order") {

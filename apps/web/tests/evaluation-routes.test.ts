@@ -9,12 +9,14 @@ vi.mock("@newbeing/application", () => import("../../../packages/application/src
 import { DEFAULT_WORKSPACE_STATE, type BacktestResult } from "@newbeing/core";
 import { closeDatabaseForTests, datasetSnapshotPath, getExperiment, listExperiments, loadDatasetSnapshot, saveDatasetSnapshot, saveWorkspaceState } from "@newbeing/storage";
 import type { ResearchEvaluationResult } from "@newbeing/application";
-import { POST } from "../src/app/api/evaluations/route.js";
+import { GET, POST } from "../src/app/api/evaluations/route.js";
 import { POST as rerun } from "../src/app/api/backtests/[id]/rerun/route.js";
 
 let directory: string;
 let body: { datasetId: string; strategyId: string; candidates: Record<string, number>[]; splitIndex: number; config: { initialCapital: number; positionFraction: number; feeRate: number; slippageRate: number; allowShorts: false } };
 const post = (data: unknown) => new Request("http://localhost/api/evaluations", { method: "POST", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } });
+const get = (search = "") => GET(new Request(`http://localhost/api/evaluations${search}`));
+const MAX_BODY_BYTES = 1_000_000;
 beforeEach(() => {
   closeDatabaseForTests(); directory = mkdtempSync(path.join(tmpdir(), "newbeing-evaluation-routes-")); process.env.NEWBEING_DATA_DIR = directory;
   const candles = Array.from({ length: 24 }, (_, index) => {
@@ -95,6 +97,89 @@ describe("POST /api/evaluations", () => {
     expect((await POST(post(body))).status).toBe(422);
     saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "replay" });
     expect((await POST(post(body))).status).toBe(409);
+    expect(listExperiments()).toEqual([]);
+  });
+});
+
+describe("GET /api/evaluations", () => {
+  it.each(["-1", "0", "2.5", "1e100"])("returns 400 for invalid limit %s", async (limit) => {
+    const response = await get(`?limit=${limit}`);
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ error: "Invalid evaluation limit." });
+  });
+
+  it("returns the newest saved report for limit=1", async () => {
+    expect((await POST(post(body))).status).toBe(201);
+    expect((await POST(post({ ...body, candidates: [{ lookback: 2, thresholdPct: 5 }] }))).status).toBe(201);
+    const response = await get("?limit=1");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const reports = await response.json() as { reportId: string; createdAt: string; datasetId: string; evaluation: string }[];
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.reportId).toEqual(expect.any(String));
+    expect(reports[0]!.createdAt).toEqual(expect.any(String));
+    expect(reports[0]!.datasetId).toBe(body.datasetId);
+    expect(reports[0]!.evaluation).toBe("single-holdout");
+  });
+
+  it("returns all saved reports with the default limit", async () => {
+    expect((await POST(post(body))).status).toBe(201);
+    expect((await POST(post({ ...body, candidates: [{ lookback: 2, thresholdPct: 5 }] }))).status).toBe(201);
+    const response = await get();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const reports = await response.json() as unknown[];
+    expect(reports).toHaveLength(2);
+  });
+});
+
+describe("POST /api/evaluations body limits", () => {
+  const oversized = () => JSON.stringify({ ...body, padding: "x".repeat(MAX_BODY_BYTES) });
+  const assertRejectedBeforeEvaluation = async (response: Response) => {
+    expect(response.status).toBe(413);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ error: "Evaluation request body is too large." });
+    expect(listExperiments()).toEqual([]);
+  };
+
+  it("returns 413 for a body whose Content-Length exceeds the cap", async () => {
+    const payload = oversized();
+    expect(Buffer.byteLength(payload, "utf8")).toBeGreaterThan(MAX_BODY_BYTES);
+    const response = await POST(new Request("http://localhost/api/evaluations", {
+      method: "POST", body: payload,
+      headers: { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(payload, "utf8")) },
+    }));
+    await assertRejectedBeforeEvaluation(response);
+  });
+
+  it("returns 413 for a chunked body without Content-Length", async () => {
+    const encoder = new TextEncoder();
+    const streaming = {
+      method: "POST",
+      body: new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(encoder.encode(oversized())); controller.close(); },
+      }),
+      duplex: "half",
+      headers: { "Content-Type": "application/json" },
+    } as RequestInit;
+    const request = new Request("http://localhost/api/evaluations", streaming);
+    expect(request.headers.get("content-length")).toBeNull();
+    await assertRejectedBeforeEvaluation(await POST(request));
+  });
+
+  it("returns 400 for malformed JSON within the cap", async () => {
+    const response = await POST(new Request("http://localhost/api/evaluations", { method: "POST", body: "{" }));
+    expect(response.status).toBe(400);
+    expect(listExperiments()).toEqual([]);
+  });
+
+  it("still returns 400 for a schema-invalid body just under the cap", async () => {
+    const payload = JSON.stringify({ ...body, padding: "x".repeat(MAX_BODY_BYTES - 100_000) });
+    expect(Buffer.byteLength(payload, "utf8")).toBeLessThan(MAX_BODY_BYTES);
+    expect(Buffer.byteLength(payload, "utf8")).toBeGreaterThan(MAX_BODY_BYTES - 200_000);
+    const response = await POST(post({ ...body, padding: "x".repeat(MAX_BODY_BYTES - 100_000) }));
+    expect(response.status).toBe(400);
     expect(listExperiments()).toEqual([]);
   });
 });

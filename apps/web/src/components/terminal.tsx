@@ -650,12 +650,14 @@ export function Terminal(): React.JSX.Element {
   const [replayError, setReplayError] = useState<string | null>(null);
   const replayBusyRef = useRef(false);
   const replayStepRef = useRef<() => Promise<void>>(async () => undefined);
+  const [mobileRailOpen, setMobileRailOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
   const setPage = useCallback((next: WorkspaceState["activeWorkspace"]): void => {
+    setMobileRailOpen(false);
     if (next !== "replay") setReplayPlaying(false);
     const current = useWorkspaceStore.getState();
     if (next === "research") {
@@ -677,6 +679,8 @@ export function Terminal(): React.JSX.Element {
   // when the sidebar collapses; React re-renders before committing.
   if (showResearchRail && !researchRailVisited) setResearchRailVisited(true);
   if (showsWatchlist && !watchlistVisited) setWatchlistVisited(true);
+  const mobileWatchlistOpen = mobileRailOpen && workspace === "terminal";
+  const mobileResearchOpen = mobileRailOpen && workspace === "research";
   const watchlist = useWorkspaceStore((state) => state.watchlist);
   const runBacktestRef = useRef<() => void>(() => {});
 
@@ -702,6 +706,7 @@ export function Terminal(): React.JSX.Element {
         setShowHotkeys((prev) => !prev);
       } else if (event.key === "Escape") {
         setShowHotkeys(false);
+        setMobileRailOpen(false);
       } else if (event.key === "\\" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b")) {
         event.preventDefault();
         setSidebarOpen((prev) => !prev);
@@ -1235,7 +1240,20 @@ export function Terminal(): React.JSX.Element {
               <div className="h-5 w-[1px] bg-[var(--ak-border)] mx-0.5 opacity-50" />
 
               <div className="topbar-actions flex items-center gap-1 shrink-0">
-                <Button variant="ghost" size="icon" title={sidebarOpen ? "Collapse sidebar [Ctrl+B or \\]" : "Expand sidebar [Ctrl+B or \\]"} aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"} onClick={() => setSidebarOpen((prev) => !prev)}>
+                {workspace !== "replay" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="mobile-rail-toggle"
+                    title={mobileRailOpen ? "Close list drawer" : "Open watchlist drawer"}
+                    aria-label={mobileRailOpen ? "Close list drawer" : "Open watchlist drawer"}
+                    aria-expanded={mobileRailOpen}
+                    onClick={() => setMobileRailOpen((prev) => !prev)}
+                  >
+                    {mobileRailOpen ? <PanelLeftClose size={13} /> : <PanelLeft size={13} />}
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon" className="sidebar-toggle" title={sidebarOpen ? "Collapse sidebar [Ctrl+B or \\]" : "Expand sidebar [Ctrl+B or \\]"} aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"} onClick={() => setSidebarOpen((prev) => !prev)}>
                   {sidebarOpen ? <PanelLeftClose size={13} /> : <PanelLeft size={13} />}
                 </Button>
                 <Button variant="ghost" size="icon" title="Terminal shortcuts [?]" aria-label="Terminal shortcuts" onClick={() => setShowHotkeys((prev) => !prev)}>
@@ -1323,8 +1341,14 @@ export function Terminal(): React.JSX.Element {
       </div>
 
       <main className={`workspace-layout mode-layout-${workspace}`}>
-        {workspace !== "replay" && (showResearchRail || researchRailVisited) && (
-          <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label="Active workspace" hidden={!showResearchRail}>
+        {workspace !== "replay" && (showResearchRail || researchRailVisited || mobileResearchOpen) && (
+          <div className={`primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs${mobileResearchOpen ? " is-mobile-open" : ""}`} aria-label="Active workspace" hidden={!showResearchRail && !mobileResearchOpen}>
+            {mobileResearchOpen && <div className="mobile-rail-backdrop" onClick={() => setMobileRailOpen(false)} aria-hidden="true" />}
+            {mobileResearchOpen && (
+              <button type="button" className="mobile-rail-close" aria-label="Close list drawer" onClick={() => setMobileRailOpen(false)}>
+                <PanelLeftClose size={13} /> Close
+              </button>
+            )}
             <div className="rail-caption text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold pb-1 border-b border-[var(--ak-border-subtle)]">
               RESEARCH · WORKSPACE
             </div>
@@ -1359,9 +1383,15 @@ export function Terminal(): React.JSX.Element {
 
         <section className="market-canvas" aria-label={`${workspaceName} market workspace`}>
           <div className="workspace-grid" style={{ gridTemplateColumns: gridColumns, gridTemplateRows: `minmax(0, 1fr) 5px min(${dockHeight}px, max(150px, calc(100% - 265px)))` }}>
-            {workspace !== "replay" && (showsWatchlist || watchlistVisited) && (
-              <div className="left-rail" style={{ gridColumn: col.rail, gridRow: "1 / 4" }} hidden={!showsWatchlist}>
-                <Watchlist disabled={!showsWatchlist || replayLocked} />
+            {workspace !== "replay" && (showsWatchlist || watchlistVisited || mobileWatchlistOpen) && (
+              <div className={`left-rail${mobileWatchlistOpen ? " is-mobile-open" : ""}`} style={{ gridColumn: col.rail, gridRow: "1 / 4" }} hidden={!showsWatchlist && !mobileWatchlistOpen}>
+                {mobileWatchlistOpen && <div className="mobile-rail-backdrop" onClick={() => setMobileRailOpen(false)} aria-hidden="true" />}
+                {mobileWatchlistOpen && (
+                  <button type="button" className="mobile-rail-close" aria-label="Close list drawer" onClick={() => setMobileRailOpen(false)}>
+                    <PanelLeftClose size={13} /> Close
+                  </button>
+                )}
+                <Watchlist disabled={(!showsWatchlist && !mobileWatchlistOpen) || replayLocked} />
               </div>
             )}
             {showsWatchlist && (

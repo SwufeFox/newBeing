@@ -7,6 +7,34 @@ import { researchFailure, researchReadGuard } from "@/lib/research-route";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MAX_EVALUATION_BODY_BYTES = 1_000_000;
+const EVALUATION_LIMIT = z.coerce.number().int().min(1).max(100);
+const bodyTooLarge = () => NextResponse.json({ error: "Evaluation request body is too large." }, { status: 413, headers: { "Cache-Control": "no-store" } });
+
+// Streams the request body with a hard byte cap so a chunked body cannot buffer past the limit.
+async function readBodyCapped(request: Request, cap: number): Promise<string | null> {
+  const body = request.body;
+  if (!body) return null;
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  const chunks: Uint8Array[] = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > cap) {
+      reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const parts: string[] = [];
+  for (const chunk of chunks) parts.push(decoder.decode(chunk, { stream: true }));
+  parts.push(decoder.decode());
+  return parts.join("");
+}
+
 const requestSchema = z.object({
   datasetId: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   strategyId: z.string().min(1).max(120),
@@ -24,8 +52,9 @@ const requestSchema = z.object({
 export async function GET(request: Request): Promise<NextResponse> {
   const guard = researchReadGuard();
   if (guard) return guard;
-  const limit = Number(new URL(request.url).searchParams.get("limit") ?? 20);
-  const reports = listSavedEvaluations(Number.isFinite(limit) ? limit : 20).map((row) => ({
+  const limit = EVALUATION_LIMIT.safeParse(new URL(request.url).searchParams.get("limit") ?? 20);
+  if (!limit.success) return NextResponse.json({ error: "Invalid evaluation limit." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  const reports = listSavedEvaluations(limit.data).map((row) => ({
     ...JSON.parse(row.report),
     reportId: row.evaluationId,
     createdAt: new Date(row.createdAt).toISOString(),
@@ -36,8 +65,15 @@ export async function GET(request: Request): Promise<NextResponse> {
 export async function POST(request: Request): Promise<NextResponse> {
   const guard = researchReadGuard();
   if (guard) return guard;
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null && Number(declaredLength) > MAX_EVALUATION_BODY_BYTES) {
+    return bodyTooLarge();
+  }
   try {
-    const originalRequest = await request.text();
+    const originalRequest = await readBodyCapped(request, MAX_EVALUATION_BODY_BYTES);
+    if (originalRequest === null) {
+      return bodyTooLarge();
+    }
     const parsed = requestSchema.safeParse(JSON.parse(originalRequest));
     if (!parsed.success) return NextResponse.json({ error: "Invalid evaluation request.", maxRuns: SWEEP_MAX_RUNS }, { status: 400 });
     const { stopLossPct, takeProfitPct, ...config } = parsed.data.config;

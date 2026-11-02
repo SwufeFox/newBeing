@@ -72,24 +72,47 @@ function parsePreviews(payload: unknown): OrderPreview[] {
 function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange: ExchangeId; onPickPrice?: (price: number) => void }): React.JSX.Element {
   const [book, setBook] = useState<OrderBookSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
+  // Latest request wins: a newer refresh aborts the in-flight one, and only the
+  // request that still owns the current id may publish results or errors.
+  const requestRef = useRef(0);
+  const controllerRef = useRef<AbortController | null>(null);
+  const hasDataRef = useRef(false);
 
   useEffect(() => {
-    let disposed = false;
+    hasDataRef.current = false;
     const refresh = async (): Promise<void> => {
+      requestRef.current += 1;
+      const requestId = requestRef.current;
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      const { signal } = controller;
       try {
-        const response = await fetch(`/api/market?kind=book&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+        const response = await fetch(`/api/market?kind=book&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store", signal });
         const payload: unknown = await response.json();
         if (!response.ok) throw new Error("Order book is unavailable.");
         const parsed = parseBook(payload);
         if (!parsed) throw new Error("Invalid order book response.");
-        if (!disposed) { setBook(parsed); setError(null); }
+        if (requestId !== requestRef.current || signal.aborted) return;
+        setBook(parsed);
+        setError(null);
+        setStale(false);
+        hasDataRef.current = true;
       } catch (reason) {
-        if (!disposed) setError(reason instanceof Error ? reason.message : "Order book request failed.");
+        if (requestId !== requestRef.current || signal.aborted) return;
+        setError(reason instanceof Error ? reason.message : "Order book request failed.");
+        if (hasDataRef.current) setStale(true);
       }
     };
     void refresh();
     const interval = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, exchange === "binance" ? 3_000 : 15_000);
-    return () => { disposed = true; window.clearInterval(interval); };
+    return () => {
+      requestRef.current += 1;
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+      window.clearInterval(interval);
+    };
   }, [symbol, exchange]);
 
   const validAmounts = [...(book?.bids ?? []), ...(book?.asks ?? [])]
@@ -109,6 +132,7 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
         <span>SIZE</span>
       </div>
       {error && !book && <div className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{error}</div>}
+      {stale && book && <div role="alert" className="small-error text-xs text-[var(--ak-signal-danger)] p-1">STALE · last update failed; showing previous data.</div>}
 
       {!book && !error && (
         <div className="book-skeleton py-1 space-y-1 opacity-40 animate-pulse">
@@ -133,10 +157,12 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
 
       <div className="asks-ladder py-0.5 space-y-0.5">
         {book?.asks.slice(0, 5).reverse().map((level, index) => (
-          <div
-            className="book-row ask relative flex justify-between py-[2px] px-1 hover:bg-red-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight"
+          <button
+            type="button"
+            className="book-row ask relative flex justify-between py-[2px] px-1 hover:bg-red-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight w-full text-left"
             key={`ask-${index}`}
             onClick={() => onPickPrice?.(level.price)}
+            aria-label={`Pick ask ${price(level.price)}`}
             title="Click to copy price to ticket"
           >
             <span
@@ -150,7 +176,7 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
             />
             <span className="text-[var(--ak-signal-danger)] font-bold tabular-nums group-hover:underline z-10">{price(level.price)}</span>
             <span className="text-[var(--ak-text-secondary)] tabular-nums z-10">{level.amount.toFixed(4)}</span>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -169,10 +195,12 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
 
       <div className="bids-ladder py-0.5 space-y-0.5">
         {book?.bids.slice(0, 5).map((level, index) => (
-          <div
-            className="book-row bid relative flex justify-between py-[2px] px-1 hover:bg-emerald-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight"
+          <button
+            type="button"
+            className="book-row bid relative flex justify-between py-[2px] px-1 hover:bg-emerald-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight w-full text-left"
             key={`bid-${index}`}
             onClick={() => onPickPrice?.(level.price)}
+            aria-label={`Pick bid ${price(level.price)}`}
             title="Click to copy price to ticket"
           >
             <span
@@ -186,7 +214,7 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
             />
             <span className="text-[var(--ak-signal-success)] font-bold tabular-nums group-hover:underline z-10">{price(level.price)}</span>
             <span className="text-[var(--ak-text-secondary)] tabular-nums z-10">{level.amount.toFixed(4)}</span>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -206,23 +234,46 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
 function RecentTrades({ symbol, exchange, onPickPrice }: { symbol: string; exchange: ExchangeId; onPickPrice?: (price: number) => void }): React.JSX.Element {
   const [trades, setTrades] = useState<RecentTrade[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
+  // Latest request wins: a newer refresh aborts the in-flight one, and only the
+  // request that still owns the current id may publish results or errors.
+  const requestRef = useRef(0);
+  const controllerRef = useRef<AbortController | null>(null);
+  const hasDataRef = useRef(false);
 
   useEffect(() => {
-    let disposed = false;
+    hasDataRef.current = false;
     const refresh = async (): Promise<void> => {
+      requestRef.current += 1;
+      const requestId = requestRef.current;
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      const { signal } = controller;
       try {
-        const response = await fetch(`/api/market?kind=trades&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+        const response = await fetch(`/api/market?kind=trades&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store", signal });
         const payload: unknown = await response.json();
         if (!response.ok) throw new Error("Recent trades are unavailable.");
         const next = parseTrades(payload);
-        if (!disposed) { setTrades(next); setError(null); }
+        if (requestId !== requestRef.current || signal.aborted) return;
+        setTrades(next);
+        setError(null);
+        setStale(false);
+        hasDataRef.current = true;
       } catch (reason) {
-        if (!disposed) setError(reason instanceof Error ? reason.message : "Recent trade request failed.");
+        if (requestId !== requestRef.current || signal.aborted) return;
+        setError(reason instanceof Error ? reason.message : "Recent trade request failed.");
+        if (hasDataRef.current) setStale(true);
       }
     };
     void refresh();
     const interval = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, exchange === "binance" ? 3_000 : 15_000);
-    return () => { disposed = true; window.clearInterval(interval); };
+    return () => {
+      requestRef.current += 1;
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+      window.clearInterval(interval);
+    };
   }, [symbol, exchange]);
 
   return (
@@ -233,15 +284,18 @@ function RecentTrades({ symbol, exchange, onPickPrice }: { symbol: string; excha
         <span>TIME</span>
       </div>
       {error && trades.length === 0 && <div className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{error}</div>}
+      {stale && trades.length > 0 && <div role="alert" className="small-error text-xs text-[var(--ak-signal-danger)] p-1">STALE · last update failed; showing previous data.</div>}
 
       <div className="trades-list space-y-0.5 py-1">
         {trades.slice(0, 14).map((trade) => {
           const isBuy = trade.side === "buy";
           return (
-            <div
-              className="trade-row flex justify-between py-0.5 px-1 hover:bg-[var(--ak-surface-sunken)] cursor-pointer select-none group"
+            <button
+              type="button"
+              className="trade-row flex justify-between py-0.5 px-1 hover:bg-[var(--ak-surface-sunken)] cursor-pointer select-none group w-full text-left"
               key={trade.id}
               onClick={() => onPickPrice?.(trade.price)}
+              aria-label={`Pick trade ${price(trade.price)}`}
               title="Click to copy price to ticket"
             >
               <span className={`font-bold tabular-nums group-hover:underline flex items-center gap-1 ${isBuy ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
@@ -252,7 +306,7 @@ function RecentTrades({ symbol, exchange, onPickPrice }: { symbol: string; excha
               <span className="text-[10px] text-[var(--ak-text-secondary)] tabular-nums opacity-70">
                 {new Date(trade.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>

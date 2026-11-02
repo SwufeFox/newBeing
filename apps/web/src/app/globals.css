@@ -1080,6 +1080,7 @@ input[type="number"] {
   transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .watch-row:hover .watch-remove { opacity: 1; }
+.watch-row:focus-within .watch-remove { opacity: 1; }
 .watch-remove:hover { color: var(--c-down); }
 
 .empty-watchlist {
@@ -3238,6 +3239,16 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   color: var(--c-down); font-size: var(--t-meta);
 }
 
+/* Coarse pointers have no hover, and a 22px control is not reliably tappable.
+   Keep the dense desktop metrics; expand hit areas only where hover is absent. */
+@media (hover: none), (pointer: coarse) {
+  .watchlist-panel .panel-heading { flex-basis: 44px; height: 44px; }
+  .watchlist-add-toggle { width: 44px; height: 44px; }
+  .watch-row { min-height: 44px; }
+  .watch-remove { width: 44px; height: 44px; opacity: 1; }
+  .indicator-toggles button { min-width: 44px; min-height: 44px; padding: 0 6px; }
+}
+
 /* rows become draggable; the grip is the affordance */
 .watch-grip {
   position: relative; align-self: stretch;
@@ -4094,4 +4105,60 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .derivatives-topbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .derivatives-topbar::-webkit-scrollbar { display: none; }
   .derivatives-topbar > * { flex-shrink: 0; }
+}
+
+/* Mobile rail drawer: below 920px the grid rails are display:none and were
+   unreachable. The drawer reuses the same mounted rail instance, so watchlist
+   draft/polling state is never duplicated. Above 920px these stay inert. */
+.mobile-rail-toggle, .mobile-rail-backdrop, .mobile-rail-close { display: none; }
+@media (max-width: 920px) {
+  .topbar .mobile-rail-toggle { display: grid; place-items: center; width: 44px; height: 44px; }
+  .topbar .sidebar-toggle { display: none; }
+  /* The dim layer lives INSIDE the drawer element: `nb-rise` leaves a transform
+     on grid children, so a root-level sibling backdrop would paint above the
+     fixed drawer. A negative-z child stays behind the panel but above the page. */
+  .mobile-rail-backdrop { display: block; position: fixed; inset: 0; z-index: -1; background: rgba(5, 7, 9, 0.55); }
+  /* The drawer lives inside .workspace-layout (z-index: 1), below the topbar's
+     z-20. While a drawer is open, lift the layout above the chrome so the dim
+     layer and the in-drawer close button are the topmost interactive surface. */
+  .workspace-layout:has(.is-mobile-open) { z-index: 90; }
+  .workspace-layout .left-rail.is-mobile-open,
+  .workspace-layout .primary-rail.is-mobile-open {
+    display: block;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(320px, 88vw);
+    z-index: 80;
+    overflow-y: auto;
+    padding: var(--s-2);
+    background: var(--c-surface-2, var(--ak-surface-canvas));
+    border-right: var(--line) solid var(--c-line);
+    box-shadow: 0 0 28px rgba(0, 0, 0, 0.4);
+    /* nb-rise `both` keeps a transform and the rail's backdrop-filter stays
+       applied; either would make the rail the containing block for its own
+       fixed dim layer and shrink it to the 320px drawer box. */
+    animation: none;
+    transform: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .mobile-rail-close {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 44px;
+    margin-bottom: var(--s-2);
+    padding: 0 var(--s-2);
+    border: var(--line) solid var(--c-line);
+    background: var(--c-surface-2);
+    color: var(--c-fg-2);
+    font-family: var(--f-display);
+    font-size: var(--t-label);
+    font-weight: 700;
+    letter-spacing: var(--track-caps);
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .mobile-rail-close:hover { color: var(--mode); border-color: color-mix(in srgb, var(--mode) 55%, var(--c-line)); }
 }

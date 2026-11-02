@@ -156,4 +156,21 @@ describe("Replay HTTP integration", () => {
     expect(getReplayExecution(s.id)).toEqual(before);
     expect(getReplaySession(s.id)?.cursor).toBe(s.cursor);
   });
+
+  it("reports a deduplicated miss when a concurrent request finishes the session during fetch", async () => {
+    const s = configure();
+    const deferred = Promise.withResolvers<Candle[]>();
+    fixture.fetch.mockImplementationOnce(() => deferred.promise);
+    const step = post({ action: "step", expectedRevision: 0, expectedCursor: s.cursor });
+    const finished = await post({ action: "finish", expectedRevision: 0 });
+    expect(finished.status).toBe(200);
+    deferred.resolve(fixture.bars);
+    const response = await step;
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.hasNext).toBe(false);
+    expect(body.bar).toBeNull();
+    expect(body.deduplicated).toBe(true);
+    expect(getReplaySession(s.id)?.status).toBe("finished");
+  });
 });

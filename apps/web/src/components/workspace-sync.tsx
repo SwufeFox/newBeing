@@ -9,6 +9,25 @@ interface WorkspaceEnvelope {
   updatedAt: number;
 }
 
+/** Field-by-field equality for the projected shared state, so a store
+ *  notification that only touched local slices (hover, dock, inspector) costs
+ *  no JSON serialisation. Kept explicit: every shared field must appear here. */
+function sharedWorkspaceEqual(current: WorkspaceState, prior: WorkspaceState): boolean {
+  return current.symbol === prior.symbol &&
+    current.timeframe === prior.timeframe &&
+    current.exchange === prior.exchange &&
+    current.mode === prior.mode &&
+    current.activeWorkspace === prior.activeWorkspace &&
+    current.selectedStrategyId === prior.selectedStrategyId &&
+    current.activeBacktestId === prior.activeBacktestId &&
+    current.activeReplayId === prior.activeReplayId &&
+    current.visibleRange.from === prior.visibleRange.from &&
+    current.visibleRange.to === prior.visibleRange.to &&
+    current.layout.watchlistWidth === prior.layout.watchlistWidth &&
+    current.layout.inspectorWidth === prior.layout.inspectorWidth &&
+    current.layout.bottomHeight === prior.layout.bottomHeight;
+}
+
 const PENDING_WORKSPACE_NAVIGATION_KEY = "newbeing:pending-workspace-navigation";
 type WorkspaceNavigationTarget = "terminal" | "research" | "replay";
 
@@ -223,9 +242,10 @@ export function WorkspaceSync(): null {
     };
 
     const unsubscribe = useWorkspaceStore.subscribe((state, previous) => {
-      const stateJson = JSON.stringify(toSharedWorkspaceState(state));
-      const previousJson = JSON.stringify(toSharedWorkspaceState(previous));
-      if (stateJson !== previousJson) revision += 1;
+      const currentShared = toSharedWorkspaceState(state);
+      const priorShared = toSharedWorkspaceState(previous);
+      const sharedChanged = !sharedWorkspaceEqual(currentShared, priorShared);
+      if (sharedChanged) revision += 1;
       if (replayIdentity(state) !== replayIdentity(previous)) {
         identityRevision += 1;
         if (state.replayConfirmedJson || state.replaySyncError) {
@@ -234,19 +254,18 @@ export function WorkspaceSync(): null {
       }
       if (!ready || stopped) return;
       if (state.replayRetry !== previous.replayRetry) {
-        if (debounce) clearTimeout(debounce);
+        clearTimeout(debounce);
         void sendState();
         return;
       }
-      if (stateJson === previousJson) return;
+      if (!sharedChanged) return;
+      const stateJson = JSON.stringify(currentShared);
       if (stateJson === lastSyncedJson && !isSending && state.activeWorkspace !== "replay") return;
-      const current = toSharedWorkspaceState(state);
-      const prior = toSharedWorkspaceState(previous);
-      const isOnlyContinuous = current.activeWorkspace === prior.activeWorkspace && current.symbol === prior.symbol &&
-        current.timeframe === prior.timeframe && current.exchange === prior.exchange &&
-        current.selectedStrategyId === prior.selectedStrategyId && current.activeBacktestId === prior.activeBacktestId &&
-        current.activeReplayId === prior.activeReplayId;
-      if (debounce) clearTimeout(debounce);
+      const isOnlyContinuous = currentShared.activeWorkspace === priorShared.activeWorkspace && currentShared.symbol === priorShared.symbol &&
+        currentShared.timeframe === priorShared.timeframe && currentShared.exchange === priorShared.exchange &&
+        currentShared.selectedStrategyId === priorShared.selectedStrategyId && currentShared.activeBacktestId === priorShared.activeBacktestId &&
+        currentShared.activeReplayId === priorShared.activeReplayId;
+      clearTimeout(debounce);
       if (isOnlyContinuous) debounce = setTimeout(() => void sendState(), 100);
       else void sendState();
     });
@@ -255,8 +274,8 @@ export function WorkspaceSync(): null {
     return () => {
       stopped = true;
       unsubscribe();
-      if (debounce) clearTimeout(debounce);
-      if (poll) clearInterval(poll);
+      clearTimeout(debounce);
+      clearInterval(poll);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       window.removeEventListener("focus", refreshWhenVisible);
     };

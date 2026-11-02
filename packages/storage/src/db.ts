@@ -91,6 +91,7 @@ function migrateSchema(sqlite: Database.Database): void {
       client_order_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, side TEXT NOT NULL,
       quantity REAL NOT NULL, status TEXT NOT NULL, fill_price REAL, fee REAL NOT NULL, created_at TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS paper_orders_status_idx ON paper_orders(status, created_at);
     CREATE TABLE IF NOT EXISTS paper_recoveries (
       client_order_id TEXT PRIMARY KEY REFERENCES paper_orders(client_order_id), action_id TEXT NOT NULL UNIQUE,
       account_id TEXT, previous_status TEXT NOT NULL, outcome TEXT NOT NULL, reason TEXT NOT NULL,
@@ -103,6 +104,7 @@ function migrateSchema(sqlite: Database.Database): void {
       expires_at TEXT NOT NULL, order_id TEXT
     );
     CREATE INDEX IF NOT EXISTS order_previews_status_idx ON order_previews(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS order_previews_symbol_idx ON order_previews(symbol, created_at DESC);
     CREATE TABLE IF NOT EXISTS replay_sessions (
       id TEXT PRIMARY KEY, exchange TEXT NOT NULL DEFAULT 'binance', symbol TEXT NOT NULL,
       timeframe TEXT NOT NULL, start_at INTEGER NOT NULL, cursor INTEGER NOT NULL,

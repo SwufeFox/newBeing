@@ -121,6 +121,47 @@ describe("market indicator calculations and candle sanitization", () => {
     expect(bb.lower[0]!.value).toBe(50);
   });
 
+  it("matches a two-pass reference on a long series while using rolling sums", () => {
+    const closes = Array.from({ length: 200 }, (_, index) => 60_000 + Math.sin(index / 4) * 120 + (index % 7));
+    const bars = makeCandles(closes);
+    const period = 20;
+    const bb = calculateBollingerBands(bars, period, 2);
+    expect(bb.upper).toHaveLength(closes.length - period + 1);
+    for (let i = period - 1; i < closes.length; i += 1) {
+      const window = closes.slice(i - period + 1, i + 1);
+      const mean = window.reduce((sum, value) => sum + value, 0) / period;
+      const variance = window.reduce((sum, value) => sum + (value - mean) ** 2, 0) / period;
+      const stdDev = Math.sqrt(variance);
+      const upper = Math.round((mean + 2 * stdDev) * 1e8) / 1e8;
+      const lower = Math.round((mean - 2 * stdDev) * 1e8) / 1e8;
+      expect(bb.upper[i - period + 1]!.value).toBeCloseTo(upper, 7);
+      expect(bb.lower[i - period + 1]!.value).toBeCloseTo(lower, 7);
+    }
+  });
+
+  it("keeps flat bands exact for large non-integer prices", () => {
+    const price = 60_000.01;
+    const bb = calculateBollingerBands(makeCandles(Array.from({ length: 40 }, () => price)), 20, 2);
+    expect(bb.upper).toHaveLength(21);
+    for (const point of [...bb.upper, ...bb.lower]) expect(point.value).toBe(price);
+  });
+
+  it("does not collapse variance at large price scales with alternating closes", () => {
+    const closes = Array.from({ length: 40 }, (_, index) => 100_000_000 + (index % 2 === 0 ? 4 : -4));
+    const period = 20;
+    const bb = calculateBollingerBands(makeCandles(closes), period, 2);
+    expect(bb.upper).toHaveLength(closes.length - period + 1);
+    for (let i = period - 1; i < closes.length; i += 1) {
+      const window = closes.slice(i - period + 1, i + 1);
+      const mean = window.reduce((sum, value) => sum + value, 0) / period;
+      const stdDev = Math.sqrt(window.reduce((sum, value) => sum + (value - mean) ** 2, 0) / period);
+      expect(bb.upper[i - period + 1]!.value).toBeCloseTo(mean + 2 * stdDev, 4);
+      expect(bb.lower[i - period + 1]!.value).toBeCloseTo(mean - 2 * stdDev, 4);
+      expect(bb.upper[i - period + 1]!.value).not.toBeCloseTo(mean, 4);
+      expect(bb.lower[i - period + 1]!.value).not.toBeCloseTo(mean, 4);
+    }
+  });
+
   describe("floorToDecimals", () => {
     it("floors without rounding up to prevent balance overruns", () => {
       expect(floorToDecimals(0.0001538, 4)).toBe(0.0001);

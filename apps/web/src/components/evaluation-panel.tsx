@@ -518,7 +518,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       ) : null}
       <section className="evaluation-history flex flex-col gap-1 max-h-36 overflow-auto" aria-label="Saved evaluations">
         <strong className="text-[10px] uppercase font-mono text-[var(--ak-text-secondary)]">Recent evaluations</strong>
-        {historyError && <span role="status" className="text-xs text-[var(--ak-signal-danger)]">{historyError}</span>}
+        {historyError && <span role="alert" className="text-xs text-[var(--ak-signal-danger)]">{historyError}</span>}
         {history.map((item) => <button key={item.reportId} type="button" className="text-left p-1.5 border border-[var(--ak-border-subtle)] text-xs font-mono hover:bg-[var(--ak-surface-sunken)]" onClick={() => void openHistorical(item.reportId)}>
           {new Date(item.createdAt).toLocaleString()} · {item.strategyId} · {item.symbol} · holdout {pct(item.holdout.metrics.totalReturn)}
         </button>)}
@@ -542,7 +542,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       )}
 
       {error && (
-        <div className="error-inline p-2 text-xs text-[var(--ak-signal-danger)] bg-red-950/20 border border-red-800/40">
+        <div role="alert" className="error-inline p-2 text-xs text-[var(--ak-signal-danger)] bg-red-950/20 border border-red-800/40">
           <AlertCircle size={13} /> {error}
         </div>
       )}
