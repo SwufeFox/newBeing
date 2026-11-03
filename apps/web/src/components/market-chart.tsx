@@ -41,6 +41,7 @@ export {
 } from "@/lib/indicators";
 import {
   asUTCTime,
+  mergeCandles,
   sanitizeCandlesForChart,
   calculateSMA,
   calculateEMA,
@@ -216,8 +217,15 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     updateIndicators();
   }, [updateIndicators]);
 
-  const loadHistory = useCallback(async (signal?: AbortSignal): Promise<void> => {
-    const url = `/api/market?kind=candles&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=600`;
+  const loadedKeyRef = useRef<string | null>(null);
+
+  const loadHistory = useCallback(async (signal?: AbortSignal, force = false): Promise<void> => {
+    const key = `${exchange}|${symbol}|${timeframe}`;
+    const lastKnown = force ? undefined : barsRef.current.at(-1);
+    /* After the initial 600-bar load, refreshes only need candles from the last
+       known bar (inclusive, so the newest closed bar can still be corrected). */
+    const incremental = !force && loadedKeyRef.current === key && lastKnown !== undefined;
+    const url = `/api/market?kind=candles&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}${incremental && lastKnown ? `&since=${lastKnown.timestamp}&limit=50` : "&limit=600"}`;
     const response = await fetch(url, { cache: "no-store", ...(signal ? { signal } : {}) });
     const payload: unknown = await response.json();
     if (signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
@@ -229,8 +237,43 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     }
     const parsed = parseCandleResponse(payload);
     const sanitizedCandles = sanitizeCandlesForChart(parsed.candles);
-    if (sanitizedCandles.length === 0) throw new Error("No valid OHLCV bars were returned for this symbol and timeframe.");
     setCacheInfo(parsed.cache);
+
+    if (incremental && lastKnown) {
+      const intervalMs = timeframeMilliseconds(timeframe);
+      const incoming = sanitizeCandlesForChart(parsed.candles).filter((bar) => bar.timestamp >= lastKnown.timestamp);
+      /* An empty incremental response means nothing closed or formed since the
+         last poll: keep the existing history instead of churning the series. */
+      if (incoming.length === 0) {
+        setErrorState(null);
+        setLoadedKey(key);
+        loadedKeyRef.current = key;
+        return;
+      }
+      const { merged, trimmed, seamGap } = mergeCandles(barsRef.current, incoming, intervalMs);
+      /* A seam gap means the venue skipped intervals the chart still needs;
+         replace the whole history instead of splicing a hole into it. */
+      if (seamGap || findCandleGaps(merged, timeframe).length > 0) return loadHistory(signal, true);
+      barsRef.current = merged;
+      setLiveGapCount(0);
+      setLiveLastBar(merged.at(-1) ?? null);
+      /* update() replaces the most recent bar and appends newer ones; a trim
+         removed older bars, which only setData can express. */
+      if (trimmed) {
+        candleSeriesRef.current?.setData(merged.map((bar) => ({ time: asUTCTime(bar.timestamp), open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
+      } else {
+        for (const bar of incoming) {
+          candleSeriesRef.current?.update({ time: asUTCTime(bar.timestamp), open: bar.open, high: bar.high, low: bar.low, close: bar.close });
+        }
+      }
+      updateIndicators();
+      setErrorState(null);
+      setLoadedKey(key);
+      loadedKeyRef.current = key;
+      return;
+    }
+
+    if (sanitizedCandles.length === 0) throw new Error("No valid OHLCV bars were returned for this symbol and timeframe.");
     barsRef.current = sanitizedCandles;
     const gaps = findCandleGaps(sanitizedCandles, timeframe);
     setLiveGapCount(gaps.length);
@@ -254,7 +297,8 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       }
     }
     setErrorState(null);
-    setLoadedKey(`${exchange}|${symbol}|${timeframe}`);
+    setLoadedKey(key);
+    loadedKeyRef.current = key;
   }, [symbol, timeframe, exchange, updateIndicators]);
 
   useEffect(() => {

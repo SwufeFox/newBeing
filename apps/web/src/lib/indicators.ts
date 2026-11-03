@@ -5,6 +5,42 @@ export function asUTCTime(timestampMs: number): UTCTimestamp {
   return Math.floor(timestampMs / 1000) as UTCTimestamp;
 }
 
+export interface CandleMergeResult {
+  merged: Candle[];
+  /** True when the merge pushed history past the cap and older bars were dropped. */
+  trimmed: boolean;
+  /** True when the incoming bars start after a skipped interval of the existing history. */
+  seamGap: boolean;
+}
+
+/** Merge freshly fetched candles (from an inclusive `since` fetch) into the
+ *  existing chart history. Bars with the newest known timestamp replace it
+ *  (venue corrections and forming-bar updates); strictly newer bars append.
+ *  A start after a skipped interval of the existing history is reported as a
+ *  seam gap so the caller can reload the full history instead of splicing a
+ *  hole into the series. */
+export function mergeCandles(existing: readonly Candle[], incoming: readonly Candle[], intervalMs: number, maxLength = 1000): CandleMergeResult {
+  const sorted = [...incoming].sort((a, b) => a.timestamp - b.timestamp);
+  const last = existing.at(-1);
+  if (!last) return { merged: sorted, trimmed: sorted.length > maxLength, seamGap: false };
+  if (sorted.length === 0 || sorted[0]!.timestamp > last.timestamp + intervalMs) {
+    return { merged: [...existing], trimmed: false, seamGap: true };
+  }
+  const merged = existing.slice();
+  for (const bar of sorted) {
+    if (bar.timestamp < last.timestamp) continue; // stale rows cannot rewrite confirmed history
+    const current = merged.at(-1);
+    if (current && bar.timestamp === current.timestamp) merged[merged.length - 1] = bar;
+    else merged.push(bar);
+  }
+  let trimmed = false;
+  if (merged.length > maxLength) {
+    merged.splice(0, merged.length - maxLength);
+    trimmed = true;
+  }
+  return { merged, trimmed, seamGap: false };
+}
+
 export function floorToDecimals(value: number, decimals: number = 4): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   const factor = 10 ** decimals;

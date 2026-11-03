@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candle } from "@newbeing/core";
-import { calculateSMA, calculateEMA, calculateBollingerBands, sanitizeCandlesForChart, floorToDecimals } from "../src/lib/indicators.js";
+import { calculateSMA, calculateEMA, calculateBollingerBands, sanitizeCandlesForChart, floorToDecimals, mergeCandles } from "../src/lib/indicators.js";
 
 function makeCandles(closes: number[], startSec = 1700000000): Candle[] {
   return closes.map((close, i) => ({
@@ -170,6 +170,54 @@ describe("market indicator calculations and candle sanitization", () => {
       expect(floorToDecimals(0, 4)).toBe(0);
       expect(floorToDecimals(-1, 4)).toBe(0);
       expect(floorToDecimals(NaN, 4)).toBe(0);
+    });
+  });
+
+  describe("mergeCandles", () => {
+    it("appends newer bars and replaces the last known bar (corrections and forming updates)", () => {
+      const existing = makeCandles([100, 101, 102]);
+      const correctedLast = { ...existing[2]!, close: 103, volume: 250 };
+      const newer = makeCandles([103], 1700000000 + 3 * 60)[0]!;
+      const { merged, trimmed, seamGap } = mergeCandles(existing, [correctedLast, newer], 60_000);
+      expect(seamGap).toBe(false);
+      expect(trimmed).toBe(false);
+      expect(merged).toHaveLength(4);
+      expect(merged[2]!.close).toBe(103);
+      expect(merged[3]!.timestamp).toBe(newer.timestamp);
+    });
+
+    it("drops stale rows older than the last known bar", () => {
+      const existing = makeCandles([100, 101, 102]);
+      const stale = makeCandles([99], 1700000000 - 60)[0]!;
+      const { merged, seamGap } = mergeCandles(existing, [stale], 60_000);
+      expect(seamGap).toBe(false);
+      expect(merged).toHaveLength(3);
+      expect(merged[0]!.close).toBe(100);
+    });
+
+    it("flags a seam gap when incoming starts after a skipped interval", () => {
+      const existing = makeCandles([100, 101]);
+      const incoming = makeCandles([110], 1700000000 + 5 * 60); // skipped bars 2..4
+      const { merged, seamGap } = mergeCandles(existing, incoming, 60_000);
+      expect(seamGap).toBe(true);
+      expect(merged).toHaveLength(2);
+    });
+
+    it("trims merged history to the max length", () => {
+      const existing = makeCandles(Array.from({ length: 1000 }, (_, i) => 100 + i));
+      const incoming = makeCandles([1200, 1201], 1700000000 + 1000 * 60);
+      const { merged, trimmed, seamGap } = mergeCandles(existing, incoming, 60_000);
+      expect(seamGap).toBe(false);
+      expect(trimmed).toBe(true);
+      expect(merged).toHaveLength(1000);
+      expect(merged.at(-1)!.timestamp).toBe(incoming[1]!.timestamp);
+    });
+
+    it("seeds the full history when nothing exists yet", () => {
+      const incoming = makeCandles([100, 101, 102]);
+      const { merged, seamGap } = mergeCandles([], incoming, 60_000);
+      expect(seamGap).toBe(false);
+      expect(merged).toEqual(incoming);
     });
   });
 });
