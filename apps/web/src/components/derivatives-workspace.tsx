@@ -11,7 +11,7 @@ import type { DerivativesAccount, DerivativesOrderRequest, DerivativesPosition }
 import { Button } from "@/components/ui/button";
 import { queueWorkspaceNavigation } from "@/components/workspace-sync";
 import { useWorkspaceStore } from "@/store/workspace";
-import { derivativeNumber, derivativeDate, derivativeBlockReason, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale } from "@/lib/derivatives-ui";
+import { derivativeNumber, derivativeDate, derivativeBlockReason, derivativePositionIsExpired, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale } from "@/lib/derivatives-ui";
 
 const KINDS = [["perpetual", "Perpetuals"], ["future", "Futures"], ["option", "Options"]] as const;
 
@@ -91,7 +91,7 @@ function PositionRow({ position, quote, busy, onClose }: { position: Derivatives
     <td className="max-w-0 truncate" title={position.instrumentId}>{position.instrumentId}</td>
     <td>{position.side}</td><td>{position.quantity}</td><td>{position.entryPrice}</td><td>{position.margin} · {position.leverage}x</td>
     <td className={unrealized == null ? "" : unrealized < 0 ? "down" : unrealized > 0 ? "up" : ""}>{unrealized === null ? "—" : `${unrealized > 0 ? "+" : ""}${unrealized}`}</td>
-    <td>{position.expiry !== null && now > 0 && position.expiry <= now ? <span className="meta">Frozen</span> : <Button size="sm" variant="outline" disabled={busy} onClick={() => onClose(position)}>Close</Button>}</td>
+    <td>{now > 0 && derivativePositionIsExpired(position, now) ? <span className="meta">Frozen</span> : <Button size="sm" variant="outline" disabled={busy} onClick={() => onClose(position)}>Close</Button>}</td>
   </tr>;
 }
 
@@ -262,6 +262,11 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [maximumPrice, setMaximumPrice] = useState("");
   const [chainKey, setChainKey] = useState<string | null>(null);
   const [optionQuoteData, setOptionQuoteData] = useState<{ key: string; quotes: Record<string, DerivativeQuote>; staleIds: string[]; error: string | null }>({ key: "", quotes: {}, staleIds: [], error: null });
+  /* A ledger position can outlive its venue listing (expired options, delisted
+     futures). Keep that identity selected so its local terms stay inspectable
+     instead of silently falling back to the first listed contract. */
+  const [positionFocus, setPositionFocus] = useState<DerivativesPosition | null>(null);
+  const retainSelection = useRef(false);
   /* The account list is a local SQLite snapshot, independent of market data.
      The clock that gates order freshness lives in QuoteFreshSubmit, a leaf. */
   const pendingOrder = useRef<DerivativesOrderRequest | null>(null);
@@ -274,6 +279,13 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const initialBalance = instrument?.settle === "BTC" ? "1" : instrument?.settle === "ETH" ? "10" : "10000";
   const account = instrument && !blocked ? ledgerAccounts?.find((entry) => entry.venue === instrument.venue && entry.settle === instrument.settle) ?? null : null;
   const accountReady = !blocked && ledgerAccounts !== null && ledgerError === null;
+  /* A local position may reference a contract the venue no longer lists, so
+     its terms come from the ledger rather than a fresh market response. */
+  const focusedPosition = positionFocus?.instrumentId === selectedId ? positionFocus : null;
+  const focusedExpired = focusedPosition !== null && derivativePositionIsExpired(focusedPosition, Date.now());
+  /* The list is capped and may omit a live contract, so only an expired
+     position or a failed live lookup proves that local terms are all we have. */
+  const focusedLocalOnly = focusedPosition !== null && !listLoading && !instrument && (focusedExpired || marketError !== null) ? focusedPosition : null;
 
   // Read the shared boundary, without mounting WorkspaceSync or writing spot state.
   useEffect(() => {
@@ -308,8 +320,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
       void readJson<{ instruments: DerivativeInstrument[] }>(`/api/derivatives/markets?kind=${kind}&query=${encodeURIComponent(query)}`, { signal: controller.signal })
         .then((data) => {
           setItems(data.instruments);
-          setSelectedId((id) => data.instruments.some((item) => item.id === id) ? id : data.instruments[0]?.id ?? "");
-        }).catch((error: unknown) => { if (!controller.signal.aborted) { setItems([]); setSelectedId(""); setListError(exchangeErrorMessage(error, "contracts")); } })
+          setSelectedId((id) => data.instruments.some((item) => item.id === id) || retainSelection.current ? id : data.instruments[0]?.id ?? "");
+        }).catch((error: unknown) => { if (!controller.signal.aborted) { setItems([]); setSelectedId((id) => retainSelection.current ? id : ""); setListError(exchangeErrorMessage(error, "contracts")); } })
         .finally(() => { if (!controller.signal.aborted) setListLoading(false); });
     }, 200);
     return () => { controller.abort(); window.clearTimeout(timer); };
@@ -317,7 +329,10 @@ export function DerivativesWorkspace(): React.JSX.Element {
 
 
   useEffect(() => {
-    if (blocked || !selectedId) return;
+    /* A search edit invalidates the visible selection immediately. Polling the
+       old contract while the list reconciles would show a quote for a row the
+       user can no longer see, and an expired local position has no live quote. */
+    if (blocked || listLoading || focusedExpired || !selectedId) return;
     let disposed = false;
     let inFlight = false;
     let retryTimer = 0;
@@ -360,9 +375,11 @@ export function DerivativesWorkspace(): React.JSX.Element {
       window.clearTimeout(retryTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [selectedId, revision, blocked]);
+  }, [selectedId, revision, blocked, listLoading, focusedExpired]);
 
-  function select(id: string): void {
+  function select(id: string, focus: DerivativesPosition | null = null): void {
+    retainSelection.current = focus !== null;
+    setPositionFocus(focus);
     if (id === selectedId) return;
     setSelectedId(id); setMarket(null); setMarketError(null); setBars([]); setCandleError(null);
     setMaximumPrice(""); setQuantity(""); setNotice(null);
@@ -439,13 +456,21 @@ export function DerivativesWorkspace(): React.JSX.Element {
       setChainKey(null);
       setSide("long"); setLeverage("1"); setAction("open");
     }
+    // A search term could hide the selected contract; ledger navigation always
+    // shows the unfiltered venue listing.
+    if (query !== "") { setQuery(""); setListLoading(true); }
+    if (derivativePositionIsExpired(position, Date.now())) {
+      // Drop a quote that belonged to this instrument before it expired; the
+      // frozen view must come from the ledger, not a stale live response.
+      setMarket(null); setMarketError(null); setBars([]); setCandleError(null);
+    }
     if (position.kind === "option" && position.expiry !== null) {
       const nativeId = position.instrumentId.split(":").slice(2).join(":");
       const base = nativeId.split(/[-_]/, 1)[0];
       const settlement = settle ?? account?.settle;
       if (base && settlement) setChainKey(`${position.expiry}:${base}:${settlement}`);
     }
-    select(position.instrumentId);
+    select(position.instrumentId, position);
   }
   function beginClose(position: DerivativesPosition): void {
     // Pre-fill the exact position terms so a close is ready after its own quote loads.
@@ -505,7 +530,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const optionQuoteError = currentOptionQuoteData?.error ?? null;
 
   useEffect(() => {
-    if (blocked || kind !== "option" || optionQuoteIds.length === 0) return;
+    if (blocked || listLoading || focusedExpired || kind !== "option" || optionQuoteIds.length === 0) return;
     let disposed = false;
     let inFlight = false;
     let retryTimer = 0;
@@ -568,7 +593,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
       window.clearTimeout(retryTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [blocked, kind, optionQuoteIds, optionQuoteKey, revision]);
+  }, [blocked, kind, optionQuoteIds, optionQuoteKey, revision, listLoading, focusedExpired]);
   const marketVenues = [...new Set(items.map((item) => item.venue))]
     .map((venue) => venue === "okx" ? "OKX" : "Deribit")
     .join(" + ");
@@ -695,7 +720,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
           <span className="num">{blocked ? "—" : listLoading ? "…" : String(items.length).padStart(2, "0")}</span>
         </div>
         <div className="p-2 border-b border-[var(--c-line)]">
-          <AkInput aria-label="Search derivatives" placeholder="Search contracts" value={query} disabled={busy || blocked} onChange={(event) => { setListLoading(true); setListError(null); setQuery(event.target.value); }} />
+          <AkInput aria-label="Search derivatives" placeholder="Search contracts" value={query} disabled={busy || blocked} onChange={(event) => { setPositionFocus(null); retainSelection.current = false; setListLoading(true); setListError(null); setQuery(event.target.value); }} />
         </div>
         {!blocked && kind === "option" && chain.length > 0 && <div className="flex flex-wrap gap-1 p-2 border-b border-[var(--c-line)]" role="group" aria-label="Expiry and settlement">
           {chain.map((entry) => (
@@ -757,10 +782,27 @@ export function DerivativesWorkspace(): React.JSX.Element {
         <section className="derivatives-panel" aria-label="Contract market data">
           <div className="derivatives-panel-head">
             <span>Contract details</span>
-            <span className="num normal-case tracking-normal">{instrument ? instrument.id : "—"}</span>
+            <span className="num normal-case tracking-normal">{instrument ? instrument.id : focusedLocalOnly ? focusedLocalOnly.instrumentId : "—"}</span>
           </div>
-          {marketError && <div role="alert" className="m-3 space-y-2 text-[var(--c-down)] text-[11px]"><p>{marketError}</p><Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Retry quote</Button></div>}
-          {selectedId && !instrument && !marketError && (
+          {marketError && !focusedLocalOnly && <div role="alert" className="m-3 space-y-2 text-[var(--c-down)] text-[11px]"><p>{marketError}</p><Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Retry quote</Button></div>}
+          {focusedLocalOnly && (
+            <div className="derivatives-panel-body space-y-2">
+              <p role="status" className="derivatives-ticket-note alert">
+                {focusedExpired
+                  ? "This contract has expired. The venue no longer publishes its live metadata or quote; the local position is frozen awaiting official settlement."
+                  : "This contract is not in the current contract list. Only the locally stored position terms are shown; live quotes and candles are unavailable."}
+              </p>
+              <dl className="derivatives-context">
+                <div className="kv"><dt>Position</dt><dd>{focusedLocalOnly.side} · {focusedLocalOnly.quantity} contracts</dd></div>
+                <div className="kv"><dt>Contract size</dt><dd>{focusedLocalOnly.contractSize}</dd></div>
+                <div className="kv"><dt>Entry price</dt><dd>{focusedLocalOnly.entryPrice}</dd></div>
+                <div className="kv"><dt>Margin</dt><dd>{focusedLocalOnly.margin} · {focusedLocalOnly.leverage}x</dd></div>
+                <div className="kv"><dt>Expiry</dt><dd>{focusedLocalOnly.expiry === null ? "Perpetual" : derivativeDate(focusedLocalOnly.expiry)}</dd></div>
+                <div className="kv"><dt>Status</dt><dd>{focusedExpired ? "Frozen · awaiting official settlement" : "Local ledger only · not traded"}</dd></div>
+              </dl>
+            </div>
+          )}
+          {selectedId && !instrument && !marketError && !focusedLocalOnly && (
             <div className="derivatives-panel-body py-3 space-y-3 opacity-50 animate-pulse">
               <div className="flex flex-wrap gap-x-6 gap-y-2">
                 <div className="flex flex-col gap-1"><span className="meta">Contract size</span><span className="w-16 h-3.5 bg-[var(--c-surface-3)] rounded-[2px]" /></div>
@@ -796,6 +838,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
           <div className="derivatives-panel-head"><span>Price history · 1h</span><span className="num">{bars.length || "—"}</span></div>
           <div className="derivatives-panel-body">
             {blocked ? <p className="text-[var(--c-fg-4)] text-[11px]">Live history is hidden while Paper is disabled.</p>
+              : focusedLocalOnly ? <p className="text-[var(--c-fg-4)] text-[11px]">Live price history is unavailable because this contract is not in the current contract list.</p>
               : kind === "option" ? <p className="text-[var(--c-fg-4)] text-[11px]">Option candles are not supported. Use the native quote and contract details above.</p>
                 : candleError ? <p role="status" className="text-[var(--c-fg-4)] text-[11px]">{candleError}</p>
                   : bars.length ? <CandleSeries bars={bars} />
@@ -872,7 +915,11 @@ export function DerivativesWorkspace(): React.JSX.Element {
                     <span>ORDER ENTRY PAUSED</span>
                   </div>
                   <p role="status" className="derivatives-ticket-note alert m-0 text-[11px] leading-relaxed">
-                    {listLoading ? "Contract search pending. Paper actions are paused until the filtered contracts load." : "Order entry is paused until exchange metadata and a fresh quote are available. Existing balances, positions, and history remain readable in the local ledger."}
+                    {focusedLocalOnly
+                      ? focusedExpired
+                        ? "This contract has expired. The local position is frozen awaiting official settlement and cannot be traded."
+                        : "This contract is not in the current contract list. The local position remains readable, but no live metadata or quote is available for Paper execution."
+                      : listLoading ? "Contract search pending. Paper actions are paused until the filtered contracts load." : "Order entry is paused until exchange metadata and a fresh quote are available. Existing balances, positions, and history remain readable in the local ledger."}
                   </p>
                 </div>
                 <div className="p-3 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1 font-mono text-[10px]">

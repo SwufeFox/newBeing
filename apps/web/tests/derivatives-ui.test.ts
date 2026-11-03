@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DerivativeInstrument } from "@newbeing/market-data/derivatives";
-import { derivativeOptionChain, derivativeQuoteSnapshotIsStale } from "../src/lib/derivatives-ui.js";
+import { derivativeOptionChain, derivativePositionIsExpired, derivativeQuoteSnapshotIsStale } from "../src/lib/derivatives-ui.js";
 
 function option(settle: "BTC" | "USDC", right: "call" | "put"): DerivativeInstrument {
   const linear = settle === "USDC";
@@ -35,5 +35,14 @@ describe("derivative option-chain grouping", () => {
     expect(derivativeQuoteSnapshotIsStale({ timestamp: 100_000 }, 100_000)).toBe(false);
     expect(derivativeQuoteSnapshotIsStale({ timestamp: 106_000 }, 100_000)).toBe(true);
     expect(derivativeQuoteSnapshotIsStale(null, 100_000)).toBe(true);
+  });
+
+  it("freezes positions only at a finite expiry boundary", () => {
+    expect(derivativePositionIsExpired({ expiry: 1_000 }, 1_000)).toBe(true);
+    expect(derivativePositionIsExpired({ expiry: 1_000 }, 1_001)).toBe(true);
+    expect(derivativePositionIsExpired({ expiry: 1_001 }, 1_000)).toBe(false);
+    expect(derivativePositionIsExpired({ expiry: null }, 1_000)).toBe(false);
+    expect(derivativePositionIsExpired({ expiry: Number.NaN }, 1_000)).toBe(false);
+    expect(derivativePositionIsExpired({ expiry: 1_000 }, Number.NaN)).toBe(false);
   });
 });

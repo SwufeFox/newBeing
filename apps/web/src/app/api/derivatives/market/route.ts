@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   instrumentId: derivativeIdSchema,
   timeframe: derivativeTimeframeSchema.default("1h"),
-  limit: z.coerce.number().int().min(1).max(500).default(150),
+  limit: z.coerce.number().int().min(1).max(300).default(150),
 });
 export async function GET(request: Request) {
   const blocked = derivativeReplayRejection();

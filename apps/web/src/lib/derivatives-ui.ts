@@ -22,6 +22,14 @@ export function derivativeBlockReason(instrument: DerivativeInstrument | null, q
   return null;
 }
 
+/** An expired position is frozen awaiting official settlement, never closed or priced. */
+export function derivativePositionIsExpired(
+  position: { expiry: number | null },
+  now: number,
+): boolean {
+  return position.expiry !== null && Number.isFinite(position.expiry) && Number.isFinite(now) && position.expiry <= now;
+}
+
 /** Display-only mark estimate with the engine's loss-cap semantics; never settlement. */
 export function derivativeUnrealized(
   position: { kind: string; side: string; quantity: string; contractSize: string; entryPrice: string; margin: string; expiry: number | null },

@@ -123,8 +123,10 @@ test("search keeps Paper actions paused until delayed contract results reconcile
     await route.continue();
   });
   let orderPosts = 0;
+  let marketPolls = 0;
   page.on("request", (requestEvent) => {
     if (requestEvent.method() === "POST" && new URL(requestEvent.url()).pathname === "/api/derivatives/account") orderPosts += 1;
+    if (requestEvent.method() === "GET" && new URL(requestEvent.url()).pathname === "/api/derivatives/market") marketPolls += 1;
   });
 
   await page.goto("/");
@@ -149,6 +151,10 @@ test("search keeps Paper actions paused until delayed contract results reconcile
   await expect(submit).toHaveCount(0);
   await expect.poll(() => intercepted.has("261225")).toBe(true);
   expect(orderPosts).toBe(0);
+  const pollsWhilePending = marketPolls;
+  // The old selection polled every five seconds; a pending search must hold it.
+  await page.waitForTimeout(5_500);
+  expect(marketPolls).toBe(pollsWhilePending);
   releases.get("261225")?.();
   await expect(contractDetails).toContainText("okx:future:BTC-USDT-261225");
   await expect(page.getByRole("button", { name: /BTC-USDT-261225/ })).toHaveAttribute("aria-current", "true");

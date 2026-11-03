@@ -26,7 +26,7 @@ Contract margin is an explicit local isolated Paper model, with leverage limited
 
 The live funding rate is market information. It is **not** a historical funding ledger and is not silently applied to Paper balances. The model does not claim to reproduce exchange maintenance tiers, insurance funds, automatic deleveraging or an exchange liquidation engine. Margin exhaustion must be treated as a local account warning, not proof that a real leveraged position would survive.
 
-Expired products cannot open new positions. A position awaiting official settlement stays identifiable; the last traded price, a current index and a zero premium are not interchangeable with an official delivery or exercise settlement. The current model freezes such positions pending official settlement rather than inventing a cash transfer.
+Expired products cannot open new positions. A position awaiting official settlement stays identifiable; its locally stored terms remain inspectable from the ledger even after the venue stops listing the contract. The last traded price, a current index and a zero premium are not interchangeable with an official delivery or exercise settlement. The current model freezes such positions pending official settlement rather than inventing a cash transfer.
 
 ## Research and Replay
 

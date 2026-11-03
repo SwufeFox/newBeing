@@ -97,10 +97,9 @@ function isPaperPortfolio(value: unknown): value is PaperPortfolio {
 }
 
 
-function PaperPositions({ symbol, exchange }: { symbol: string; exchange: ExchangeId }): React.JSX.Element {
+function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: string; exchange: ExchangeId; markPrice: number | null; quoteStale: boolean }): React.JSX.Element {
   const [payload, setPayload] = useState<PaperPayload | null>(null);
-  const [price, setPrice] = useState<number | null>(null);
-  const [stale, setStale] = useState(false);
+  const [accountStale, setAccountStale] = useState(false);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [closeNeedsRefresh, setCloseNeedsRefresh] = useState(false);
@@ -112,29 +111,26 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
     const refresh = async (): Promise<void> => {
       const refreshAttempt = closeAttemptRef.current;
       try {
-        const [accountResponse, tickerResponse] = await Promise.all([
-          fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" }),
-          fetch(`/api/market?kind=summary&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" }),
-        ]);
+        /* The terminal already polls this symbol's quote; reuse it instead of
+           issuing a second upstream ticker request every eight seconds. */
+        const accountResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
         const account: unknown = await accountResponse.json();
-        const ticker: unknown = await tickerResponse.json();
         if (disposed || refreshAttempt !== closeAttemptRef.current || closeInFlightRef.current) return;
         if (!accountResponse.ok || typeof account !== "object" || account === null || !("portfolio" in account) || !("orders" in account)) throw new Error("Paper account unavailable.");
         const freshPayload = account as PaperPayload;
         setPayload(freshPayload);
         if (!freshPayload.orders.some((order) => order.status === "created" || order.status === "submitted" || order.status === "unknown")) closeClientOrderIdRef.current = null;
         setCloseNeedsRefresh(false);
-        const tickerValid = tickerResponse.ok && typeof ticker === "object" && ticker !== null && "last" in ticker && typeof ticker.last === "number";
-        if (tickerValid) setPrice((ticker as { last: number }).last);
-        setStale(!tickerValid);
+        setAccountStale(false);
       } catch {
-        if (!disposed && refreshAttempt === closeAttemptRef.current) setStale(true);
+        if (!disposed && refreshAttempt === closeAttemptRef.current) setAccountStale(true);
       }
     };
     void refresh();
     const timer = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, 8_000);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [symbol, exchange]);
+  const stale = accountStale || quoteStale;
 
   if (!payload) {
     return (
@@ -254,8 +250,8 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
   };
 
   const { portfolio } = payload;
-  const unrealized = portfolio.averageEntryPrice !== null && price !== null && Number.isFinite(price) && Number.isFinite(portfolio.averageEntryPrice)
-    ? (price - portfolio.averageEntryPrice) * portfolio.baseBalance
+  const unrealized = portfolio.averageEntryPrice !== null && markPrice !== null && Number.isFinite(markPrice) && Number.isFinite(portfolio.averageEntryPrice)
+    ? (markPrice - portfolio.averageEntryPrice) * portfolio.baseBalance
     : 0;
   const quoteCurrency = symbol.split("/")[1] ?? "USDT";
   const hasUnresolvedPaperOrder = payload.orders.some((order) => order.status === "created" || order.status === "submitted" || order.status === "unknown");
@@ -294,7 +290,7 @@ function PaperPositions({ symbol, exchange }: { symbol: string; exchange: Exchan
               </td>
               <td className="p-2 font-mono tabular-nums">{portfolio.baseBalance.toFixed(5)}</td>
               <td className="p-2 font-mono tabular-nums">{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
-              <td className="p-2 font-mono tabular-nums">{price?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+              <td className="p-2 font-mono tabular-nums">{markPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
               <td className={`p-2 font-mono tabular-nums font-bold ${unrealized >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                 {money(unrealized, quoteCurrency)}
               </td>
@@ -918,6 +914,8 @@ export const BottomDock = memo(function BottomDock({
   replayPortfolio = null,
   replayOrders = [],
   workspace = "terminal",
+  markPrice = null,
+  quoteStale = false,
   onStartReplay,
   replayBusy = false,
   replayError = null,
@@ -927,6 +925,8 @@ export const BottomDock = memo(function BottomDock({
   replaySession?: ReplaySession | null;
   replayPortfolio?: PaperPortfolio | null;
   replayOrders?: PaperOrder[];
+  markPrice?: number | null;
+  quoteStale?: boolean;
   onStartReplay: (result: BacktestResult) => void;
   replayBusy?: boolean;
   replayError?: string | null;
@@ -944,7 +944,9 @@ export const BottomDock = memo(function BottomDock({
   const [historyPanelVisited, setHistoryPanelVisited] = useState(false);
   const showBacktestPanel = workspace === "research" && activeTab === "backtest";
   const showHistoryPanel = workspace === "research" && activeTab === "history";
-  const shouldPollPaper = workspace === "terminal" || (workspace === "research" && activeTab === "logs");
+  /* The Positions tab owns its own account poll. Only the Orders/Logs views
+     need this dock-level snapshot, so an idle tab must not request it too. */
+  const shouldPollPaper = (workspace === "terminal" && activeTab === "orders") || (workspace === "research" && activeTab === "logs");
   const openStrategy = useCallback(() => setInspectorTab("strategy"), [setInspectorTab]);
 
 
@@ -1067,13 +1069,15 @@ export const BottomDock = memo(function BottomDock({
 
       <div className="dock-content flex-1 overflow-auto min-h-0">
         {activeTab === "positions" && (workspace === "terminal" || workspace === "replay") && (
-          replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} />
+          replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} markPrice={markPrice} quoteStale={quoteStale} />
         )}
         {activeTab === "orders" && (
           replayMode ? <OrdersTable orders={replayOrders} /> : paperError && !paper ? (
             <div className="empty-state p-6 text-center text-xs text-[var(--ak-signal-danger)]"><AlertCircle size={18} className="mx-auto mb-2" /><strong>Orders unavailable</strong><span>{paperError}</span></div>
+          ) : paper === null ? (
+            <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><strong>Loading Paper orders…</strong><span>The local account snapshot is being read.</span></div>
           ) : (
-            <OrdersTable orders={paper?.orders ?? []} />
+            <OrdersTable orders={paper.orders} />
           )
         )}
         {activeTab === "history" && workspace === "research" && replayMode && (

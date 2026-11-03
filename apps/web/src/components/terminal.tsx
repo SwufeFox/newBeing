@@ -151,21 +151,29 @@ function useSummary(symbol: string, exchange: WorkspaceState["exchange"], enable
   useEffect(() => {
     if (!enabled) return;
     let disposed = false;
+    let inFlight = false;
+    const controller = new AbortController();
     const refresh = async (): Promise<void> => {
+      /* A slow venue response must not stack five-second polls; the older reply
+         would otherwise land after a newer one and roll the quote backwards. */
+      if (inFlight || disposed) return;
+      inFlight = true;
       try {
-        const response = await fetch(`/api/market?kind=summary&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+        const response = await fetch(`/api/market?kind=summary&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store", signal: controller.signal });
         const payload: unknown = await response.json();
         if (!response.ok) throw new Error(`${exchange} ticker unavailable.`);
         const parsed = parseSummary(payload);
         if (!parsed) throw new Error("Invalid market summary.");
         if (!disposed) setSnapshot({ key, summary: parsed, error: null });
       } catch (reason) {
-        if (!disposed) setSnapshot((current) => ({ key, summary: current?.key === key ? current.summary : null, error: reason instanceof Error ? reason.message : "Market summary unavailable." }));
+        if (!disposed && !controller.signal.aborted) setSnapshot((current) => ({ key, summary: current?.key === key ? current.summary : null, error: reason instanceof Error ? reason.message : "Market summary unavailable." }));
+      } finally {
+        inFlight = false;
       }
     };
     void refresh();
     const timer = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, exchange === "binance" ? 5_000 : 15_000);
-    return () => { disposed = true; window.clearInterval(timer); };
+    return () => { disposed = true; controller.abort(); window.clearInterval(timer); };
   }, [symbol, exchange, enabled, key, retryToken]);
 
   return {
@@ -1509,6 +1517,8 @@ export function Terminal(): React.JSX.Element {
                 onStartReplay={(backtest) => void startReplayFromBacktest(backtest)}
                 replayBusy={replayBusy}
                 replayError={replayError}
+                markPrice={typeof summary?.last === "number" && Number.isFinite(summary.last) ? summary.last : null}
+                quoteStale={Boolean(summaryError)}
               />
             </div>
           </div>
