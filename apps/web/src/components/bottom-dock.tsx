@@ -942,8 +942,16 @@ export const BottomDock = memo(function BottomDock({
   const activeTab = (allowedTabs as readonly string[]).includes(tab) ? tab : allowedTabs[0];
   const [backtestPanelVisited, setBacktestPanelVisited] = useState(false);
   const [historyPanelVisited, setHistoryPanelVisited] = useState(false);
+  const [sweepPanelVisited, setSweepPanelVisited] = useState(false);
+  const [evaluationPanelVisited, setEvaluationPanelVisited] = useState(false);
   const showBacktestPanel = workspace === "research" && activeTab === "backtest";
   const showHistoryPanel = workspace === "research" && activeTab === "history";
+  const showSweepPanel = workspace === "research" && activeTab === "sweep" && !replayMode;
+  const showEvaluationPanel = workspace === "research" && activeTab === "evaluate" && !replayMode;
+  /* Latch after first visit: the panels keep their typed inputs and saved list
+     state instead of refetching every time the user flips tabs. */
+  if (showSweepPanel && !sweepPanelVisited) setSweepPanelVisited(true);
+  if (showEvaluationPanel && !evaluationPanelVisited) setEvaluationPanelVisited(true);
   /* The Positions tab owns its own account poll. Only the Orders/Logs views
      need this dock-level snapshot, so an idle tab must not request it too. */
   const shouldPollPaper = (workspace === "terminal" && activeTab === "orders") || (workspace === "research" && activeTab === "logs");
@@ -1096,19 +1104,21 @@ export const BottomDock = memo(function BottomDock({
             <BacktestView result={result} selectionRequestRef={selectionRequestRef} onOpenStrategy={openStrategy} onStartReplay={onStartReplay} replayBusy={replayBusy} replayError={replayError} />
           </div>
         )}
-        {activeTab === "sweep" && workspace === "research" && (
-          replayMode ? (
-            <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Saved sweeps hidden during Replay</strong><span>Saved sweep history and new sweeps are hidden to avoid future-derived results.</span></div>
-          ) : (
-            <SweepPanel symbol={symbol} timeframe={timeframe} exchange={exchange} strategyId={STRATEGIES.find((s) => s.id === selectedStrategyId)?.id ?? selectedStrategyId} parameters={strategyParameters} config={config} />
-          )
+        {activeTab === "sweep" && workspace === "research" && replayMode && (
+          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Saved sweeps hidden during Replay</strong><span>Saved sweep history and new sweeps are hidden to avoid future-derived results.</span></div>
         )}
-        {activeTab === "evaluate" && workspace === "research" && (
-          replayMode ? (
-            <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Evaluations suppressed during replay</strong><span>The holdout window is future data.</span></div>
-          ) : (
+        {workspace === "research" && !replayMode && (sweepPanelVisited || showSweepPanel) && (
+          <div hidden={!showSweepPanel}>
+            <SweepPanel symbol={symbol} timeframe={timeframe} exchange={exchange} strategyId={STRATEGIES.find((s) => s.id === selectedStrategyId)?.id ?? selectedStrategyId} parameters={strategyParameters} config={config} />
+          </div>
+        )}
+        {activeTab === "evaluate" && workspace === "research" && replayMode && (
+          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>Evaluations suppressed during replay</strong><span>The holdout window is future data.</span></div>
+        )}
+        {workspace === "research" && !replayMode && (evaluationPanelVisited || showEvaluationPanel) && (
+          <div hidden={!showEvaluationPanel}>
             <EvaluationPanel symbol={symbol} timeframe={timeframe} exchange={exchange} />
-          )
+          </div>
         )}
         {activeTab === "logs" && workspace === "research" && (
           <div className="execution-log p-3 font-mono text-xs space-y-1.5">

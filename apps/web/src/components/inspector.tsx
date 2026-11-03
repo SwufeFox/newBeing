@@ -70,7 +70,7 @@ function parsePreviews(payload: unknown): OrderPreview[] {
   return payload.items as OrderPreview[];
 }
 
-function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange: ExchangeId; onPickPrice?: (price: number) => void }): React.JSX.Element {
+function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: string; exchange: ExchangeId; active?: boolean; onPickPrice?: (price: number) => void }): React.JSX.Element {
   const [book, setBook] = useState<OrderBookSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -81,6 +81,7 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
   const hasDataRef = useRef(false);
 
   useEffect(() => {
+    if (!active) return;
     hasDataRef.current = false;
     const refresh = async (): Promise<void> => {
       requestRef.current += 1;
@@ -114,7 +115,7 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
       controllerRef.current = null;
       window.clearInterval(interval);
     };
-  }, [symbol, exchange]);
+  }, [symbol, exchange, active]);
 
   const validAmounts = [...(book?.bids ?? []), ...(book?.asks ?? [])]
     .map((level) => level.amount)
@@ -232,7 +233,7 @@ function OrderBook({ symbol, exchange, onPickPrice }: { symbol: string; exchange
   );
 }
 
-function RecentTrades({ symbol, exchange, onPickPrice }: { symbol: string; exchange: ExchangeId; onPickPrice?: (price: number) => void }): React.JSX.Element {
+function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol: string; exchange: ExchangeId; active?: boolean; onPickPrice?: (price: number) => void }): React.JSX.Element {
   const [trades, setTrades] = useState<RecentTrade[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -243,6 +244,7 @@ function RecentTrades({ symbol, exchange, onPickPrice }: { symbol: string; excha
   const hasDataRef = useRef(false);
 
   useEffect(() => {
+    if (!active) return;
     hasDataRef.current = false;
     const refresh = async (): Promise<void> => {
       requestRef.current += 1;
@@ -275,7 +277,7 @@ function RecentTrades({ symbol, exchange, onPickPrice }: { symbol: string; excha
       controllerRef.current = null;
       window.clearInterval(interval);
     };
-  }, [symbol, exchange]);
+  }, [symbol, exchange, active]);
 
   return (
     <div className="recent-trades-panel bg-[var(--ak-surface-canvas)] p-2.5 font-mono text-xs">
@@ -1256,6 +1258,11 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
         : (["context"] as const);
   const offered = (replayMode ? (["context"] as const) : tabsForWorkspace) as readonly string[];
   const selectedTab: string = offered.includes(tab) ? tab : (offered[0] ?? "context");
+  /* Keep visited panels mounted (hidden) so switching back is instant and the
+     order book, editor, and ticket state survive the tab change. Book/trades
+     polling is paused while hidden instead of running in the background. */
+  const [visitedTabs, setVisitedTabs] = useState<readonly string[]>(() => [selectedTab]);
+  if (!visitedTabs.includes(selectedTab)) setVisitedTabs([...visitedTabs, selectedTab]);
 
   return (
     <aside className="inspector-panel h-full border-l border-[var(--ak-border-strong)]">
@@ -1292,10 +1299,10 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
         </TabsList>
 
         <div className={`overflow-auto min-h-0 ${selectedTab === "strategy" ? "flex-1" : ""}`}>
-          <TabsContent value="book"><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} onPickPrice={handlePickPrice} /></TabsContent>
-          <TabsContent value="trades"><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} onPickPrice={handlePickPrice} /></TabsContent>
-          <TabsContent value="strategy"><StrategyLab onRun={onRun} running={running} /></TabsContent>
-          <TabsContent value="context"><WorkspaceContext /></TabsContent>
+          {visitedTabs.includes("book") && <TabsContent value="book" forceMount><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "book"} onPickPrice={handlePickPrice} /></TabsContent>}
+          {visitedTabs.includes("trades") && <TabsContent value="trades" forceMount><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "trades"} onPickPrice={handlePickPrice} /></TabsContent>}
+          {visitedTabs.includes("strategy") && <TabsContent value="strategy" forceMount><StrategyLab onRun={onRun} running={running} active={selectedTab === "strategy"} /></TabsContent>}
+          {visitedTabs.includes("context") && <TabsContent value="context" forceMount><WorkspaceContext /></TabsContent>}
         </div>
       </Tabs>
 

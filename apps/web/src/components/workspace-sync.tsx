@@ -266,7 +266,10 @@ export function WorkspaceSync(): null {
         currentShared.selectedStrategyId === priorShared.selectedStrategyId && currentShared.activeBacktestId === priorShared.activeBacktestId &&
         currentShared.activeReplayId === priorShared.activeReplayId;
       clearTimeout(debounce);
-      if (isOnlyContinuous) debounce = setTimeout(() => void sendState(), 100);
+      /* Chart pan/zoom and splitter drags are view-only and arrive at pointer
+         rate. Coalesce them into one write after the user pauses instead of
+         hitting SQLite while the gesture is still moving. */
+      if (isOnlyContinuous) debounce = setTimeout(() => void sendState(), 400);
       else void sendState();
     });
 

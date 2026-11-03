@@ -21,6 +21,8 @@ const Monaco = dynamic(() => import("@monaco-editor/react"), {
 interface StrategyLabProps {
   onRun: () => void;
   running: boolean;
+  /** False while the panel is kept mounted but hidden behind another tab. */
+  active?: boolean;
 }
 
 function sourceFor(strategy: StrategyDefinition): string {
@@ -67,7 +69,7 @@ function loadStoredPresets(strategyId?: string): Array<{ name: string; params: S
   return [];
 }
 
-export const StrategyLab = memo(function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Element {
+export const StrategyLab = memo(function StrategyLab({ onRun, running, active = true }: StrategyLabProps): React.JSX.Element {
   const [strategyId, setStrategyId, savedDraft, saveDraft, params, setParams, theme, config, setConfig] = useWorkspaceStore(useShallow((state) => [
     state.selectedStrategyId,
     state.setStrategy,
@@ -205,6 +207,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
 
   // Global hotkey: Ctrl+S / Cmd+S to save draft
   useEffect(() => {
+    if (!active) return;
     const handleKeyDown = (event: KeyboardEvent): void => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -213,7 +216,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [active]);
 
   if (!strategy) return <div className="empty-panel p-4 font-mono text-xs">No built-in strategy is available.</div>;
 

@@ -1438,6 +1438,10 @@ input[type="number"] {
 }
 .dock-tabs .tab-trigger[data-state="active"] svg { opacity: 1; }
 
+/* Visited inspector panels are force-mounted to keep editor and scroll state.
+   Radix's forceMount leaves the hidden content laid out, so hide it by state. */
+.inspector-tabs [role="tabpanel"][data-state="inactive"] { display: none; }
+
 .inspector-tabs > [role="tabpanel"] {
   display: flex;
   flex-direction: column;

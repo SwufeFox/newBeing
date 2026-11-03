@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 import { DEFAULT_WORKSPACE_STATE, EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestConfig, type BacktestResult, type ExchangeId, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import { symbolForExchange } from "@/lib/exchanges";
 
@@ -49,6 +49,50 @@ export interface WorkspaceStore extends WorkspaceState {
 }
 
 const firstStrategy = STRATEGIES[0];
+
+/** Exactly the client-local slice written to localStorage. */
+type PersistedWorkspaceState = Pick<WorkspaceStore,
+  "symbol" | "timeframe" | "exchange" | "mode" | "activeWorkspace" | "selectedStrategyId" |
+  "activeBacktestId" | "activeReplayId" | "visibleRange" | "layout" | "theme" | "watchlist" |
+  "inspectorTab" | "dockTab" | "strategyParameters" | "backtestConfig" | "sourceDrafts" | "syncUpdatedAt">;
+
+/** Coalesce rapid store writes (chart pan, splitter drag, typing) so a pointer
+ *  gesture does not serialize and flush localStorage on every event. Pending
+ *  state is flushed when the page hides or unloads. */
+function createDeferredStorage<S>(): PersistStorage<S> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let pending: { name: string; value: StorageValue<S> } | null = null;
+  const flush = (): void => {
+    if (!pending) return;
+    const { name, value } = pending;
+    pending = null;
+    try { window.localStorage.setItem(name, JSON.stringify(value)); } catch { /* storage unavailable or full */ }
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(); });
+  }
+  return {
+    getItem: (name) => {
+      if (typeof window === "undefined") return null;
+      try {
+        const raw = window.localStorage.getItem(name);
+        return raw ? JSON.parse(raw) as StorageValue<S> : null;
+      } catch { return null; }
+    },
+    setItem: (name, value) => {
+      pending = { name, value };
+      if (timer === undefined) {
+        timer = setTimeout(() => { timer = undefined; flush(); }, 250);
+      }
+    },
+    removeItem: (name) => {
+      pending = null;
+      if (timer !== undefined) { clearTimeout(timer); timer = undefined; }
+      if (typeof window !== "undefined") window.localStorage.removeItem(name);
+    },
+  };
+}
 
 export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   ...DEFAULT_WORKSPACE_STATE,
@@ -133,7 +177,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   }),
 }), {
   name: "newbeing-workspace-v1",
-  storage: createJSONStorage(() => localStorage),
+  storage: createDeferredStorage<PersistedWorkspaceState>(),
   skipHydration: true,
   version: 3,
   migrate: (persisted) => {
@@ -151,7 +195,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
       layout: { watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 },
     } as unknown as WorkspaceStore;
   },
-  partialize: (state) => ({
+  partialize: (state): PersistedWorkspaceState => ({
     symbol: state.symbol,
     timeframe: state.timeframe,
     exchange: state.exchange,

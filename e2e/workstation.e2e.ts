@@ -347,6 +347,32 @@ test("theme toggle reuses the chart without refetching candles", async ({ page }
   await expect(canvas).toBeVisible();
 });
 
+test("kept-alive inspector tabs pause hidden polling and reopen with data", async ({ page }) => {
+  await installApiMocks(page);
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Order book", exact: true }).click();
+  const book = page.locator(".orderbook-panel");
+  await expect(book).toBeVisible();
+  await expect(book).toContainText("PRICE (USDT)");
+
+  let bookRequests = 0;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/market" && url.searchParams.get("kind") === "book") bookRequests += 1;
+  });
+  await page.getByRole("tab", { name: "AI context", exact: true }).click();
+  await expect(book).toBeHidden();
+  const settled = bookRequests;
+  // The order book polls every three seconds; a hidden panel must not keep doing so.
+  await page.waitForTimeout(3_400);
+  expect(bookRequests).toBe(settled);
+
+  await page.getByRole("tab", { name: "Order book", exact: true }).click();
+  await expect(book).toBeVisible();
+  await expect(book).toContainText("PRICE (USDT)");
+  await expect(page.getByText("Loading public depth…")).toHaveCount(0);
+});
+
 test("state-changing APIs reject rebinding hosts and cross-origin writes", async ({ request, baseURL }) => {
   test.skip(process.env.PLAYWRIGHT_API_STUBS === "1", "This local UI-only run stubs all APIs; CI verifies the real proxy guard.");
   if (!baseURL) throw new Error("Playwright baseURL is not configured.");

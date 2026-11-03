@@ -23,6 +23,7 @@ import {
 import { MarketChart } from "@/components/market-chart";
 import { BottomDock } from "@/components/bottom-dock";
 import { Inspector } from "@/components/inspector";
+import { loader } from "@monaco-editor/react";
 import { ReplayControls } from "@/components/replay-controls";
 import { Watchlist } from "@/components/watchlist";
 import { Decoded } from "@/components/decoded";
@@ -673,6 +674,20 @@ export function Terminal(): React.JSX.Element {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  /* The strategy tab mounts Monaco on first visit. Warming the local editor
+     bundle while the browser is idle keeps that first tab switch from paying
+     the parse/init cost on the click. */
+  useEffect(() => {
+    let cancelled = false;
+    const start = (): void => { if (!cancelled) void loader.init().catch(() => undefined); };
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(start, { timeout: 3_000 });
+      return () => { cancelled = true; window.cancelIdleCallback(id); };
+    }
+    const id = window.setTimeout(start, 1_500);
+    return () => { cancelled = true; window.clearTimeout(id); };
+  }, []);
 
   const setPage = useCallback((next: WorkspaceState["activeWorkspace"]): void => {
     setMobileRailOpen(false);
