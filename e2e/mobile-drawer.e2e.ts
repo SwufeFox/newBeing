@@ -17,16 +17,20 @@ test("mobile drawer opens the watchlist over the layout and closes", async ({ pa
   const drawer = page.locator(".left-rail");
   await expect(drawer).toBeVisible();
   await expect(drawer.locator(".watchlist-panel")).toBeVisible();
+  // Focus moves into the drawer on open and returns to the toggle on close.
+  await expect(drawer.getByRole("button", { name: "Close list drawer" })).toBeFocused();
   const dimensions = await page.evaluate(() => ({ viewportWidth: window.innerWidth, documentWidth: document.documentElement.scrollWidth }));
   expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
 
   await page.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
+  await expect(toggle).toBeFocused();
 
   await toggle.click();
   await expect(drawer).toBeVisible();
   await page.locator(".mobile-rail-backdrop").click({ position: { x: 370, y: 400 } });
   await expect(drawer).toBeHidden();
+  await expect(toggle).toBeFocused();
 });
 
 test("mobile drawer exposes the research rail in Research", async ({ page }) => {
@@ -43,6 +47,8 @@ test("mobile drawer exposes the research rail in Research", async ({ page }) => 
   const drawer = page.locator(".primary-rail");
   await expect(drawer).toBeVisible();
   await expect(drawer).toContainText("RESEARCH · WORKSPACE");
+  await expect(drawer.getByRole("button", { name: "Close list drawer" })).toBeFocused();
   await drawer.getByRole("button", { name: "Close list drawer" }).click();
   await expect(drawer).toBeHidden();
+  await expect(toggle).toBeFocused();
 });

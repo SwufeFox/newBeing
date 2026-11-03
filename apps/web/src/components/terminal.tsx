@@ -698,6 +698,10 @@ export function Terminal(): React.JSX.Element {
     return () => { cancelled = true; window.clearTimeout(id); };
   }, []);
 
+  const mobileRailCloseRef = useRef<HTMLButtonElement | null>(null);
+  const mobileRailReturnFocus = useRef<HTMLElement | null>(null);
+  const mobileRailWasOpen = useRef(false);
+
   const setPage = useCallback((next: WorkspaceState["activeWorkspace"]): void => {
     setMobileRailOpen(false);
     if (next !== "replay") setReplayPlaying(false);
@@ -721,8 +725,25 @@ export function Terminal(): React.JSX.Element {
   // when the sidebar collapses; React re-renders before committing.
   if (showResearchRail && !researchRailVisited) setResearchRailVisited(true);
   if (showsWatchlist && !watchlistVisited) setWatchlistVisited(true);
+
   const mobileWatchlistOpen = mobileRailOpen && workspace === "terminal";
   const mobileResearchOpen = mobileRailOpen && workspace === "research";
+
+  /* The mobile rail behaves like a dialog: focus enters it when it opens and
+     returns to the toggle when it closes, so keyboard and screen-reader users
+     are not left at the document body after a drawer interaction. */
+  useEffect(() => {
+    const open = mobileWatchlistOpen || mobileResearchOpen;
+    if (open && !mobileRailWasOpen.current) {
+      mobileRailReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      mobileRailCloseRef.current?.focus();
+    }
+    if (!open && mobileRailWasOpen.current) {
+      mobileRailReturnFocus.current?.focus();
+      mobileRailReturnFocus.current = null;
+    }
+    mobileRailWasOpen.current = open;
+  }, [mobileWatchlistOpen, mobileResearchOpen]);
   const watchlist = useWorkspaceStore((state) => state.watchlist);
   const runBacktestRef = useRef<() => void>(() => {});
 
@@ -1391,7 +1412,7 @@ export function Terminal(): React.JSX.Element {
           <div className={`primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs${mobileResearchOpen ? " is-mobile-open" : ""}`} aria-label="Active workspace" hidden={!showResearchRail && !mobileResearchOpen}>
             {mobileResearchOpen && <div className="mobile-rail-backdrop" onClick={() => setMobileRailOpen(false)} aria-hidden="true" />}
             {mobileResearchOpen && (
-              <button type="button" className="mobile-rail-close" aria-label="Close list drawer" onClick={() => setMobileRailOpen(false)}>
+              <button type="button" ref={mobileRailCloseRef} className="mobile-rail-close" aria-label="Close list drawer" onClick={() => setMobileRailOpen(false)}>
                 <PanelLeftClose size={13} /> Close
               </button>
             )}
@@ -1433,7 +1454,7 @@ export function Terminal(): React.JSX.Element {
               <div className={`left-rail${mobileWatchlistOpen ? " is-mobile-open" : ""}`} style={{ gridColumn: col.rail, gridRow: "1 / 4" }} hidden={!showsWatchlist && !mobileWatchlistOpen}>
                 {mobileWatchlistOpen && <div className="mobile-rail-backdrop" onClick={() => setMobileRailOpen(false)} aria-hidden="true" />}
                 {mobileWatchlistOpen && (
-                  <button type="button" className="mobile-rail-close" aria-label="Close list drawer" onClick={() => setMobileRailOpen(false)}>
+                  <button type="button" ref={mobileRailCloseRef} className="mobile-rail-close" aria-label="Close list drawer" onClick={() => setMobileRailOpen(false)}>
                     <PanelLeftClose size={13} /> Close
                   </button>
                 )}
