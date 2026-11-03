@@ -5,12 +5,10 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 import { DEFAULT_WORKSPACE_STATE, EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestConfig, type BacktestResult, type ExchangeId, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import { symbolForExchange } from "@/lib/exchanges";
 
-export type ThemeMode = "dark" | "light";
 export type InspectorTab = "watchlist" | "book" | "trades" | "strategy" | "context";
 export type DockTab = "positions" | "orders" | "history" | "backtest" | "sweep" | "evaluate" | "logs";
 
 export interface WorkspaceStore extends WorkspaceState {
-  theme: ThemeMode;
   watchlist: string[];
   inspectorTab: InspectorTab;
   dockTab: DockTab;
@@ -31,7 +29,6 @@ export interface WorkspaceStore extends WorkspaceState {
   setWorkspace: (activeWorkspace: WorkspaceState["activeWorkspace"]) => void;
   setInspectorTab: (inspectorTab: InspectorTab) => void;
   setDockTab: (dockTab: DockTab) => void;
-  setTheme: (theme: ThemeMode) => void;
   setLayout: (layout: WorkspaceState["layout"]) => void;
   setVisibleRange: (visibleRange: WorkspaceState["visibleRange"]) => void;
   setStrategy: (strategyId: string, parameters: StrategyParameters) => void;
@@ -53,7 +50,7 @@ const firstStrategy = STRATEGIES[0];
 /** Exactly the client-local slice written to localStorage. */
 type PersistedWorkspaceState = Pick<WorkspaceStore,
   "symbol" | "timeframe" | "exchange" | "mode" | "activeWorkspace" | "selectedStrategyId" |
-  "activeBacktestId" | "activeReplayId" | "visibleRange" | "layout" | "theme" | "watchlist" |
+  "activeBacktestId" | "activeReplayId" | "visibleRange" | "layout" | "watchlist" |
   "inspectorTab" | "dockTab" | "strategyParameters" | "backtestConfig" | "sourceDrafts" | "syncUpdatedAt">;
 
 /** Coalesce rapid store writes (chart pan, splitter drag, typing) so a pointer
@@ -96,7 +93,6 @@ function createDeferredStorage<S>(): PersistStorage<S> {
 
 export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   ...DEFAULT_WORKSPACE_STATE,
-  theme: "dark",
   watchlist: ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT"],
   inspectorTab: "watchlist",
   dockTab: "backtest",
@@ -131,7 +127,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   setWorkspace: (activeWorkspace) => set({ activeWorkspace }),
   setInspectorTab: (inspectorTab) => set({ inspectorTab }),
   setDockTab: (dockTab) => set({ dockTab }),
-  setTheme: (theme) => set({ theme }),
   setLayout: (layout) => set({ layout }),
   setVisibleRange: (visibleRange) => set({ visibleRange }),
   setStrategy: (selectedStrategyId, strategyParameters) => set({ selectedStrategyId, strategyParameters }),
@@ -142,7 +137,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   setActiveReplayId: (activeReplayId) => set({ activeReplayId }),
   setFromRemote: (state, updatedAt) => set((current) => ({
     ...state,
-    theme: current.theme,
     /* The watchlist is client-only, but its pairs are not venue-neutral, so it
        is re-denominated whenever the incoming venue differs. Otherwise the list
        keeps quoting BTC/USDT after the app has switched to Kraken, and every
@@ -206,7 +200,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
     activeReplayId: state.activeReplayId,
     visibleRange: state.visibleRange,
     layout: state.layout,
-    theme: state.theme,
     watchlist: state.watchlist,
     inspectorTab: state.inspectorTab,
     dockTab: state.dockTab,

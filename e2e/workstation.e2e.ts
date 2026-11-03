@@ -324,29 +324,6 @@ test("workspace panels remain side-by-side on desktop and stack on mobile", asyn
   });
 });
 
-test("theme toggle reuses the chart without refetching candles", async ({ page }) => {
-  await installApiMocks(page);
-  let candleRequests = 0;
-  page.on("request", (request) => {
-    const url = new URL(request.url());
-    if (url.pathname === "/api/market" && url.searchParams.get("kind") === "candles") candleRequests += 1;
-  });
-  await page.goto("/");
-  await expect(page.getByTestId("market-chart")).toBeVisible();
-  await expect.poll(() => candleRequests).toBeGreaterThan(0);
-  const canvas = page.locator(".chart-canvas canvas").first();
-  await expect(canvas).toBeVisible();
-  const settledRequests = candleRequests;
-  const initialTheme = await page.locator("html").getAttribute("data-theme");
-  expect(initialTheme === "dark" || initialTheme === "light").toBe(true);
-
-  await page.getByRole("button", { name: "Toggle theme" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", initialTheme === "dark" ? "light" : "dark");
-  await page.waitForTimeout(750);
-  expect(candleRequests).toBe(settledRequests);
-  await expect(canvas).toBeVisible();
-});
-
 test("kept-alive inspector tabs pause hidden polling and reopen with data", async ({ page }) => {
   await installApiMocks(page);
   await page.goto("/");

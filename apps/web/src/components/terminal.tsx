@@ -9,11 +9,9 @@ import {
   HelpCircle,
   LayoutDashboard,
   LoaderCircle,
-  Moon,
   PanelLeft,
   PanelLeftClose,
   Search,
-  Sun,
   X,
   Radio,
   Sliders,
@@ -457,18 +455,33 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
 
 function DragHandle({ direction, onDelta, style }: { direction: "horizontal" | "vertical"; onDelta: (delta: number) => void; style?: React.CSSProperties }): React.JSX.Element {
   const start = useRef<{ x: number; y: number } | null>(null);
+  const pending = useRef<{ x: number; y: number } | null>(null);
+  const frame = useRef<number | null>(null);
+  /** Apply at most one layout commit per frame; pointermove can fire far more
+   *  often than the display refreshes and every commit re-renders the shell. */
+  const flush = (): void => {
+    frame.current = null;
+    const point = pending.current;
+    if (!point || !start.current) return;
+    const delta = direction === "horizontal" ? point.x - start.current.x : start.current.y - point.y;
+    start.current = { x: point.x, y: point.y };
+    pending.current = null;
+    if (delta !== 0) onDelta(delta);
+  };
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
     event.preventDefault();
     start.current = { x: event.clientX, y: event.clientY };
+    pending.current = null;
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (!start.current || (event.buttons & 1) === 0) return;
-    const delta = direction === "horizontal" ? event.clientX - start.current.x : start.current.y - event.clientY;
-    onDelta(delta);
-    start.current = { x: event.clientX, y: event.clientY };
+    pending.current = { x: event.clientX, y: event.clientY };
+    if (frame.current === null) frame.current = requestAnimationFrame(flush);
   };
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    flush();
     start.current = null;
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
@@ -639,8 +652,8 @@ export function Terminal(): React.JSX.Element {
   const retryReplaySync = useWorkspaceStore((state) => state.retryReplaySync);
   const workspaceReady = useWorkspaceStore((state) => state.workspaceReady);
   const exchange = useWorkspaceStore((state) => state.exchange);
-  const [workspace, setWorkspace, symbol, timeframe, theme, setTheme, layout, setLayout, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
-    state.activeWorkspace, state.setWorkspace, state.symbol, state.timeframe, state.theme, state.setTheme, state.layout, state.setLayout,
+  const [workspace, setWorkspace, symbol, timeframe, layout, setLayout, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
+    state.activeWorkspace, state.setWorkspace, state.symbol, state.timeframe, state.layout, state.setLayout,
     state.setVisibleRange, state.setBacktest, state.setDockTab, state.selectedStrategyId, state.strategyParameters, state.backtestConfig,
     state.activeReplayId, state.setActiveReplayId,
   ]));
@@ -1176,7 +1189,7 @@ export function Terminal(): React.JSX.Element {
     : layout.bottomHeight;
 
   return (
-    <div className={`application-shell mode-${workspace}`} data-ak-ui="system" data-theme={theme === "light" ? "light" : undefined}>
+    <div className={`application-shell mode-${workspace}`} data-ak-ui="system">
       <WorkspaceSync />
       {!workspaceReady ? (
         <div role="status" className="h-screen w-screen flex flex-col items-center justify-center bg-[var(--ak-surface-canvas)] font-mono text-xs text-[var(--ak-text-secondary)]">Loading local workspace…</div>
@@ -1294,9 +1307,6 @@ export function Terminal(): React.JSX.Element {
                 </Button>
                 <Button variant="ghost" size="icon" title="Terminal shortcuts [?]" aria-label="Terminal shortcuts" onClick={() => setShowHotkeys((prev) => !prev)}>
                   <HelpCircle size={13} />
-                </Button>
-                <Button variant="ghost" size="icon" title="Toggle theme" aria-label="Toggle theme" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-                  {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
                 </Button>
                 <Button variant="ghost" size="icon" title="Reset layout" aria-label="Reset layout" onClick={() => setLayout({ watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 })}>
                   <LayoutDashboard size={13} />

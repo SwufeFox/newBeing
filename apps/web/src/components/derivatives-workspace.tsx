@@ -164,28 +164,26 @@ const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): R
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const fittedRef = useRef(false);
-  const theme = useWorkspaceStore((state) => state.theme);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const dark = theme === "dark";
     const chart = createChart(container, {
       autoSize: false,
       width: container.clientWidth,
       height: container.clientHeight,
       layout: {
-        background: { type: ColorType.Solid, color: dark ? "#0d1117" : "#ffffff" },
-        textColor: dark ? "#8b949e" : "#64748b",
+        background: { type: ColorType.Solid, color: "#0d1117" },
+        textColor: "#8b949e",
         fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: dark ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
-        horzLines: { color: dark ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
+        vertLines: { color: "rgba(139,148,158,0.07)" },
+        horzLines: { color: "rgba(139,148,158,0.07)" },
       },
-      rightPriceScale: { borderColor: dark ? "rgba(139,148,158,0.18)" : "rgba(100,116,139,0.20)" },
-      timeScale: { borderColor: dark ? "rgba(139,148,158,0.18)" : "rgba(100,116,139,0.20)", timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: "rgba(139,148,158,0.18)" },
+      timeScale: { borderColor: "rgba(139,148,158,0.18)", timeVisible: true, secondsVisible: false },
     });
     const series = chart.addSeries(CandlestickSeries, {
       upColor: "#1fb180",
@@ -209,7 +207,7 @@ const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): R
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [theme]);
+  }, []);
 
   useEffect(() => {
     const uniqueBars = new Map<number, Candle>();
@@ -231,7 +229,7 @@ const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): R
       chartRef.current?.timeScale().fitContent();
       fittedRef.current = true;
     }
-  }, [bars, theme]);
+  }, [bars]);
 
   return <div ref={containerRef} className="h-48 w-full" role="img" aria-label="Contract OHLC candles, 1 hour" />;
 });

@@ -32,7 +32,6 @@ function timestamp(value: number): string {
 
 function EquityChart({ result }: { result: BacktestResult }): React.JSX.Element {
   const root = useRef<HTMLDivElement>(null);
-  const theme = useWorkspaceStore((state) => state.theme);
 
   useEffect(() => {
     const container = root.current;
@@ -41,8 +40,8 @@ function EquityChart({ result }: { result: BacktestResult }): React.JSX.Element 
       autoSize: false,
       width: container.clientWidth,
       height: container.clientHeight,
-      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: theme === "dark" ? "#87909a" : "#64748b", fontSize: 10 },
-      grid: { vertLines: { visible: false }, horzLines: { color: theme === "dark" ? "rgba(139,148,158,.08)" : "rgba(100,116,139,.12)" } },
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#87909a", fontSize: 10 },
+      grid: { vertLines: { visible: false }, horzLines: { color: "rgba(139,148,158,.08)" } },
       rightPriceScale: { borderVisible: false },
       timeScale: { visible: false, borderVisible: false },
       crosshair: { vertLine: { visible: false }, horzLine: { visible: false } },
@@ -64,7 +63,7 @@ function EquityChart({ result }: { result: BacktestResult }): React.JSX.Element 
     });
     observer.observe(container);
     return () => { observer.disconnect(); chart.remove(); };
-  }, [result, theme]);
+  }, [result]);
 
   return <div className="equity-chart w-full h-full" ref={root} />;
 }

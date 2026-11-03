@@ -53,14 +53,15 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [externalDrop, setExternalDrop] = useState(false);
   const gesture = useRef<{ pointerId: number; startY: number; active: boolean } | null>(null);
+  /** Row boxes captured when a drag starts; rows do not move until the drop
+   *  commits, so pointermove never has to force a layout read. */
+  const rowBoundsRef = useRef<Array<{ top: number; bottom: number }>>([]);
 
   /** Which row index sits under this viewport Y? */
   const indexAt = useCallback((clientY: number): number | null => {
-    const list = listRef.current;
-    if (!list) return null;
-    const rows = Array.from(list.querySelectorAll<HTMLElement>(".watch-row"));
-    for (let i = 0; i < rows.length; i += 1) {
-      const rect = rows[i]?.getBoundingClientRect();
+    const bounds = rowBoundsRef.current;
+    for (let i = 0; i < bounds.length; i += 1) {
+      const rect = bounds[i];
       if (rect && clientY >= rect.top && clientY <= rect.bottom) return i;
     }
     return null;
@@ -68,6 +69,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
 
   const endGesture = useCallback(() => {
     gesture.current = null;
+    rowBoundsRef.current = [];
     setDragFrom(null);
     setDragOver(null);
   }, []);
@@ -282,6 +284,11 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
                   if (disabled) return;
                   event.preventDefault();
                   gesture.current = { pointerId: event.pointerId, startY: event.clientY, active: false };
+                  const rows = listRef.current?.querySelectorAll<HTMLElement>(".watch-row") ?? [];
+                  rowBoundsRef.current = Array.from(rows, (row) => {
+                    const rect = row.getBoundingClientRect();
+                    return { top: rect.top, bottom: rect.bottom };
+                  });
                   setDragFrom(index);
                   setDragOver(index);
                 }}

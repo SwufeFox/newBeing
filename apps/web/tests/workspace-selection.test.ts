@@ -55,10 +55,10 @@ describe("Replay selection fencing", () => {
     expect(await pending).toBe(false);
   });
 
-  it("allows refresh only for the selected replay and ignores unrelated theme changes", () => {
+  it("allows refresh only for the selected replay and ignores unrelated watchlist edits", () => {
     useWorkspaceStore.getState().setActiveReplayId(session.id);
     const canApply = captureReplaySelection(session.id);
-    useWorkspaceStore.getState().setTheme("light");
+    useWorkspaceStore.getState().addWatchlistSymbol("DOGE/USDT");
     expect(canApply()).toBe(true);
     expect(captureReplaySelection("older-replay")()).toBe(false);
   });

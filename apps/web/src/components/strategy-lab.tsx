@@ -70,14 +70,13 @@ function loadStoredPresets(strategyId?: string): Array<{ name: string; params: S
 }
 
 export const StrategyLab = memo(function StrategyLab({ onRun, running, active = true }: StrategyLabProps): React.JSX.Element {
-  const [strategyId, setStrategyId, savedDraft, saveDraft, params, setParams, theme, config, setConfig] = useWorkspaceStore(useShallow((state) => [
+  const [strategyId, setStrategyId, savedDraft, saveDraft, params, setParams, config, setConfig] = useWorkspaceStore(useShallow((state) => [
     state.selectedStrategyId,
     state.setStrategy,
     state.sourceDrafts[state.selectedStrategyId],
     state.setSourceDraft,
     state.strategyParameters,
     state.setStrategyParameters,
-    state.theme,
     state.backtestConfig,
     state.setBacktestConfig,
   ]));
@@ -541,7 +540,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running, active = 
         <Monaco
           height="100%"
           language="typescript"
-          theme={theme === "dark" ? "vs-dark" : "light"}
+          theme="vs-dark"
           value={source}
           onChange={(value) => setSource(value ?? "")}
           options={{

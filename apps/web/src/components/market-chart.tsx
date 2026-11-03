@@ -18,7 +18,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { AlertTriangle, Clock3, Radio, Wifi, WifiOff } from "lucide-react";
-import { useWorkspaceStore, type ThemeMode } from "@/store/workspace";
+import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import type { BacktestResult, Candle } from "@newbeing/core";
 import { findCandleGaps, reconnectDelayMs, timeframeMilliseconds } from "@newbeing/market-data/utils";
@@ -96,26 +96,25 @@ function parseKlineEvent(value: unknown): { candle: Candle; closed: boolean } | 
 
 type ThemeChartOptions = Required<Pick<DeepPartial<ChartOptions>, "layout" | "grid" | "crosshair" | "rightPriceScale" | "timeScale">>;
 
-/** Theme-dependent chart options only — safe to re-apply with `applyOptions` without touching data or range. */
-function themeOptions(theme: ThemeMode): ThemeChartOptions {
-  const dark = theme === "dark";
+/** Chart options only — safe to re-apply with `applyOptions` without touching data or range. */
+function themeOptions(): ThemeChartOptions {
   return {
     layout: {
-      background: { type: ColorType.Solid, color: dark ? "#0d1117" : "#ffffff" },
-      textColor: dark ? "#8b949e" : "#64748b",
+      background: { type: ColorType.Solid, color: "#0d1117" },
+      textColor: "#8b949e",
       fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
       fontSize: 11,
     },
     grid: {
-      vertLines: { color: dark ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
-      horzLines: { color: dark ? "rgba(139,148,158,0.07)" : "rgba(100,116,139,0.10)" },
+      vertLines: { color: "rgba(139,148,158,0.07)" },
+      horzLines: { color: "rgba(139,148,158,0.07)" },
     },
     crosshair: {
-      vertLine: { color: dark ? "#59636e" : "#94a3b8", labelBackgroundColor: dark ? "#27313a" : "#334155" },
-      horzLine: { color: dark ? "#59636e" : "#94a3b8", labelBackgroundColor: dark ? "#27313a" : "#334155" },
+      vertLine: { color: "#59636e", labelBackgroundColor: "#27313a" },
+      horzLine: { color: "#59636e", labelBackgroundColor: "#27313a" },
     },
-    rightPriceScale: { borderColor: dark ? "#232a31" : "#e2e8f0" },
-    timeScale: { borderColor: dark ? "#232a31" : "#e2e8f0" },
+    rightPriceScale: { borderColor: "#232a31" },
+    timeScale: { borderColor: "#232a31" },
   };
 }
 
@@ -143,8 +142,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
   const barsRef = useRef<Candle[]>([]);
   const prevReplayLengthRef = useRef<number>(0);
   const replayBarsRef = useRef<Candle[] | null>(null);
-  const [symbol, timeframe, exchange, theme] = useWorkspaceStore(useShallow((state) => [state.symbol, state.timeframe, state.exchange, state.theme]));
-  const initialThemeRef = useRef<ThemeMode>(theme);
+  const [symbol, timeframe, exchange] = useWorkspaceStore(useShallow((state) => [state.symbol, state.timeframe, state.exchange]));
   const dataKey = `${exchange}|${symbol}|${timeframe}`;
 
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
@@ -263,7 +261,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     const container = containerRef.current;
     if (!container) return;
     let rangeTimer: ReturnType<typeof setTimeout> | undefined;
-    const initialThemeOptions = themeOptions(initialThemeRef.current);
+    const initialThemeOptions = themeOptions();
     const chart = createChart(container, {
       autoSize: false,
       width: container.clientWidth,
@@ -420,10 +418,6 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    chartRef.current?.applyOptions(themeOptions(theme));
-  }, [theme]);
 
   useEffect(() => {
     const controller = new AbortController();
