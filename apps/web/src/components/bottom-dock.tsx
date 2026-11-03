@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { AreaSeries, ColorType, createChart, type UTCTimestamp } from "lightweight-charts";
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileText, FlaskConical, ListChecks, RotateCcw, ScanSearch, Wallet, Filter } from "lucide-react";
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileDown, FileText, FlaskConical, ListChecks, RotateCcw, ScanSearch, Wallet, Filter } from "lucide-react";
 import { STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplaySession } from "@newbeing/core";
 import type { ExperimentSummary } from "@newbeing/storage";
 import { SweepPanel } from "@/components/sweep-panel";
@@ -10,6 +10,7 @@ import { EvaluationPanel } from "@/components/evaluation-panel";
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { captureWorkspaceSelection } from "@/lib/workspace-selection";
+import { buildResearchReport, researchReportFilename } from "@/lib/research-report";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
@@ -552,6 +553,24 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
         </div>
 
         <div className="result-actions flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const report = buildResearchReport(result);
+              const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = researchReportFilename(result);
+              link.click();
+              window.setTimeout(() => URL.revokeObjectURL(url), 0);
+            }}
+            icon={<FileDown size={12} />}
+            className="text-xs h-7"
+            title="Download a versioned research report: provenance, assumptions, metrics, trades and equity curve."
+          >
+            Export report
+          </Button>
           <Button
             variant="outline"
             size="sm"

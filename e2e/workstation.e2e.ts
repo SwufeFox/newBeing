@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -348,6 +349,28 @@ test("kept-alive inspector tabs pause hidden polling and reopen with data", asyn
   await expect(book).toBeVisible();
   await expect(book).toContainText("PRICE (USDT)");
   await expect(page.getByText("Loading public depth…")).toHaveCount(0);
+});
+
+test("backtest report export downloads a versioned research bundle", async ({ page }) => {
+  await installApiMocks(page);
+  await page.goto("/");
+  await activate(page.getByTestId("workspace-research"), true);
+  const runBacktestButton = page.getByRole("button", { name: "Run backtest" }).first();
+  await runBacktestButton.focus();
+  await runBacktestButton.press("Enter");
+  await expect(page.locator(".backtest-view")).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export report", exact: true }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^research-sma-crossover-BTCUSDT-\d{4}-\d{2}-\d{2}-[0-9A-Za-z-]{8}\.json$/);
+  const report = JSON.parse(readFileSync(await download.path(), "utf8"));
+  expect(report.schemaVersion).toBe(1);
+  expect(report.kind).toBe("newbeing-research-report");
+  expect(report.provenance.resultId).toBe("e2e-backtest-fixture");
+  expect(report.provenance.barRange.bars).toBeGreaterThan(0);
+  expect(report.limitations.length).toBeGreaterThanOrEqual(3);
+  expect(report.result.metrics.tradeCount).toBe(1);
 });
 
 test("state-changing APIs reject rebinding hosts and cross-origin writes", async ({ request, baseURL }) => {
