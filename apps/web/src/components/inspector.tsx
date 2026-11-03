@@ -1,6 +1,6 @@
 "use client";
 
-import { replayReport, type ReplayExecution, type ReplayOrderInput } from "@newbeing/core";
+import { replayReport, type ReplayExecution, type ReplayOrderInput, type ReplayReport } from "@newbeing/core";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Braces, Check, Clock3, Copy, History, Layers3, TrendingDown, TrendingUp, Wallet, ArrowDownRight, ArrowUpRight } from "lucide-react";
 import type { BacktestResult, ExchangeId, OrderPreview, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
@@ -37,6 +37,7 @@ interface InspectorProps {
   replayBusy: boolean;
   onRun: () => void;
   replayExecution: ReplayExecution | null;
+  replayReport?: ReplayReport | null;
   onReplayCommand: (command: Record<string, unknown>) => Promise<void>;
   onReplayOrder: (side: "buy" | "sell", quantity: number, options?: Partial<ReplayOrderInput>) => Promise<void>;
 }
@@ -806,9 +807,11 @@ function ReplayTicket({
   busy,
   onOrder,
   execution,
+  report: serverReport = null,
   onCommand,
 }: {
   execution: ReplayExecution | null;
+  report?: ReplayReport | null;
   onCommand: (command: Record<string, unknown>) => Promise<void>;
   symbol: string;
   session: ReplaySession | null;
@@ -935,7 +938,9 @@ function ReplayTicket({
     );
   }
 
-  const report = execution ? replayReport(execution, current.close) : null;
+  /* The server already computed this report from the same last revealed close.
+     Reusing it avoids rescanning the growing equity array on every render. */
+  const report = serverReport ?? (execution ? replayReport(execution, current.close) : null);
   const exportJournal = (): void => {
     if (!execution || !report) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify({ session, execution, report }, null, 2)], { type: "application/json" }));
@@ -1233,7 +1238,7 @@ function ReplayTicket({
   );
 }
 
-export function Inspector({ workspace = "terminal", summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayExecution, onReplayCommand, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
+export function Inspector({ workspace = "terminal", summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayExecution, replayReport: serverReplayReport = null, onReplayCommand, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
   const [paperMode, setPaperMode] = useState<"legacy" | "shared-spot">("legacy");
   const [symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
   const [pickedPrice, setPickedPrice] = useState<number | null>(null);
@@ -1304,6 +1309,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
         <ReplayTicket
           key={replaySession?.id ?? "empty"}
           execution={replayExecution}
+          report={serverReplayReport}
           onCommand={onReplayCommand}
           symbol={symbol}
           session={replaySession}

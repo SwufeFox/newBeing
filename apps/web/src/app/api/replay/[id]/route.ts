@@ -18,8 +18,11 @@ const actionSchema = z.discriminatedUnion("action", [
 ]);
 function snapshot(session: ReplaySession) {
   const execution = getReplayExecution(session.id);
-  const legacyOrders = listPaperOrders(100, replayAccountId(session.id, session.symbol, session.exchange));
-  return { session, execution: execution ?? null, portfolio: execution?.portfolio ?? getPaperPortfolio(replayAccountId(session.id, session.symbol, session.exchange)), orders: execution?.orders ?? legacyOrders, legacyOrders,
+  const accountId = replayAccountId(session.id, session.symbol, session.exchange);
+  /* Configured sessions keep their orders inside the execution payload; the
+     legacy wallet query is only meaningful when that payload is absent. */
+  const legacyOrders = execution ? [] : listPaperOrders(100, accountId);
+  return { session, execution: execution ?? null, portfolio: execution?.portfolio ?? getPaperPortfolio(accountId), orders: execution?.orders ?? legacyOrders, legacyOrders,
     report: execution ? replayReport(execution, session.bars.at(-1)?.close ?? 0) : null, futureBarsLoaded: 0 };
 }
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
@@ -52,7 +55,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const interval = timeframeMilliseconds(session.timeframe);
       const cached = execution.datasetId ? undefined : createCandleCacheAdapter(session.exchange, getWebMarketAdapter(session.exchange));
       const fetched = cached ? await cached.adapter.fetchOHLCVSince(session.symbol, session.timeframe, session.cursor + interval, 4) : [];
-      const next = execution.datasetId ? nextFrozenReplayBar(id) : nextCompletedBarAfter(fetched, session.timeframe, session.cursor);
+      const next = execution.datasetId ? nextFrozenReplayBar(id, { session, execution }) : nextCompletedBarAfter(fetched, session.timeframe, session.cursor);
       const provenance = cached?.getLastResult();
       if (!next) return NextResponse.json({ ...snapshot(getReplaySession(id)!), bar: null, hasNext: false });
       if (next.timestamp !== session.cursor + interval) throw new Error("A missing OHLCV interval blocks safe replay; cursor was not advanced.");

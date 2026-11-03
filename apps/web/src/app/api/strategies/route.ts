@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { STRATEGIES } from "@newbeing/core";
-import { listStoredStrategies, saveStrategy } from "@newbeing/storage";
+import { listStoredStrategySummaries, saveStrategy } from "@newbeing/storage";
 
 export const runtime = "nodejs";
 
@@ -18,7 +18,7 @@ export async function GET(): Promise<NextResponse> {
   const builtins = STRATEGIES.map(({ id, name, version, description, defaults }) => ({
     id, name, version, description, parameters: defaults, builtIn: true,
   }));
-  const saved = listStoredStrategies().map((strategy) => ({ ...strategy, builtIn: false }));
+  const saved = listStoredStrategySummaries().map((strategy) => ({ ...strategy, builtIn: false }));
   return NextResponse.json({ items: [...builtins, ...saved] }, { headers: { "Cache-Control": "no-store" } });
 }
 

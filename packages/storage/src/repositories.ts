@@ -60,6 +60,8 @@ export interface StoredStrategy {
   source: string;
   updatedAt: number;
 }
+/** Listing metadata without the potentially large source draft. */
+export type StoredStrategySummary = Omit<StoredStrategy, "source">;
 
 export function getWorkspaceState(): { state: WorkspaceState; updatedAt: number } {
   const row = getDatabase().select().from(workspaceStates).where(eq(workspaceStates.id, 1)).get();
@@ -118,6 +120,25 @@ export function listStoredStrategies(): StoredStrategy[] {
     description: row.description,
     parameters: JSON.parse(row.parameters) as StrategyParameters,
     source: row.source,
+    updatedAt: row.updatedAt,
+  }));
+}
+
+/** Avoid reading the source column for roster responses; fetch it by ID. */
+export function listStoredStrategySummaries(): StoredStrategySummary[] {
+  return getDatabase().select({
+    id: strategies.id,
+    name: strategies.name,
+    version: strategies.version,
+    description: strategies.description,
+    parameters: strategies.parameters,
+    updatedAt: strategies.updatedAt,
+  }).from(strategies).orderBy(desc(strategies.updatedAt)).all().map((row) => ({
+    id: row.id,
+    name: row.name,
+    version: row.version,
+    description: row.description,
+    parameters: JSON.parse(row.parameters) as StrategyParameters,
     updatedAt: row.updatedAt,
   }));
 }
@@ -633,7 +654,7 @@ export function advanceReplaySession(
     if (execution) {
       if (execution.policyVersion !== 2) throw new Error("Legacy Replay execution is read-only; start a new session to select the current policy.");
       if (execution.datasetId) {
-        const next = nextFrozenReplayBar(id);
+        const next = nextFrozenReplayBar(id, { session: current, execution });
         if (!next || canonicalJson(next) !== canonicalJson(candle)) throw new Error("Replay candle does not match its frozen dataset.");
       }
       if (expectedRevision !== undefined && execution.revision !== expectedRevision) throw new Error("Replay revision conflict; reload before retrying.");
@@ -699,9 +720,12 @@ export function getReplayExecution(id: string): ReplayExecution | undefined {
   return row ? JSON.parse(row.payload) as ReplayExecution : undefined;
 }
 
-export function nextFrozenReplayBar(id: string): Candle | undefined {
-  const session = getReplaySession(id);
-  const execution = getReplayExecution(id);
+export function nextFrozenReplayBar(
+  id: string,
+  loaded?: { session?: ReplaySession; execution?: ReplayExecution },
+): Candle | undefined {
+  const session = loaded?.session ?? getReplaySession(id);
+  const execution = loaded?.execution ?? getReplayExecution(id);
   if (!session || !execution?.datasetId) throw new Error("A frozen Replay dataset is required.");
   const snapshot = loadDatasetSnapshot(execution.datasetId);
   return snapshot.candles.find((bar) => bar.timestamp > session.cursor);

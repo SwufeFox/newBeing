@@ -17,7 +17,7 @@ import {
   listExperiments,
   listPendingPaperOrders,
   listPaperRecoveries,
-  listStoredStrategies,
+  listStoredStrategySummaries,
   paperAccountId,
   replayAccountId,
   saveStrategy,
@@ -85,7 +85,7 @@ function publicStrategyList(): Array<{ id: string; name: string; version: string
   const builtins = STRATEGIES.map(({ id, name, version, description, defaults }) => ({
     id, name, version, description, parameters: defaults, executable: true,
   }));
-  const drafts = listStoredStrategies().map(({ id, name, version, description, parameters }) => ({
+  const drafts = listStoredStrategySummaries().map(({ id, name, version, description, parameters }) => ({
     id, name, version, description, parameters, executable: false,
   }));
   return [...builtins, ...drafts];

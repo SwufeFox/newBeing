@@ -36,9 +36,11 @@ import { replayIdentity, useWorkspaceStore, type DockTab, type InspectorTab } fr
 import { useShallow } from "zustand/react/shallow";
 import {
   EXCHANGE_TIMEFRAMES,
+  replayReport,
   type ReplayConfig,
   type ReplayExecution,
   type ReplayOrderInput,
+  type ReplayReport,
   type BacktestResult,
   type Candle,
   type PaperOrder,
@@ -130,6 +132,7 @@ function localDateTime(timestamp: number): string {
 
 interface ReplayEnvelope {
   execution?: ReplayExecution | null;
+  report?: ReplayReport | null;
   session: ReplaySession;
   portfolio?: PaperPortfolio;
   orders?: PaperOrder[];
@@ -647,6 +650,7 @@ export function Terminal(): React.JSX.Element {
   const [lastAction, setLastAction] = useState<string | null>(null);
   const result = useWorkspaceStore((state) => state.backtest);
   const [replayExecution, setReplayExecution] = useState<ReplayExecution | null>(null);
+  const [replayReportValue, setReplayReportValue] = useState<ReplayReport | null>(null);
   const [replaySession, setReplaySession] = useState<ReplaySession | null>(null);
   const [replayPortfolio, setReplayPortfolio] = useState<PaperPortfolio | null>(null);
   const [replayOrders, setReplayOrders] = useState<PaperOrder[]>([]);
@@ -659,6 +663,12 @@ export function Terminal(): React.JSX.Element {
   const replayBusyRef = useRef(false);
   const replayStepRef = useRef<() => Promise<void>>(async () => undefined);
   const [mobileRailOpen, setMobileRailOpen] = useState(false);
+
+  /* Reuse the report computed with the snapshot; the local fallback only runs
+     when a response predates it, so the client never rescans equity per render. */
+  const applyReplayReport = useCallback((parsed: ReplayEnvelope): void => {
+    setReplayReportValue(parsed.report ?? (parsed.execution ? replayReport(parsed.execution, parsed.session.bars.at(-1)?.close ?? 0) : null));
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -868,6 +878,7 @@ export function Terminal(): React.JSX.Element {
     if (!parsed) throw new Error("Replay session response was malformed.");
     setReplaySession(parsed.session);
     setReplayExecution(parsed.execution ?? null);
+    applyReplayReport(parsed);
     setReplayPortfolio(parsed.portfolio ?? null);
     setReplayOrders(parsed.orders ?? []);
     const currentWorkspace = useWorkspaceStore.getState();
@@ -875,7 +886,7 @@ export function Terminal(): React.JSX.Element {
     if (currentWorkspace.exchange !== parsed.session.exchange) currentWorkspace.setExchange(parsed.session.exchange);
     if (useWorkspaceStore.getState().symbol !== parsed.session.symbol) useWorkspaceStore.getState().setSymbol(parsed.session.symbol);
     if (useWorkspaceStore.getState().timeframe !== parsed.session.timeframe) useWorkspaceStore.getState().setTimeframe(parsed.session.timeframe);
-  }, []);
+  }, [applyReplayReport]);
 
   useEffect(() => {
     if (!workspaceReady || !activeReplayId) return;
@@ -917,6 +928,7 @@ export function Terminal(): React.JSX.Element {
       if (!applyReplaySelection(parsed.session, canApply)) return;
       setReplaySession(parsed.session);
       setReplayExecution(parsed.execution ?? null);
+      applyReplayReport(parsed);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders([]);
     } catch (error) {
@@ -947,6 +959,7 @@ export function Terminal(): React.JSX.Element {
       if (!applyReplaySelection(parsed.session, canApply)) return;
       setReplaySession(parsed.session);
       setReplayExecution(parsed.execution ?? null);
+      applyReplayReport(parsed);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders([]);
     } catch (error) {
@@ -979,6 +992,7 @@ export function Terminal(): React.JSX.Element {
       if (!parsed) throw new Error("Replay step response was malformed.");
       setReplaySession(parsed.session);
       setReplayExecution(parsed.execution ?? null);
+      applyReplayReport(parsed);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders(parsed.orders ?? []);
       if (typeof payload === "object" && payload !== null && "hasNext" in payload && payload.hasNext === false) {
@@ -993,7 +1007,7 @@ export function Terminal(): React.JSX.Element {
       replayBusyRef.current = false;
       setReplayBusy(false);
     }
-  }, [replaySession, replayExecution, refreshReplay]);
+  }, [replaySession, replayExecution, refreshReplay, applyReplayReport]);
 
   useEffect(() => {
     replayStepRef.current = stepReplay;
@@ -1027,6 +1041,7 @@ export function Terminal(): React.JSX.Element {
       if (parsed) {
         setReplaySession(parsed.session);
         setReplayExecution(parsed.execution ?? null);
+        applyReplayReport(parsed);
         setReplayPortfolio(parsed.portfolio ?? null);
         setReplayOrders(parsed.orders ?? []);
       }
@@ -1069,6 +1084,7 @@ export function Terminal(): React.JSX.Element {
       replayRefreshRef.current += 1;
       setReplaySession(parsed.session);
       setReplayExecution(parsed.execution);
+      applyReplayReport(parsed);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders(parsed.orders ?? []);
     } catch (error) {
@@ -1100,6 +1116,7 @@ export function Terminal(): React.JSX.Element {
     setReplayPlaying(false);
     setReplaySession(null);
     setReplayExecution(null);
+    setReplayReportValue(null);
     setReplayPortfolio(null);
     setReplayOrders([]);
     setReplayError(null);
@@ -1495,6 +1512,7 @@ export function Terminal(): React.JSX.Element {
                 replayMode={workspace === "replay"}
                 replaySession={replaySession}
                 replayExecution={replayExecution}
+                replayReport={replayReportValue}
                 onReplayCommand={replayCommand}
                 replayPortfolio={replayPortfolio}
                 replayOrders={replayOrders}

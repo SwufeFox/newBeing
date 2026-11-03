@@ -184,7 +184,21 @@ export function matchReplayBar(state: ReplayExecution, bar: Candle): void {
   }
   state.equity.push({ timestamp: bar.timestamp, equity: money(decimal(state.portfolio.quoteBalance).plus(decimal(state.portfolio.baseBalance).times(bar.close))) });
 }
-export function replayReport(state: ReplayExecution, mark: number) {
+export interface ReplayReport {
+  initialCapital: number;
+  equity: number;
+  netPnl: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  fees: number;
+  fillCount: number;
+  maxDrawdown: number;
+  notes: string;
+  tags: string[];
+  policy: string;
+  executionPolicy: typeof SPOT_EXECUTION_POLICY | null;
+}
+export function replayReport(state: ReplayExecution, mark: number): ReplayReport {
   const equity = money(decimal(state.portfolio.quoteBalance).plus(decimal(state.portfolio.baseBalance).times(mark)));
   let peak = state.config.initialCapital;
   let maxDrawdown = 0;
