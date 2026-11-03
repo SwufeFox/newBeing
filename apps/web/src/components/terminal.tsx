@@ -1437,7 +1437,7 @@ export function Terminal(): React.JSX.Element {
                     <PanelLeftClose size={13} /> Close
                   </button>
                 )}
-                <Watchlist disabled={(!showsWatchlist && !mobileWatchlistOpen) || replayLocked} />
+                <Watchlist disabled={(!showsWatchlist && !mobileWatchlistOpen) || replayLocked} selectedSummary={summary} selectedStale={Boolean(summaryError)} />
               </div>
             )}
             {showsWatchlist && (

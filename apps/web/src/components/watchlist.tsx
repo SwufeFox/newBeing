@@ -29,14 +29,17 @@ function quotePrice(value: number | null | undefined): string {
 /** Spot symbols accept the quote currencies supported by the selected venue. */
 const SYMBOL_PATTERN = /^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/;
 
-export const Watchlist = memo(function Watchlist({ disabled = false }: { disabled?: boolean }): React.JSX.Element {
+export const Watchlist = memo(function Watchlist({ disabled = false, selectedSummary = null, selectedStale = false }: { disabled?: boolean; selectedSummary?: MarketSummary | null; selectedStale?: boolean }): React.JSX.Element {
   const [watchlist, selected, exchange, setSymbol, remove, add, move] = useWorkspaceStore(useShallow((state) => [
     state.watchlist, state.symbol, state.exchange, state.setSymbol,
     state.removeWatchlistSymbol, state.addWatchlistSymbol, state.moveWatchlistSymbol,
   ]));
 
   const watchlistKey = `${exchange}|${watchlist.join(",")}`;
-  const symbolsKey = watchlist.join(",");
+  /* The selected symbol's quote comes from the terminal's own 5s summary poll,
+     so the 12s batch skips it instead of asking the venue twice for one row. */
+  const batchSymbols = watchlist.filter((item) => item !== selected);
+  const symbolsKey = batchSymbols.join(",");
   const [snapshot, setSnapshot] = useState<{ key: string; summaries: Record<string, MarketSummary>; error: string | null } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -110,7 +113,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
   const refreshControllerRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async (): Promise<void> => {
-    if (disabled || watchlist.length === 0) return;
+    if (disabled || batchSymbols.length === 0) return;
     refreshRequestRef.current += 1;
     const requestId = refreshRequestRef.current;
     refreshControllerRef.current?.abort();
@@ -139,10 +142,10 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
         setRefreshing(false);
       }
     }
-  }, [disabled, exchange, symbolsKey, watchlist.length, watchlistKey]);
+  }, [disabled, exchange, symbolsKey, batchSymbols.length, watchlistKey]);
 
   useEffect(() => {
-    if (disabled || watchlist.length === 0) return;
+    if (disabled || batchSymbols.length === 0) return;
     void refresh();
     const timer = window.setInterval(() => { if (typeof document !== "undefined" && !document.hidden) void refresh(); }, 12_000);
     return () => {
@@ -151,7 +154,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
       refreshControllerRef.current?.abort();
       refreshControllerRef.current = null;
     };
-  }, [refresh, disabled, watchlist.length]);
+  }, [refresh, disabled, watchlist.length, batchSymbols.length]);
 
   const summaries = !disabled && snapshot?.key === watchlistKey ? snapshot.summaries : {};
   const error = !disabled && snapshot?.key === watchlistKey ? snapshot.error : null;
@@ -251,7 +254,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
 
       <div className="watchlist-rows" ref={listRef}>
         {watchlist.map((symbol, index) => {
-          const summary = summaries[symbol];
+          const summary = summaries[symbol] ?? (symbol === selected && selectedSummary ? selectedSummary : null);
           const base = symbol.split("/")[0] ?? symbol;
           const quote = symbol.split("/")[1] ?? "";
           const change = summary?.changePct24h;
@@ -268,7 +271,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false }: { disable
               className={[
                 "watch-row relative transition-all duration-150",
                 isSelected ? "selected shadow-[0_0_12px_rgba(24,209,255,0.15)]" : "",
-                error && summary ? "stale" : "",
+                (symbol === selected && selectedStale && selectedSummary) || (error && summary) ? "stale" : "",
                 isDragging ? "is-dragging opacity-60 scale-[0.98]" : "",
                 dropAbove ? "drop-before" : "",
                 dropBelow ? "drop-after" : "",
