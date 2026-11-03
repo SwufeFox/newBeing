@@ -14,7 +14,7 @@ import { buildResearchReport, researchReportFilename } from "@/lib/research-repo
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
-import { AkTag, AkNotice, AkNum, AkButton, AkGauge, AkProgress, AkSpinner, AkCountUp } from "@swufefox/ak-ui-react";
+import { AkTag, AkNotice, AkNum, AkButton, AkProgress, AkSpinner, AkCountUp } from "@swufefox/ak-ui-react";
 
 /** Format an amount in the symbol's own quote currency */
 function money(value: number, currency = "USDT"): string {
@@ -521,17 +521,7 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
           />
           <Metric label="TOTAL TRADES" value={String(metric.tradeCount)} />
         </div>
-        <div className="gauge-card hidden sm:flex flex-col items-center justify-center p-2 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-          <AkGauge
-            value={Math.round(metric.winRate * 100)}
-            max={100}
-            label="WIN RATE"
-            unit="%"
-            size="sm"
-            variant={metric.winRate >= 0.5 ? "default" : "warning"}
-          />
-        </div>
-        <div className="equity-chart-wrap bg-[var(--ak-surface-sunken-2)] p-2 border border-[var(--ak-border-subtle)] flex flex-col h-40">
+        <div className="equity-chart-wrap bg-[var(--ak-surface-sunken-2)] p-2 border border-[var(--ak-border-subtle)] flex flex-col h-40 lg:col-span-2">
           <div className="equity-chart-label text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-wider mb-1 font-bold">
             EQUITY CURVE · {result.symbol.split("/")[1]}
           </div>
