@@ -671,10 +671,6 @@ export function Terminal(): React.JSX.Element {
     setReplayReportValue(parsed.report ?? (parsed.execution ? replayReport(parsed.execution, parsed.session.bars.at(-1)?.close ?? 0) : null));
   }, []);
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-
   /* The strategy tab mounts Monaco on first visit. Warming the local editor
      bundle while the browser is idle keeps that first tab switch from paying
      the parse/init cost on the click. */
