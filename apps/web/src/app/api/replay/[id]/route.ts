@@ -57,7 +57,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const fetched = cached ? await cached.adapter.fetchOHLCVSince(session.symbol, session.timeframe, session.cursor + interval, 4) : [];
       const next = execution.datasetId ? nextFrozenReplayBar(id, { session, execution }) : nextCompletedBarAfter(fetched, session.timeframe, session.cursor);
       const provenance = cached?.getLastResult();
-      if (!next) return NextResponse.json({ ...snapshot(getReplaySession(id)!), bar: null, hasNext: false });
+      if (!next) return NextResponse.json({ ...snapshot(getReplaySession(id)!), bar: null, hasNext: false, exhausted: Boolean(execution.datasetId) });
       if (next.timestamp !== session.cursor + interval) throw new Error("A missing OHLCV interval blocks safe replay; cursor was not advanced.");
       const advanced = advanceReplaySession(id, expectedCursor, next, provenance ? { source: provenance.source, cache: { fallback: provenance.cache.fallback, cachedAt: provenance.cache.cachedAt } } : undefined, expectedRevision);
       if (advanced.deduplicated) {

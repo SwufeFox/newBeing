@@ -672,6 +672,7 @@ export function Terminal(): React.JSX.Element {
   const [replayLimit, setReplayLimit] = useState(200);
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayPlaying, setReplayPlaying] = useState(false);
+  const [replayExhausted, setReplayExhausted] = useState(false);
   const [replayBusy, setReplayBusy] = useState(false);
   const [replayError, setReplayError] = useState<string | null>(null);
   const replayBusyRef = useRef(false);
@@ -976,6 +977,7 @@ export function Terminal(): React.JSX.Element {
       applyReplayReport(parsed);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders([]);
+      setReplayExhausted(false);
     } catch (error) {
       setReplayError(error instanceof Error ? error.message : "Replay could not be started.");
     } finally {
@@ -1007,6 +1009,7 @@ export function Terminal(): React.JSX.Element {
       applyReplayReport(parsed);
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders([]);
+      setReplayExhausted(false);
     } catch (error) {
       setReplayError(error instanceof Error ? error.message : "Replay could not be started.");
     } finally {
@@ -1041,8 +1044,12 @@ export function Terminal(): React.JSX.Element {
       setReplayPortfolio(parsed.portfolio ?? null);
       setReplayOrders(parsed.orders ?? []);
       if (typeof payload === "object" && payload !== null && "hasNext" in payload && payload.hasNext === false) {
+        const exhausted = "exhausted" in payload && payload.exhausted === true;
         setReplayPlaying(false);
-        setReplayError("No next completed bar is available yet. The replay cursor did not move.");
+        /* An exhausted frozen dataset is a finished state, not a transport
+           error: surface it on the controls instead of the error notice. */
+        setReplayExhausted(exhausted);
+        if (!exhausted) setReplayError("No next completed bar is available yet. The replay cursor did not move.");
       }
     } catch (error) {
       if (!canApply()) return;
@@ -1162,6 +1169,7 @@ export function Terminal(): React.JSX.Element {
     setReplaySession(null);
     setReplayExecution(null);
     setReplayReportValue(null);
+    setReplayExhausted(false);
     setReplayPortfolio(null);
     setReplayOrders([]);
     setReplayError(null);
@@ -1516,6 +1524,7 @@ export function Terminal(): React.JSX.Element {
                   startAt={replayStartAt}
                   limit={replayLimit}
                   speed={replaySpeed}
+                  exhausted={replayExhausted}
                   playing={replayPlaying}
                   busy={replayBusy}
                   error={replayError}

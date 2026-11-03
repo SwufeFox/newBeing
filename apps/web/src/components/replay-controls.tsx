@@ -15,6 +15,8 @@ interface ReplayControlsProps {
   speed: number;
   playing: boolean;
   busy: boolean;
+  /** Frozen dataset fully revealed: stepping can never advance again. */
+  exhausted?: boolean;
   error: string | null;
   onStartAtChange: (value: string) => void;
   onLimitChange: (value: number) => void;
@@ -28,7 +30,7 @@ interface ReplayControlsProps {
 
 export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
   const {
-    symbol, timeframe, session, startAt, limit, speed, playing, busy, error,
+    symbol, timeframe, session, startAt, limit, speed, playing, busy, error, exhausted = false,
     onStartAtChange, onLimitChange, onSpeedChange, onStart, onTogglePlay, onStep, onFinish, onNewSession,
   } = props;
   const [initialCapital, setInitialCapital] = useState("10000");
@@ -205,7 +207,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
           <div className="replay-session-row flex flex-wrap items-center justify-between gap-2 bg-[var(--ak-surface-sunken)] px-2 py-1 border border-[var(--ak-border-subtle)]">
             <div className="replay-session-meta flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
+                <span className={`w-2 h-2 rounded-full ${exhausted ? "bg-[var(--ak-signal-action)]" : "bg-[var(--ak-signal-info)] animate-pulse"}`} />
                 <strong className="font-mono text-xs">{symbol} · {timeframe}</strong>
               </div>
               <span className="text-xs text-[var(--ak-text-secondary)] font-mono">
@@ -214,6 +216,11 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               <AkTag variant="neutral" className="text-[10px] font-mono">
                 {session.bars.length} BARS REVEALED
               </AkTag>
+              {exhausted && session.status === "active" && (
+                <AkTag variant="advanced" className="text-[10px]">
+                  DATASET EXHAUSTED
+                </AkTag>
+              )}
               {session.candleSource === "local-cache" && (
                 <AkTag variant="advanced" className="text-[10px]">
                   LOCAL CACHE
@@ -225,7 +232,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               <Button
                 variant={playing ? "subtle" : "primary"}
                 size="sm"
-                disabled={busy || session.status !== "active"}
+                disabled={busy || session.status !== "active" || exhausted}
                 onClick={onTogglePlay}
                 icon={busy ? <LoaderCircle className="spin" size={13} /> : playing ? <Pause size={13} /> : <Play size={13} />}
                 className="h-7 text-xs font-bold"
@@ -238,7 +245,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 data-testid="replay-step"
                 variant="outline"
                 size="sm"
-                disabled={busy || playing || session.status !== "active"}
+                disabled={busy || playing || session.status !== "active" || exhausted}
                 onClick={onStep}
                 icon={<SkipForward size={13} />}
                 className="h-7 text-xs font-bold"
@@ -310,6 +317,12 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
         </div>
       )}
 
+      {exhausted && session?.status === "active" && (
+        <div className="mt-2 p-2 border border-[var(--ak-signal-action)]/40 bg-[color-mix(in_srgb,var(--ak-signal-action)_10%,transparent)] text-xs font-mono">
+          <strong className="text-[var(--ak-signal-action)] tracking-wider uppercase">Frozen dataset fully revealed</strong>
+          <span className="block opacity-80 mt-0.5">Every bar in this dataset is now on the chart. Start a new session to keep researching.</span>
+        </div>
+      )}
       {error && (
         <div className="mt-2">
           <AkNotice variant="danger" code="REPLAY.ERR" title="Transport Alert">
