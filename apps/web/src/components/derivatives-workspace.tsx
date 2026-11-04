@@ -77,7 +77,7 @@ function OptionSnapshot({ quote, stale }: { quote: DerivativeQuote | undefined; 
   </span>;
 }
 
-function PositionRow({ position, quote, busy, onClose }: { position: DerivativesPosition; quote: DerivativeQuote | null; busy: boolean; onClose: (position: DerivativesPosition) => void }): React.JSX.Element {
+function PositionRow({ position, quote, busy, onClose, onView }: { position: DerivativesPosition; quote: DerivativeQuote | null; busy: boolean; onClose: (position: DerivativesPosition) => void; onView: (position: DerivativesPosition) => void }): React.JSX.Element {
   const [now, setNow] = useState(0);
   useEffect(() => {
     const update = () => setNow(Date.now());
@@ -88,7 +88,9 @@ function PositionRow({ position, quote, busy, onClose }: { position: Derivatives
   const matchingQuote = quote?.instrumentId === position.instrumentId && now > 0 && Number.isFinite(quote.timestamp) && quote.timestamp > 0 && now >= quote.timestamp && now - quote.timestamp <= 15_000 ? quote : null;
   const unrealized = derivativeUnrealized(position, matchingQuote?.mark ?? null, now);
   return <tr>
-    <td className="max-w-0 truncate" title={position.instrumentId}>{position.instrumentId}</td>
+    <td className="max-w-0" title={position.instrumentId}>
+      <button type="button" className="derivatives-position-link truncate" aria-label={`View position ${position.instrumentId}`} onClick={() => onView(position)}>{position.instrumentId}</button>
+    </td>
     <td>{position.side}</td><td>{position.quantity}</td><td>{position.entryPrice}</td><td>{position.margin} · {position.leverage}x</td>
     <td className={unrealized == null ? "" : unrealized < 0 ? "down" : unrealized > 0 ? "up" : ""}>{unrealized === null ? "—" : `${unrealized > 0 ? "+" : ""}${unrealized}`}</td>
     <td>{now > 0 && derivativePositionIsExpired(position, now) ? <span className="meta">Frozen</span> : <Button size="sm" variant="outline" disabled={busy} onClick={() => onClose(position)}>Close</Button>}</td>
@@ -120,7 +122,11 @@ function LocalAccountLedger({ accounts, readOnly = false, onSelectPosition }: {
                 <thead><tr>{["Instrument", "Side", "Qty", "Entry", "Margin"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
                 <tbody>{entry.positions.map((position) => <tr key={`${position.instrumentId}:${position.side}`}>
                   <td className="max-w-0 truncate" title={position.instrumentId}>
-                    {readOnly || !onSelectPosition ? position.instrumentId : <button type="button" className="max-w-full truncate text-left text-[var(--c-accent)] underline decoration-dotted underline-offset-2 hover:opacity-80" aria-label={`View position ${position.instrumentId}`} onClick={() => onSelectPosition(position, entry.settle)}>{position.instrumentId}</button>}
+                    {readOnly || !onSelectPosition ? position.instrumentId : (
+                      <button type="button" className="derivatives-position-link truncate" aria-label={`View position ${position.instrumentId}`} onClick={() => onSelectPosition(position, entry.settle)}>
+                        {position.instrumentId}
+                      </button>
+                    )}
                   </td>
                   <td>{position.side}</td><td>{position.quantity}</td><td>{position.entryPrice}</td><td>{position.margin} · {position.leverage}x</td>
                 </tr>)}</tbody>
@@ -869,9 +875,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
                         <span className="meta">Positions</span>
                         {!account.positions.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">No open positions.</p>
                           : <div className="derivatives-table-scroll mt-2 border border-[var(--c-line)]">
-                            <table className="derivatives-table">
-                              <thead><tr>{["Instrument", "Side", "Qty", "Entry", "Margin", "uPnL", ""].map((label) => <th key={label}>{label}</th>)}</tr></thead>
-                              <tbody>{account.positions.map((position) => <PositionRow key={`${position.instrumentId}:${position.side}`} position={position} quote={quote} busy={busy} onClose={beginClose} />)}</tbody>
+                            <table className="derivatives-table derivatives-positions-table">
+                              <thead><tr>{["Instrument", "Side", "Qty", "Entry", "Margin", "uPnL", "Action"].map((label) => <th key={label}>{label}</th>)}</tr></thead>
+                              <tbody>{account.positions.map((position) => <PositionRow key={`${position.instrumentId}:${position.side}`} position={position} quote={quote} busy={busy} onClose={beginClose} onView={selectPosition} />)}</tbody>
                             </table>
                           </div>}
                       </div>

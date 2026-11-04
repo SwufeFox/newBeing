@@ -1472,11 +1472,11 @@ export function Terminal(): React.JSX.Element {
 
                 <div className="chart-toolbar-right flex items-center gap-2">
                   {running ? (
-                    <span className="run-status text-xs text-[var(--ak-signal-action)] flex items-center gap-1.5">
+                    <span role="status" className="run-status text-xs text-[var(--ak-signal-action)] flex items-center gap-1.5">
                       <AkSpinner color="#ffd800" label="Executing" /> {lastAction ?? "Executing…"}
                     </span>
                   ) : lastAction ? (
-                    <span className="run-status text-xs text-[var(--ak-text-secondary)]">{lastAction}</span>
+                    <span role="status" className="run-status text-xs text-[var(--ak-text-secondary)]">{lastAction}</span>
                   ) : null}
                   {workspace === "terminal" && (
                     <Button variant="outline" size="sm" onClick={() => setPage("research")} className="h-6 text-[10px]" title={`Continue to Research with ${symbol} on ${timeframe}`}>

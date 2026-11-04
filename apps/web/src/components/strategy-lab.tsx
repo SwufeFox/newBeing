@@ -306,12 +306,13 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         </div>
 
         {presetNotice && (
-          <div className="text-[10px] text-[var(--ak-signal-info)] font-mono px-1 py-0.5 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-info)] animate-pulse">
+          <div role="status" className="text-[10px] text-[var(--ak-signal-info)] font-mono px-1 py-0.5 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-info)] animate-pulse">
             {presetNotice}
           </div>
         )}
         {parameterEntries.map(([key, defaultValue]) => {
           const value = params[key] ?? defaultValue;
+          const invalidSmaField = invalidSma && (key === "fastPeriod" || key === "slowPeriod");
           const inputId = `strategy-parameter-${key}`;
           if (typeof defaultValue === "boolean") {
             return (
@@ -336,6 +337,8 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                 min={0}
                 max={1000}
                 step={key.toLowerCase().includes("pct") ? 0.1 : 1}
+                aria-invalid={invalidSmaField || undefined}
+                aria-describedby={invalidSmaField ? "strategy-sma-validation" : undefined}
                 value={typeof value === "number" ? value : defaultValue}
                 onChange={(event) => updateParameter(key, Number(event.target.value))}
               />
@@ -343,7 +346,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           );
         })}
         {invalidSma && (
-          <div className="inline-alert flex items-center gap-1.5 text-[11px] text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">
+          <div id="strategy-sma-validation" role="alert" className="inline-alert flex items-center gap-1.5 text-[11px] text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">
             <ShieldAlert size={13} />
             <span>Fast period must be lower than slow period.</span>
           </div>

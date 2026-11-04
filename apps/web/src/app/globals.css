@@ -3251,6 +3251,10 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .watch-row { min-height: 44px; }
   .watch-remove { width: 44px; height: 44px; opacity: 1; }
   .indicator-toggles button { min-width: 44px; min-height: 44px; padding: 0 6px; }
+  .backtest-trade-heading { flex-wrap: wrap; gap: var(--s-2); }
+  .backtest-trade-filters { margin-left: auto; }
+  .backtest-trade-filters button { min-width: 44px; min-height: 44px; }
+  .trade-filter-reset { min-height: 44px; }
 }
 
 /* rows become draggable; the grip is the affordance */
@@ -3992,6 +3996,22 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .derivatives-table td { padding: var(--s-1) var(--s-2); border-bottom: var(--line) solid var(--c-line-soft); color: var(--c-fg-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .derivatives-table td.up { color: var(--c-up); }
 .derivatives-table td.down { color: var(--c-down); }
+.derivatives-position-link {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 44px;
+  color: var(--c-accent);
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.derivatives-position-link:hover { opacity: .8; }
+.derivatives-position-link:focus-visible {
+  outline: 2px solid var(--ak-focus-color, var(--c-accent));
+  outline-offset: 2px;
+}
 .derivatives-table-scroll { max-height: 240px; overflow-y: auto; }
 
 /* policy / boundary banners use the caveat grammar */
@@ -4071,6 +4091,22 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .derivatives-identity { padding-right: 0; border-right: 0; border-bottom: var(--line) solid var(--c-line); padding-bottom: var(--s-2); width: 100%; max-width: none; }
 }
 
+@media (max-width: 720px) {
+  .derivatives-positions-table th:last-child,
+  .derivatives-positions-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    min-width: 76px;
+    background: var(--c-surface);
+    border-left: var(--line) solid var(--c-line);
+  }
+  .derivatives-positions-table td:last-child > button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 /* Keep workspace navigation scannable at compact desktop widths. */
 .workspace-nav-separator {
   width: 1px;
@@ -4098,8 +4134,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   user-select: none;
 }
 
-@media (max-width: 920px) {
-  .topbar { flex-wrap: wrap; height: auto; min-height: 44px; padding-block: 5px; }
+@media (max-width: 1180px) {
+  .topbar { flex: 0 0 auto; flex-wrap: wrap; height: auto; min-height: 44px; padding-block: 5px; }
   .topbar > * { min-width: 0; }
   .nav-cockpit { gap: 0 !important; }
   .nav-cockpit .workspace-tab { padding-inline: 7px; white-space: nowrap; }

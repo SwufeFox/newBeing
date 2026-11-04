@@ -32,3 +32,26 @@ test("touch controls stay visible and reach a 44px target without hover", async 
   await remove.click();
   await expect(watchlist.getByRole("button", { name: "Remove BTC/USDT from watchlist" })).toHaveCount(0);
 });
+
+test("backtest trade filters stay tappable on coarse pointers", async ({ page }) => {
+  await installApiMocks(page);
+  await page.goto("/");
+  await page.getByTestId("workspace-research").click();
+
+  const backtestRequest = page.waitForResponse((response) => response.url().endsWith("/api/backtests") && response.request().method() === "POST");
+  const runBacktest = page.getByRole("button", { name: "Run backtest" }).first();
+  await runBacktest.focus();
+  await runBacktest.press("Enter");
+  expect((await backtestRequest).ok()).toBeTruthy();
+  await page.getByRole("tab", { name: "Results" }).click();
+
+  const filters = page.locator(".backtest-trade-filters");
+  for (const mode of ["all", "long", "short", "win", "loss"] as const) {
+    const button = filters.getByRole("button", { name: mode, exact: true });
+    await expect(button).toBeVisible();
+    const box = await button.boundingBox();
+    expect(box, `${mode} filter should have a box`).not.toBeNull();
+    expect(box!.width, `${mode} filter width`).toBeGreaterThanOrEqual(44);
+    expect(box!.height, `${mode} filter height`).toBeGreaterThanOrEqual(44);
+  }
+});
