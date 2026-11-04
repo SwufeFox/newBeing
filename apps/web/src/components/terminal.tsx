@@ -1452,8 +1452,6 @@ export function Terminal(): React.JSX.Element {
             <section className="chart-column flex flex-col min-h-0 bg-[var(--ak-surface-canvas)]" style={{ gridColumn: col.chart, gridRow: 1 }}>
               <div className="chart-toolbar flex items-center justify-between p-2 bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] font-mono text-xs">
                 <div className="chart-toolbar-left flex items-center gap-2">
-                  <span className="section-kicker font-bold text-[var(--ak-signal-info)]">01</span>
-                  <span className="toolbar-separator text-[var(--ak-text-secondary)] opacity-50">/</span>
                   <span className="font-bold">{workspaceName.toUpperCase()} · {symbol} · {timeframe}</span>
                   {result && (
                     <AkTag variant="advanced" className="text-[10px] px-1.5 py-0">

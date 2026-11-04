@@ -1188,31 +1188,6 @@ input[type="number"] {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.section-kicker {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 var(--s-2);
-  border: var(--line) solid color-mix(in srgb, var(--mode) 50%, var(--c-line));
-  color: var(--mode);
-  font-family: var(--f-display);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: var(--track-caps);
-}
-.toolbar-separator { color: var(--c-fg-4); }
-.signal-chip {
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--s-2);
-  border: var(--line) solid var(--c-line);
-  color: var(--c-fg-3);
-  font-family: var(--f-display);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
 .run-status {
   display: inline-flex;
   align-items: center;
@@ -3640,11 +3615,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   padding-left: 22px !important;
 }
 
-/*   3. The chart kicker sat under a stray half-square: the signal chip and the
-      kicker were both drawing a corner mark. The kicker keeps the accent bar,
-      the chip keeps its own border, and only one of them draws a corner. */
-.chart-toolbar-left .section-kicker::after { display: none; }
-.chart-toolbar-left .signal-chip { position: relative; }
 
 /* The book mid row: a five-figure price (BTC) left no room for "SPREAD" and
    the two ran into each other. The label stacks above its value, and both
