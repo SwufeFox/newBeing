@@ -1406,9 +1406,6 @@ export function Terminal(): React.JSX.Element {
                 <PanelLeftClose size={13} /> Close
               </button>
             )}
-            <div className="rail-caption text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold pb-1 border-b border-[var(--ak-border-subtle)]">
-              RESEARCH · WORKSPACE
-            </div>
             <div className="rail-status research p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1">
               <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
                 RESEARCH
@@ -1423,9 +1420,6 @@ export function Terminal(): React.JSX.Element {
         )}
         {workspace === "replay" && sidebarOpen && (
           <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label="Active workspace">
-            <div className="rail-caption text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-widest font-bold pb-1 border-b border-[var(--ak-border-subtle)]">
-              REPLAY · WORKSPACE
-            </div>
             <div className="rail-status replay p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1">
               <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
                 REPLAY

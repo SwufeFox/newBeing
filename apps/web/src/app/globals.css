@@ -2312,15 +2312,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 
 .primary-rail { display: flex; flex-direction: column; min-width: 0; }
 
-.rail-caption {
-  padding: var(--s-3) var(--s-3) var(--s-1);
-  color: var(--c-fg-4);
-  font-family: var(--f-display);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-}
 
 .rail-status {
   display: flex;
