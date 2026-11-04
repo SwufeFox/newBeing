@@ -1292,11 +1292,9 @@ export function Terminal(): React.JSX.Element {
 
             {/* Wing 3: Session Status & Tactical Actions */}
             <div className="flex items-center gap-2 shrink-0">
-              <div className="topbar-status flex items-center gap-1.5 px-2.5 h-7 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] whitespace-nowrap shrink-0 shadow-sm" aria-label={`Execution mode: paper. Live trading disabled. Active workspace: ${workspaceName}.`}>
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] animate-pulse shrink-0" />
-                <span className="text-[10px] font-mono text-[var(--ak-signal-action)] font-bold">{workspaceName.toUpperCase()}</span>
-                <span className="text-[10px] font-mono text-[var(--ak-text-secondary)] opacity-60">·</span>
-                <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">PAPER</span>
+              <div className="topbar-status flex items-center gap-1.5 px-2.5 h-7 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] whitespace-nowrap shrink-0 shadow-sm" aria-label={`Execution mode: paper-only. Live trading disabled. Active workspace: ${workspaceName}.`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] shrink-0" />
+                <span className="text-[10px] font-mono text-[var(--ak-signal-action)] font-bold">PAPER ONLY</span>
               </div>
 
               <div className="h-5 w-[1px] bg-[var(--ak-border)] mx-0.5 opacity-50" />

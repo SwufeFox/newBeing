@@ -55,3 +55,16 @@ test("backtest trade filters stay tappable on coarse pointers", async ({ page })
     expect(box!.height, `${mode} filter height`).toBeGreaterThanOrEqual(44);
   }
 });
+
+test("hides desktop market statistics without mobile horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installApiMocks(page);
+  await page.goto("/");
+
+  await expect(page.locator(".summary-stats")).toBeHidden();
+  const shell = page.locator(".application-shell");
+  await expect.poll(() => shell.evaluate((element) => {
+    const container = element as HTMLElement;
+    return container.scrollWidth - container.clientWidth;
+  })).toBe(0);
+});
