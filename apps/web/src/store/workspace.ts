@@ -14,7 +14,6 @@ export interface WorkspaceStore extends WorkspaceState {
   dockTab: DockTab;
   strategyParameters: StrategyParameters;
   backtestConfig: BacktestConfig;
-  sourceDrafts: Record<string, string>;
   backtest: BacktestResult | null;
   syncUpdatedAt: number;
   workspaceReady: boolean;
@@ -34,7 +33,6 @@ export interface WorkspaceStore extends WorkspaceState {
   setStrategy: (strategyId: string, parameters: StrategyParameters) => void;
   setStrategyParameters: (parameters: StrategyParameters) => void;
   setBacktestConfig: (config: BacktestConfig) => void;
-  setSourceDraft: (strategyId: string, source: string) => void;
   setBacktest: (backtest: BacktestResult | null) => void;
   setActiveReplayId: (id: string | null) => void;
   setFromRemote: (state: WorkspaceState, updatedAt: number) => void;
@@ -51,7 +49,7 @@ const firstStrategy = STRATEGIES[0];
 type PersistedWorkspaceState = Pick<WorkspaceStore,
   "symbol" | "timeframe" | "exchange" | "mode" | "activeWorkspace" | "selectedStrategyId" |
   "activeBacktestId" | "activeReplayId" | "visibleRange" | "layout" | "watchlist" |
-  "inspectorTab" | "dockTab" | "strategyParameters" | "backtestConfig" | "sourceDrafts" | "syncUpdatedAt">;
+  "inspectorTab" | "dockTab" | "strategyParameters" | "backtestConfig" | "syncUpdatedAt">;
 
 /** Coalesce rapid store writes (chart pan, splitter drag, typing) so a pointer
  *  gesture does not serialize and flush localStorage on every event. Pending
@@ -98,7 +96,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   dockTab: "backtest",
   strategyParameters: firstStrategy ? { ...firstStrategy.defaults } : {},
   backtestConfig: { initialCapital: 10_000, positionFraction: 0.95, feeRate: 0.001, slippageRate: 0.0005, allowShorts: false },
-  sourceDrafts: {},
   backtest: null,
   syncUpdatedAt: 0,
   workspaceReady: false,
@@ -132,7 +129,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   setStrategy: (selectedStrategyId, strategyParameters) => set({ selectedStrategyId, strategyParameters }),
   setStrategyParameters: (strategyParameters) => set({ strategyParameters }),
   setBacktestConfig: (backtestConfig) => set({ backtestConfig }),
-  setSourceDraft: (strategyId, source) => set((state) => ({ sourceDrafts: { ...state.sourceDrafts, [strategyId]: source } })),
   setBacktest: (backtest) => set({ backtest, activeBacktestId: backtest?.resultId ?? null }),
   setActiveReplayId: (activeReplayId) => set({ activeReplayId }),
   setFromRemote: (state, updatedAt) => set((current) => ({
@@ -149,7 +145,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
     strategyParameters: current.selectedStrategyId === state.selectedStrategyId
       ? current.strategyParameters
       : { ...(STRATEGIES.find((strategy) => strategy.id === state.selectedStrategyId)?.defaults ?? {}) },
-    sourceDrafts: current.sourceDrafts,
     backtest: current.backtest?.resultId === state.activeBacktestId ? current.backtest : null,
     syncUpdatedAt: updatedAt,
   })),
@@ -205,7 +200,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
     dockTab: state.dockTab,
     strategyParameters: state.strategyParameters,
     backtestConfig: state.backtestConfig,
-    sourceDrafts: state.sourceDrafts,
     syncUpdatedAt: state.syncUpdatedAt,
   }),
 }));

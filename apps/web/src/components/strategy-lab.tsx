@@ -1,39 +1,17 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { loader } from "@monaco-editor/react";
-import { Check, Code2, Play, Save, ShieldAlert, Sliders } from "lucide-react";
-import { STRATEGIES, type StrategyDefinition, type StrategyParameters } from "@newbeing/core";
+import { memo, useEffect, useMemo, useState } from "react";
+import { Play, ShieldAlert, Sliders } from "lucide-react";
+import { STRATEGIES, type StrategyParameters } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import { AkSelect, AkChoice, AkTag, AkNotice, AkField, AkFieldLabel, AkInput } from "@swufefox/ak-ui-react";
 
-loader.config({ paths: { vs: "/monaco/vs" } });
-
-const Monaco = dynamic(() => import("@monaco-editor/react"), {
-  ssr: false,
-  loading: () => <div className="editor-loading p-4 text-xs font-mono text-[var(--ak-text-secondary)]">Loading local Monaco assets…</div>,
-});
-
 interface StrategyLabProps {
   onRun: () => void;
   running: boolean;
-  /** False while the panel is kept mounted but hidden behind another tab. */
-  active?: boolean;
-}
-
-function sourceFor(strategy: StrategyDefinition): string {
-  const common = `/** newBeing strategy draft — reviewed built-in runner: ${strategy.id}@${strategy.version}\n * This editor is saved as research source only. Arbitrary code is not executed.\n * Backtests currently run the deterministic built-in implementation with the parameters below.\n */\n\nimport type { Candle, MarketSide, StrategyParameters } from "@newbeing/core";\n\nexport function signalAt(\n  candles: readonly Candle[],\n  index: number,\n  parameters: StrategyParameters,\n): MarketSide {\n  const bar = candles[index];\n  if (!bar) return "flat";\n`;
-  if (strategy.id === "sma-crossover") {
-    return `${common}  const fastPeriod = Number(parameters.fastPeriod ?? 20);\n  const slowPeriod = Number(parameters.slowPeriod ?? 50);\n  if (fastPeriod >= slowPeriod || index + 1 < slowPeriod) return "flat";\n\n  const mean = (period: number): number => {\n    const start = index - period + 1;\n    return candles.slice(start, index + 1).reduce((sum, item) => sum + item.close, 0) / period;\n  };\n  return mean(fastPeriod) > mean(slowPeriod) ? "long" : "flat";\n}\n`;
-  }
-  if (strategy.id === "rsi-mean-reversion") {
-    return `${common}  const period = Number(parameters.period ?? 14);\n  if (index < period) return "flat";\n  let gains = 0;\n  let losses = 0;\n  for (let i = index - period + 1; i <= index; i += 1) {\n    const previous = candles[i - 1];\n    const current = candles[i];\n    if (!previous || !current) return "flat";\n    const change = current.close - previous.close;\n    gains += Math.max(0, change);\n    losses += Math.max(0, -change);\n  }\n  const ratio = gains / Math.max(losses, Number.EPSILON);\n  const rsi = 100 - 100 / (1 + ratio);\n  return rsi <= Number(parameters.oversold ?? 30) ? "long" : "flat";\n}\n`;
-  }
-  return `${common}  const lookback = Number(parameters.lookback ?? 20);\n  const anchor = candles[index - lookback];\n  if (!anchor || anchor.close <= 0) return "flat";\n  const move = bar.close / anchor.close - 1;\n  const threshold = Number(parameters.thresholdPct ?? 2) / 100;\n  if (move >= threshold) return "long";\n  if (move <= -threshold && Boolean(parameters.allowShorts)) return "short";\n  return "flat";\n}\n`;
 }
 
 const BUILTIN_PRESETS: Record<string, Array<{ name: string; params: StrategyParameters }>> = {
@@ -69,12 +47,10 @@ function loadStoredPresets(strategyId?: string): Array<{ name: string; params: S
   return [];
 }
 
-export const StrategyLab = memo(function StrategyLab({ onRun, running, active = true }: StrategyLabProps): React.JSX.Element {
-  const [strategyId, setStrategyId, savedDraft, saveDraft, params, setParams, config, setConfig] = useWorkspaceStore(useShallow((state) => [
+export const StrategyLab = memo(function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Element {
+  const [strategyId, setStrategyId, params, setParams, config, setConfig] = useWorkspaceStore(useShallow((state) => [
     state.selectedStrategyId,
     state.setStrategy,
-    state.sourceDrafts[state.selectedStrategyId],
-    state.setSourceDraft,
     state.strategyParameters,
     state.setStrategyParameters,
     state.backtestConfig,
@@ -84,9 +60,6 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running, active = 
   const symbol = useWorkspaceStore((state) => state.symbol);
   const timeframe = useWorkspaceStore((state) => state.timeframe);
   const strategy = STRATEGIES.find((item) => item.id === strategyId) ?? STRATEGIES[0];
-  const [editorValues, setEditorValues] = useState<Record<string, string>>({});
-  const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
   const [customPresetsByStrategy, setCustomPresetsByStrategy] = useState<Record<string, Array<{ name: string; params: StrategyParameters }>>>({});
   const [showSaveInput, setShowSaveInput] = useState(false);
@@ -146,11 +119,6 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running, active = 
     window.setTimeout(() => setPresetNotice(null), 2200);
   };
 
-  const source = strategy ? editorValues[strategy.id] ?? savedDraft ?? sourceFor(strategy) : "";
-  const setSource = (next: string): void => {
-    if (strategy) setEditorValues((current) => ({ ...current, [strategy.id]: next }));
-  };
-
   const parameterEntries = useMemo(() => Object.entries(strategy?.defaults ?? {}), [strategy]);
 
   const updateStrategy = (nextId: string): void => {
@@ -167,55 +135,6 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running, active = 
     if (!Number.isFinite(num) || num < 0) return;
     setParams({ ...params, [key]: num });
   };
-
-  const saveSource = async (): Promise<void> => {
-    if (!strategy) return;
-    setSaveError(null);
-    try {
-      const safeSlug = strategy.id.replace(/[^a-z0-9-]/g, "-");
-      const response = await fetch("/api/strategies", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: `custom-${safeSlug}`,
-          name: `${strategy.name} draft`,
-          description: `Saved source draft based on ${strategy.name}. This source is not executable.`,
-          parameters: params,
-          source,
-        }),
-      });
-      const payload: unknown = await response.json();
-      if (!response.ok) {
-        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
-          ? payload.error
-          : "Could not save this draft.";
-        throw new Error(message);
-      }
-      saveDraft(strategy.id, source);
-      setSaved(true);
-      window.setTimeout(() => setSaved(false), 1800);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Could not save draft.");
-    }
-  };
-
-  const saveSourceRef = useRef(saveSource);
-  useEffect(() => {
-    saveSourceRef.current = saveSource;
-  });
-
-  // Global hotkey: Ctrl+S / Cmd+S to save draft
-  useEffect(() => {
-    if (!active) return;
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        void saveSourceRef.current();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [active]);
 
   if (!strategy) return <div className="empty-panel p-4 font-mono text-xs">No built-in strategy is available.</div>;
 
@@ -526,79 +445,22 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running, active = 
         {config.accountMode === "legacy-margin" ? "Historical synthetic model; no native derivative contract, margin, liquidation or funding simulation." : "Spot inventory and quote fees; budget includes entry fee. Opening gaps precede opening orders; entry-bar targets are deferred."}
       </p>
 
-      <div className="editor-heading flex items-center justify-between border-t border-[var(--ak-border-subtle)] pt-2 mt-1">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--ak-text-primary)]">
-          <Code2 size={13} className="text-[var(--ak-signal-info)]" />
-          <span>STRATEGY SOURCE</span>
-        </div>
-        <span className="draft-badge text-[10px] font-mono px-1.5 py-0.5 bg-[var(--ak-surface-raised)] border border-[var(--ak-border)] text-[var(--ak-signal-action)]">
-          DRAFT · NOT EXECUTED
-        </span>
-      </div>
-
-      <div className="editor-frame h-48 border border-[var(--ak-border-strong)] bg-[#1e1e1e]">
-        <Monaco
-          height="100%"
-          language="typescript"
-          theme="vs-dark"
-          value={source}
-          onChange={(value) => setSource(value ?? "")}
-          options={{
-            minimap: { enabled: false },
-            fontSize: 11,
-            lineNumbersMinChars: 3,
-            scrollBeyondLastLine: false,
-            wordWrap: "on",
-            automaticLayout: true,
-            tabSize: 2,
-            renderLineHighlight: "gutter",
-            overviewRulerBorder: false,
-            padding: { top: 6, bottom: 6 },
-          }}
-        />
-      </div>
-
-      <div className="sandbox-note flex items-center gap-2 p-1.5 text-[10px] text-[var(--ak-text-secondary)] opacity-80">
-        <ShieldAlert size={13} className="text-[var(--ak-signal-info)] shrink-0" />
-        <span>Only the reviewed built-in strategy runs. This TypeScript draft is stored in local SQLite without arbitrary code execution.</span>
-      </div>
-
-      {saveError && (
-        <div className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">
-          {saveError}
-        </div>
-      )}
-
       <div className="strategy-actions sticky bottom-0 bg-[var(--ak-surface-canvas)] flex flex-col gap-1.5 pt-2 pb-1 border-t border-[var(--ak-border-subtle)] z-10">
         <p className="assumption-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80 text-center">
           Runs on {EXCHANGE_LABELS[exchange]} · {symbol} · {timeframe}
         </p>
 
-        <div className="grid grid-cols-2 gap-2 w-full">
-          <Button
-            data-testid="save-strategy-draft"
-            variant="outline"
-            size="sm"
-            onClick={() => void saveSource()}
-            icon={saved ? <Check size={13} className="text-[var(--ak-signal-success)]" /> : <Save size={13} />}
-            className="w-full text-xs transition-transform active:scale-95"
-            title="Save draft [⌘S]"
-          >
-            {saved ? "Saved" : "Save draft"}
-          </Button>
-
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={onRun}
-            disabled={running || invalidSma}
-            icon={running ? <Play size={13} className="spin" /> : <Play size={13} />}
-            className="w-full text-xs font-bold transition-transform active:scale-95"
-            title="Run backtest [B or ⌘↵]"
-          >
-            {running ? "Running" : "Run backtest"}
-          </Button>
-        </div>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={onRun}
+          disabled={running || invalidSma}
+          icon={running ? <Play size={13} className="spin" /> : <Play size={13} />}
+          className="w-full text-xs font-bold transition-transform active:scale-95"
+          title="Run backtest [B or ⌘↵]"
+        >
+          {running ? "Running" : "Run backtest"}
+        </Button>
       </div>
     </div>
   );

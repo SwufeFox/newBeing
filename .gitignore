@@ -10,7 +10,6 @@ test-results/
 .env.local
 *.log
 *.tsbuildinfo
-apps/web/public/monaco/vs/
 .alma-snapshots
 
 # Local development evidence: screenshots and probe scripts are working

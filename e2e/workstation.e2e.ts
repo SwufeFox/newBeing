@@ -52,10 +52,7 @@ test("chart, backtest, source draft, Paper order, Replay and workspace sync use 
   await expect(chart.locator("canvas").first()).toBeVisible();
 
   await activate(page.getByRole("tab", { name: "Strategy lab" }), useKeyboard);
-  await expect(page.getByText("DRAFT · NOT EXECUTED")).toBeVisible();
-  const saveDraft = page.waitForResponse((response) => response.url().endsWith("/api/strategies") && response.request().method() === "POST");
-  await activate(page.getByRole("button", { name: "Save draft" }), useKeyboard);
-  expect((await saveDraft).ok()).toBeTruthy();
+  await expect(page.getByText("SIMULATION ASSUMPTIONS")).toBeVisible();
 
   // Research owns the backtest now (the separate Backtest workspace was merged
   // into it), so the run is launched from the merged workspace and its result

@@ -21,7 +21,6 @@ import {
 import { MarketChart } from "@/components/market-chart";
 import { BottomDock } from "@/components/bottom-dock";
 import { Inspector } from "@/components/inspector";
-import { loader } from "@monaco-editor/react";
 import { ReplayControls } from "@/components/replay-controls";
 import { Watchlist } from "@/components/watchlist";
 import { Decoded } from "@/components/decoded";
@@ -103,7 +102,7 @@ function clearReplayOrderRequest(key: string, requestId: string): void {
 
 const RAIL_NOTES: Record<WorkspaceState["activeWorkspace"], string> = {
   terminal: "Live quotes, depth stream, and paper execution ticket.",
-  research: "Parameter optimization, Monaco draft editor & deterministic backtesting.",
+  research: "Parameter optimization and deterministic backtesting.",
   replay: "Time-travel simulation with future bars strictly hidden.",
 };
 
@@ -193,7 +192,6 @@ function isTypingActive(event: KeyboardEvent): boolean {
     target.tagName === "SELECT" ||
     Boolean(target.closest?.("input, textarea, select")) ||
     target.isContentEditable ||
-    Boolean(target.closest?.(".monaco-editor")) ||
     Boolean(target.closest?.("[contenteditable='true']"))
   );
 }
@@ -683,20 +681,6 @@ export function Terminal(): React.JSX.Element {
      when a response predates it, so the client never rescans equity per render. */
   const applyReplayReport = useCallback((parsed: ReplayEnvelope): void => {
     setReplayReportValue(parsed.report ?? (parsed.execution ? replayReport(parsed.execution, parsed.session.bars.at(-1)?.close ?? 0) : null));
-  }, []);
-
-  /* The strategy tab mounts Monaco on first visit. Warming the local editor
-     bundle while the browser is idle keeps that first tab switch from paying
-     the parse/init cost on the click. */
-  useEffect(() => {
-    let cancelled = false;
-    const start = (): void => { if (!cancelled) void loader.init().catch(() => undefined); };
-    if (typeof window.requestIdleCallback === "function") {
-      const id = window.requestIdleCallback(start, { timeout: 3_000 });
-      return () => { cancelled = true; window.cancelIdleCallback(id); };
-    }
-    const id = window.setTimeout(start, 1_500);
-    return () => { cancelled = true; window.clearTimeout(id); };
   }, []);
 
   const mobileRailCloseRef = useRef<HTMLButtonElement | null>(null);

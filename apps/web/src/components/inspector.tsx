@@ -1301,7 +1301,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
         <div className={`overflow-auto min-h-0 ${selectedTab === "strategy" ? "flex-1" : ""}`}>
           {visitedTabs.includes("book") && <TabsContent value="book" forceMount><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "book"} onPickPrice={handlePickPrice} /></TabsContent>}
           {visitedTabs.includes("trades") && <TabsContent value="trades" forceMount><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "trades"} onPickPrice={handlePickPrice} /></TabsContent>}
-          {visitedTabs.includes("strategy") && <TabsContent value="strategy" forceMount><StrategyLab onRun={onRun} running={running} active={selectedTab === "strategy"} /></TabsContent>}
+          {visitedTabs.includes("strategy") && <TabsContent value="strategy" forceMount><StrategyLab onRun={onRun} running={running} /></TabsContent>}
           {visitedTabs.includes("context") && <TabsContent value="context" forceMount><WorkspaceContext /></TabsContent>}
         </div>
       </Tabs>

@@ -50,7 +50,6 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
         target.tagName === "SELECT" ||
         Boolean(target.closest?.("input, textarea, select")) ||
         target.isContentEditable ||
-        Boolean(target.closest?.(".monaco-editor")) ||
         Boolean(target.closest?.("[contenteditable='true']")) ||
         (event.code === "Space" && target.tagName === "BUTTON")
       ) return;

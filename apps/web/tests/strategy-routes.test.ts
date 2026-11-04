@@ -2,16 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { closeDatabaseForTests } from "@newbeing/storage";
-import { GET as listStrategies, POST as saveDraft } from "../src/app/api/strategies/route.js";
+import { closeDatabaseForTests, saveStrategy } from "@newbeing/storage";
+import { GET as listStrategies } from "../src/app/api/strategies/route.js";
 import { GET as getStrategy } from "../src/app/api/strategies/[id]/route.js";
 
 const source = "export function signalAt() { return 'long'; } // research only";
 let directory: string;
 const context = (id: string) => ({ params: Promise.resolve({ id }) });
-const post = (body: unknown) => new Request("http://localhost/api/strategies", {
-  method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" },
-});
 
 beforeEach(() => {
   closeDatabaseForTests();
@@ -26,11 +23,10 @@ afterEach(() => {
 
 describe("strategy draft HTTP contracts", () => {
   it("keeps the roster small and serves the saved source only by ID", async () => {
-    const created = await saveDraft(post({
-      id: "custom-source-test", name: "Source test", description: "draft", parameters: { period: 14 }, source,
-    }));
-    expect(created.status).toBe(201);
-    expect((await created.json()).strategy.source).toBe(source);
+    saveStrategy({
+      id: "custom-source-test", name: "Source test", version: "draft",
+      description: "draft", parameters: { period: 14 }, source,
+    });
 
     const list = await listStrategies();
     expect(list.status).toBe(200);

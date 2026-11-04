@@ -17,7 +17,7 @@ const config = [
     files: ["**/*.mjs"],
     languageOptions: { parser: tsParser },
   },
-  { ignores: ["**/.next*/**", "**/node_modules/**", "**/dist/**", "**/public/monaco/**", "**/playwright-report/**", "**/test-results/**"] },
+  { ignores: ["**/.next*/**", "**/node_modules/**", "**/dist/**", "**/playwright-report/**", "**/test-results/**"] },
 ];
 
 export default config;

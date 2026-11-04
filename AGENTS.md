@@ -30,7 +30,7 @@ flowchart LR
 - `packages/storage/src/` — SQLite schema, migrations, repositories, and immutable research snapshots.
 - `packages/mcp/src/` — local MCP server, tool registration, and stdio smoke client.
 - `e2e/` — Playwright browser and API flows. `docs/` — architecture, feature boundaries, research decisions, and workflows.
-- `apps/web/scripts/copy-monaco-assets.mjs` — copies Monaco assets before web dev/build. `packages/core/bench/` — informational strategy benchmarks.
+- `packages/core/bench/` — informational strategy benchmarks.
 
 ## Development Commands
 

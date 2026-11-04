@@ -52,7 +52,6 @@ export async function installApiMocks(page: Page): Promise<ApiMockState> {
   };
   const state: ApiMockState = { workspace };
   const portfolio = { quoteBalance: 10_000, baseBalance: 0, averageEntryPrice: null, realizedPnl: 0, totalFees: 0 };
-  let draft: Record<string, unknown> | null = null;
   let replay = {
     id: "e2e-replay-fixture",
     exchange: "binance",
@@ -111,12 +110,7 @@ export async function installApiMocks(page: Page): Promise<ApiMockState> {
     }
 
     if (path === "/api/strategies") {
-      if (method === "POST") {
-        const body = request.postDataJSON() as Record<string, unknown>;
-        draft = { ...body, id: "custom-e2e-draft", executable: false, updatedAt: "2026-10-09T00:00:00.000Z" };
-        return json({ strategy: draft, executable: false }, 201);
-      }
-      return json({ items: draft ? [draft] : [], strategies: draft ? [draft] : [] });
+      return json({ items: [], strategies: [] });
     }
 
     if (path === "/api/backtests" && method === "POST") {

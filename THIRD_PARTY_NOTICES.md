@@ -12,8 +12,6 @@ newBeing's own source is MIT licensed; third-party dependencies remain under the
 | Next.js | 16.4.0 | MIT | App Router runtime. |
 | React / React DOM | 19.3.0 | MIT | UI runtime. |
 | Tailwind CSS | 4.3.3 | MIT | Styling utilities and tokens. |
-| Monaco Editor | 0.57.0 | MIT | Locally served editor assets; no CDN required. |
-| `@monaco-editor/react` | 4.7.0 | MIT | React wrapper for Monaco. |
 | Zustand | 5.0.15 | MIT | Persisted UI state. |
 | `better-sqlite3` | 13.0.3 | MIT | Local SQLite driver. |
 | Zod | 4.6.5 | MIT | Request and tool schema validation. |
