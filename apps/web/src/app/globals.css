@@ -761,6 +761,12 @@ input[type="number"] {
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
+/* The global timeframe controls are hidden at 920px and below. Keep the
+   identity badge there; above that width the selector carries the value. */
+@media (width > 920px) {
+  .market-title > .spot-tag { display: none; }
+}
+
 .ticker-chevron { color: var(--c-fg-4); }
 
 /* ---- stats strip ---- */
