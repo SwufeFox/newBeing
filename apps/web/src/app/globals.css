@@ -746,26 +746,6 @@ input[type="number"] {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.spot-tag {
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  margin-left: var(--s-1);
-  padding: 0 var(--s-2);
-  border: var(--line) solid color-mix(in srgb, var(--mode) 45%, var(--c-line));
-  color: var(--c-fg-2);
-  font-family: var(--f-display);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-}
-/* The global timeframe controls are hidden at 920px and below. Keep the
-   identity badge there; above that width the selector carries the value. */
-@media (width > 920px) {
-  .market-title > .spot-tag { display: none; }
-}
 
 .ticker-chevron { color: var(--c-fg-4); }
 
@@ -1604,6 +1584,18 @@ select.nb-select:focus-visible {
   border-color: var(--mode);
 }
 select.nb-select:disabled { color: var(--c-fg-4); cursor: not-allowed; }
+.mobile-timeframe-select { display: none; }
+select.nb-select.mobile-timeframe-select {
+  align-self: center;
+  min-width: 44px;
+  height: 44px;
+  margin-left: var(--s-1);
+  border-left: var(--line-strong) solid var(--ak-signal-action);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 
 /* A select that already sits inside a bordered shell (the venue picker): keep the
    unified type + caret, drop the second border. */
@@ -2743,11 +2735,17 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .mode-research .dock-toolbar-right { display: none; }
   .dock-tabs .tab-trigger { padding-inline: var(--s-1); }
 }
+/* Narrow and coarse-pointer layouts use one native 44px picker; fine-pointer
+   desktop keeps the segmented controls. */
+@media (max-width: 920px), (hover: none), (pointer: coarse) {
+  .market-title > .mobile-timeframe-select { display: inline-block; }
+  .instrument-pod .timeframe-selector { display: none; }
+}
+
 
 @media (max-width: 920px) {
   .application-shell { min-height: 500px; }
   .workspace-label,
-  .timeframe-selector,
   .exchange-select,
   .market-heading-right { display: none; }
   .topbar { padding: 0 var(--s-2); gap: var(--s-2); }

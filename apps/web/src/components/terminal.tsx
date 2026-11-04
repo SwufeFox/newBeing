@@ -1359,9 +1359,19 @@ export function Terminal(): React.JSX.Element {
               <span className="quote-symbol text-[var(--ak-text-secondary)] opacity-70 text-sm">
                 / <Decoded value={symbol.split("/")[1] ?? ""} trigger={`quote|${symbol}`} />
               </span>
-              <AkTag variant="advanced" className="spot-tag ml-1 text-[10px] px-1.5 py-0 h-4">
-                {timeframe}
-              </AkTag>
+              <select
+                aria-label="Timeframe"
+                className="nb-select mobile-timeframe-select"
+                value={timeframe}
+                disabled={replayLocked}
+                onChange={(event) => useWorkspaceStore.getState().setTimeframe(event.target.value as Timeframe)}
+              >
+                {TIMEFRAMES.map((item) => (
+                  <option key={item} value={item} disabled={!EXCHANGE_TIMEFRAMES[exchange].includes(item)}>
+                    {item}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
