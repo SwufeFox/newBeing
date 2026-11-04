@@ -1584,6 +1584,18 @@ select.nb-select:focus-visible {
   border-color: var(--mode);
 }
 select.nb-select:disabled { color: var(--c-fg-4); cursor: not-allowed; }
+.mobile-exchange-select { display: none; }
+select.nb-select.mobile-exchange-select {
+  align-self: flex-start;
+  width: 180px;
+  max-width: 100%;
+  min-width: 44px;
+  height: 44px;
+  border-left: var(--line-strong) solid var(--ak-signal-info);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  text-transform: uppercase;
+}
 .mobile-timeframe-select { display: none; }
 select.nb-select.mobile-timeframe-select {
   align-self: center;
@@ -2735,10 +2747,13 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .mode-research .dock-toolbar-right { display: none; }
   .dock-tabs .tab-trigger { padding-inline: var(--s-1); }
 }
-/* Narrow and coarse-pointer layouts use one native 44px picker; fine-pointer
-   desktop keeps the segmented controls. */
+/* Narrow and coarse-pointer layouts use native 44px controls; fine-pointer
+   desktop keeps the toolbar selectors. */
 @media (max-width: 920px), (hover: none), (pointer: coarse) {
+  .market-identity .market-eyebrow { display: none; }
+  .market-identity .mobile-exchange-select { display: inline-block; }
   .market-title > .mobile-timeframe-select { display: inline-block; }
+  .instrument-pod .exchange-select,
   .instrument-pod .timeframe-selector { display: none; }
 }
 

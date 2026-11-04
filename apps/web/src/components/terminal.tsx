@@ -29,7 +29,7 @@ import { WorkspaceSync } from "@/components/workspace-sync";
 import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { applyReplaySelection, captureReplaySelection, captureWorkspaceSelection } from "@/lib/workspace-selection";
-import { EXCHANGE_LABELS } from "@/lib/exchanges";
+import { EXCHANGE_IDS, EXCHANGE_LABELS } from "@/lib/exchanges";
 import { replayIdentity, useWorkspaceStore, type DockTab, type InspectorTab } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -1281,10 +1281,9 @@ export function Terminal(): React.JSX.Element {
                   onChange={(event) => useWorkspaceStore.getState().setExchange(event.target.value as WorkspaceState["exchange"])}
                   className="nb-select-bare bg-transparent border-0 outline-none text-xs font-mono cursor-pointer"
                 >
-                  <option value="binance">Binance Spot</option>
-                  <option value="coinbaseexchange">Coinbase</option>
-                  <option value="okx">OKX Spot</option>
-                  <option value="kraken">Kraken</option>
+                  {EXCHANGE_IDS.map((id) => (
+                    <option key={id} value={id}>{EXCHANGE_LABELS[id]}</option>
+                  ))}
                 </select>
                 <ChevronDown size={11} className="text-[var(--ak-text-secondary)] opacity-70" />
               </label>
@@ -1354,6 +1353,17 @@ export function Terminal(): React.JSX.Element {
               <span className="opacity-70 font-mono">{"//"}</span>
               {EXCHANGE_LABELS[exchange]} · SPOT TRADING
             </span>
+            <select
+              aria-label="Exchange"
+              className="nb-select mobile-exchange-select"
+              value={exchange}
+              disabled={replayLocked}
+              onChange={(event) => useWorkspaceStore.getState().setExchange(event.target.value as WorkspaceState["exchange"])}
+            >
+              {EXCHANGE_IDS.map((id) => (
+                <option key={id} value={id}>{EXCHANGE_LABELS[id]}</option>
+              ))}
+            </select>
             <div className="market-title flex items-baseline gap-1 text-xl font-bold">
               <Decoded className="base-symbol text-[var(--ak-text-primary)] font-extrabold tracking-tight" value={symbol.split("/")[0] ?? symbol} trigger={`sym|${symbol}`} />
               <span className="quote-symbol text-[var(--ak-text-secondary)] opacity-70 text-sm">
