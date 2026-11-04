@@ -68,3 +68,13 @@ test("hides desktop market statistics without mobile horizontal overflow", async
     return container.scrollWidth - container.clientWidth;
   })).toBe(0);
 });
+
+test("Research dock tabs keep full labels at tablet width", async ({ page }) => {
+  await installApiMocks(page);
+  await page.goto("/");
+  await page.getByTestId("workspace-research").click();
+
+  const tabLabels = page.locator(".dock-tabs [role=tab] > span");
+  await expect.poll(() => tabLabels.evaluateAll((labels) => labels.every((label) => label.clientWidth > 0 && label.scrollWidth <= label.clientWidth))).toBe(true);
+  await expect(page.locator(".mode-research .dock-toolbar-right")).toBeHidden();
+});

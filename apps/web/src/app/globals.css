@@ -2767,6 +2767,11 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .topbar { gap: var(--s-2); padding: 0 var(--s-3); }
 }
 
+@media (min-width: 761px) and (max-width: 1180px) {
+  .mode-research .dock-toolbar-right { display: none; }
+  .dock-tabs .tab-trigger { padding-inline: var(--s-1); }
+}
+
 @media (max-width: 920px) {
   .application-shell { min-height: 500px; }
   .workspace-label,
