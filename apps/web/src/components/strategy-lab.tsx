@@ -306,7 +306,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         </div>
 
         {presetNotice && (
-          <div role="status" className="text-[10px] text-[var(--ak-signal-info)] font-mono px-1 py-0.5 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-info)] animate-pulse">
+          <div role="status" className="text-[10px] text-[var(--ak-signal-info)] font-mono px-1 py-0.5 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-info)]">
             {presetNotice}
           </div>
         )}

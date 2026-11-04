@@ -363,7 +363,7 @@ function WorkspaceContext(): React.JSX.Element {
           <span className="font-bold text-xs tracking-wider">MCP CONTEXT BRIDGE</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)]" />
           <span className="text-[10px] text-[var(--ak-signal-info)] uppercase">ACTIVE</span>
         </div>
       </div>
@@ -1307,7 +1307,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
       </Tabs>
 
       {priceNotice && (
-        <div className="mx-2 mt-1 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border-l-2 border-[var(--ak-signal-info)] text-[10px] text-[var(--ak-signal-info)] font-mono animate-pulse">
+        <div role="status" className="mx-2 mt-1 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border-l-2 border-[var(--ak-signal-info)] text-[10px] text-[var(--ak-signal-info)] font-mono">
           {priceNotice}
         </div>
       )}

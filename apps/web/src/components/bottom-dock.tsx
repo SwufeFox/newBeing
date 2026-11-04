@@ -1109,7 +1109,7 @@ export const BottomDock = memo(function BottomDock({
           </TabsList>
         </Tabs>
         <div className="dock-toolbar-right flex items-center gap-2 text-[10px] font-mono text-[var(--ak-text-secondary)]">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)]" />
           <span className="uppercase tracking-wider font-bold">
             {replayMode ? "REPLAY · ISOLATED SIMULATION" : "LOCAL SQLITE · PAPER TRADING"}
           </span>

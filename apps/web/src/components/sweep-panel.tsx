@@ -543,7 +543,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
       )}
 
       {notice && (
-        <div className="text-[10px] text-[var(--ak-signal-info)] font-mono px-2 py-1 bg-[var(--ak-surface-sunken-2)] border-l-2 border-[var(--ak-signal-info)] animate-pulse flex items-center justify-between">
+        <div role="status" className="text-[10px] text-[var(--ak-signal-info)] font-mono px-2 py-1 bg-[var(--ak-surface-sunken-2)] border-l-2 border-[var(--ak-signal-info)] flex items-center justify-between">
           <span className="font-bold flex items-center gap-1.5">
             <Check size={11} className="text-[var(--ak-signal-success)]" />
             {notice}
