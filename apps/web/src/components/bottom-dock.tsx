@@ -135,7 +135,7 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
   if (!payload) {
     return (
       <div className="position-table-wrap p-2 font-mono text-xs">
-        <div className="overflow-auto border border-[var(--ak-border-subtle)] opacity-50 animate-pulse">
+        <div className="overflow-auto border border-[var(--ak-border-subtle)] opacity-50 animate-pulse motion-reduce:animate-none">
           <table className="data-table w-full text-left">
             <thead>
               <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] uppercase">

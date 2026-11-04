@@ -807,7 +807,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
             </div>
           )}
           {selectedId && !instrument && !marketError && !focusedLocalOnly && (
-            <div className="derivatives-panel-body py-3 space-y-3 opacity-50 animate-pulse">
+            <div className="derivatives-panel-body py-3 space-y-3 opacity-50 animate-pulse motion-reduce:animate-none">
               <div className="flex flex-wrap gap-x-6 gap-y-2">
                 <div className="flex flex-col gap-1"><span className="meta">Contract size</span><span className="w-16 h-3.5 bg-[var(--c-surface-3)] rounded-[2px]" /></div>
                 <div className="flex flex-col gap-1"><span className="meta">Min / step</span><span className="w-16 h-3.5 bg-[var(--c-surface-3)] rounded-[2px]" /></div>
@@ -915,7 +915,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
               <div className="space-y-3">
                 <div className="p-3 bg-amber-500/10 border border-amber-500/30 space-y-1.5 font-mono">
                   <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[10px] tracking-wider uppercase">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none shrink-0" />
                     <span>ORDER ENTRY PAUSED</span>
                   </div>
                   <p role="status" className="derivatives-ticket-note alert m-0 text-[11px] leading-relaxed">

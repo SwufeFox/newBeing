@@ -389,7 +389,7 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
             <Decoded className="decoded-price" value={last} trigger={subject} />
           </strong>
         ) : (
-          <span className="text-2xl font-extrabold font-mono text-[var(--ak-text-secondary)] opacity-30 tabular-nums tracking-tight animate-pulse select-none">
+          <span className="text-2xl font-extrabold font-mono text-[var(--ak-text-secondary)] opacity-30 tabular-nums tracking-tight animate-pulse motion-reduce:animate-none select-none">
             --.---
           </span>
         )}
@@ -1329,7 +1329,7 @@ export function Terminal(): React.JSX.Element {
       {workspace === "replay" && !replayConfirmed && (
         <div className="replay-sync-banner px-3 py-1.5 bg-amber-950/40 border-b border-amber-500/40 text-xs font-mono text-amber-300 flex items-center justify-between z-20 backdrop-blur-md">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none shrink-0" />
             <span className="text-[10px] font-bold px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 uppercase tracking-wider">REPLAY SYNC</span>
             <span role={replaySyncError ? "alert" : "status"} className="text-[11px]">{replaySyncError ?? "Synchronizing replay session with server…"}</span>
           </div>

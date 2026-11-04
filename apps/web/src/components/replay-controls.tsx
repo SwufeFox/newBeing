@@ -206,7 +206,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
           <div className="replay-session-row flex flex-wrap items-center justify-between gap-2 bg-[var(--ak-surface-sunken)] px-2 py-1 border border-[var(--ak-border-subtle)]">
             <div className="replay-session-meta flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${exhausted ? "bg-[var(--ak-signal-action)]" : "bg-[var(--ak-signal-info)] animate-pulse"}`} />
+                <span className={`w-2 h-2 rounded-full motion-reduce:animate-none ${exhausted ? "bg-[var(--ak-signal-action)]" : "bg-[var(--ak-signal-info)] animate-pulse"}`} />
                 <strong className="font-mono text-xs">{symbol} · {timeframe}</strong>
               </div>
               <span className="text-xs text-[var(--ak-text-secondary)] font-mono">

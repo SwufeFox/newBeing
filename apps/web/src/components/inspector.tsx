@@ -137,7 +137,7 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
       {stale && book && <div role="alert" className="small-error text-xs text-[var(--ak-signal-danger)] p-1">STALE · last update failed; showing previous data.</div>}
 
       {!book && !error && (
-        <div className="book-skeleton py-1 space-y-1 opacity-40 animate-pulse">
+        <div className="book-skeleton py-1 space-y-1 opacity-40 animate-pulse motion-reduce:animate-none">
           {[...Array(5)].map((_, i) => (
             <div key={`skel-ask-${i}`} className="flex justify-between py-0.5 px-1 text-[11px]">
               <span className="w-16 h-3 bg-red-500/20 rounded-[2px]" />
@@ -185,7 +185,7 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
       {midPrice !== null && (
         <div className="book-mid my-1 py-0.5 px-2 bg-[var(--ak-surface-sunken-2)] border-y border-[var(--ak-signal-info)]/30 flex items-center justify-between font-mono shadow-sm">
           <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] animate-pulse motion-reduce:animate-none" />
             <strong className="text-xs font-bold text-[var(--ak-text-primary)] tabular-nums">{price(midPrice)}</strong>
           </div>
           <span className="book-spread text-[10px] text-[var(--ak-text-secondary)] flex items-center gap-1">
@@ -928,7 +928,7 @@ function ReplayTicket({
           <div className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase flex items-center justify-between">
             <span>REPLAY PROTOCOL</span>
             <span className="text-[var(--ak-signal-action)] flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-action)] animate-pulse inline-block" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-action)] animate-pulse motion-reduce:animate-none inline-block" />
               AWAITING SEED
             </span>
           </div>

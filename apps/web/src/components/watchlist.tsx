@@ -311,7 +311,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
                     {summary ? (
                       <Decoded value={quotePrice(summary.last)} trigger={`${symbol}|${summary.last}`} />
                     ) : (
-                      <span className="inline-block w-14 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px] animate-pulse" />
+                      <span className="inline-block w-14 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px] animate-pulse motion-reduce:animate-none" />
                     )}
                   </strong>
                   {summary ? (
@@ -322,7 +322,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
                       {changeFormatted}
                     </AkTag>
                   ) : (
-                    <span className="inline-block w-10 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px] opacity-60 animate-pulse" />
+                    <span className="inline-block w-10 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px] opacity-60 animate-pulse motion-reduce:animate-none" />
                   )}
                 </span>
               </button>
@@ -355,7 +355,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
 
       <div className="watchlist-footer mt-auto pt-2 px-2 pb-1 border-t border-[var(--ak-border-subtle)] flex items-center justify-between text-[9px] font-mono text-[var(--ak-text-secondary)]">
         <span className="flex items-center gap-1.5 text-[var(--ak-signal-success)] font-bold">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-success)] animate-pulse inline-block" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-success)] animate-pulse motion-reduce:animate-none inline-block" />
           FEED LIVE
         </span>
         <span className="opacity-60 text-[8px] uppercase tracking-wider">DRAG ⁞⁞ TO REORDER</span>
