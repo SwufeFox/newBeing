@@ -1127,13 +1127,9 @@ function PaperTicket({
           size="sm"
           disabled={busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"}
           onClick={() => void submit("buy")}
-          onMouseEnter={() => setSizingSide("buy")}
           icon={<TrendingUp size={13} />}
-          className={`h-8 font-bold text-xs transition-all duration-150 active:translate-y-[1px] active:scale-[0.98] ${
-            sizingSide === "buy"
-              ? "bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-500/30"
-              : "bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-400 border border-emerald-500/30"
-          } disabled:opacity-30 disabled:pointer-events-none`}
+          style={{ background: "var(--c-up)", color: "#000" }}
+          className="h-8 font-bold text-xs border-0 transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-[1px] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
         >
           {copy.buy}
         </Button>
@@ -1142,13 +1138,9 @@ function PaperTicket({
           size="sm"
           disabled={busy || !Number.isFinite(number) || number <= 0 || !activePortfolio || number > activePortfolio.baseBalance || mode !== "paper"}
           onClick={() => void submit("sell")}
-          onMouseEnter={() => setSizingSide("sell")}
           icon={<TrendingDown size={13} />}
-          className={`h-8 font-bold text-xs transition-all duration-150 active:translate-y-[1px] active:scale-[0.98] ${
-            sizingSide === "sell"
-              ? "bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white shadow-[0_0_12px_rgba(244,63,94,0.35)] border border-rose-500/30"
-              : "bg-rose-950/20 hover:bg-rose-950/40 text-rose-400 border border-rose-500/30"
-          } disabled:opacity-30 disabled:pointer-events-none`}
+          style={{ background: "var(--c-down)", color: "#000" }}
+          className="h-8 font-bold text-xs border-0 transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-[1px] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
         >
           {copy.sell}
         </Button>
