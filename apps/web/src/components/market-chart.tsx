@@ -88,12 +88,12 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     toggleEma20: "Toggle Exponential Moving Average (EMA 20)",
     toggleBb: "Toggle Bollinger Bands (20, 2)",
     toggleVolume: "Toggle Volume Histogram",
-    streamLive: "STREAM LIVE",
-    streamConnecting: "CONNECTING",
-    streamPoll: (seconds) => `REST · ${seconds}S POLL`,
-    streamOffline: "OFFLINE",
-    streamReconnecting: "RECONNECTING",
-    streamReplay: "HISTORICAL REPLAY",
+    streamLive: "Realtime",
+    streamConnecting: "Connecting…",
+    streamPoll: (seconds) => `${seconds}s refresh`,
+    streamOffline: "Offline",
+    streamReconnecting: "Reconnecting…",
+    streamReplay: "Historical Replay",
     loadingHistory: "Loading history",
     loadVenueHistory: (venue) => `Loading ${venue} history`,
     retry: "Retry",
@@ -124,10 +124,10 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     toggleBb: "切换布林带（20, 2）",
     toggleVolume: "切换成交量柱状图",
     streamLive: "实时推送",
-    streamConnecting: "连接中",
-    streamPoll: (seconds) => `REST · ${seconds} 秒轮询`,
+    streamConnecting: "连接中…",
+    streamPoll: (seconds) => `${seconds} 秒刷新`,
     streamOffline: "离线",
-    streamReconnecting: "重连中",
+    streamReconnecting: "重连中…",
     streamReplay: "历史回放",
     loadingHistory: "加载历史",
     loadVenueHistory: (venue) => `加载 ${venue} 历史`,
@@ -867,7 +867,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               VOL
             </button>
           </div>
-          <div className={`stream-indicator stream-${effectiveStream} flex items-center gap-1 text-[10px] whitespace-nowrap`}>
+          <div className={`stream-indicator ${replayMode ? "stream-replay" : `stream-${effectiveStream}`} flex items-center gap-1.5 text-[10px] whitespace-nowrap`}>
             <StreamIcon size={12} />
             <span>{streamLabel}</span>
           </div>

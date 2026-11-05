@@ -210,8 +210,8 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
         className="replay-title flex items-center gap-2 pb-1 mb-1.5 border-b border-[var(--ak-border-subtle)]"
         title={copy.titleHint}
       >
-        <Clock3 size={13} className="text-[var(--ak-signal-info)]" />
-        <strong className="tracking-wider text-[11px]">{copy.title}</strong>
+        <Clock3 size={13} className="text-[var(--c-accent)]" />
+        <strong className="font-semibold text-xs text-[var(--c-fg)]">{copy.title}</strong>
         <span className="ml-auto text-[10px] font-mono text-[var(--ak-text-secondary)] opacity-60">
           {copy.futureHidden}
         </span>
@@ -220,9 +220,9 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
       {!session ? (
         <div className="space-y-3">
           <div className="replay-start-group flex flex-wrap items-end gap-2.5 p-2.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-            <AkField hint={copy.pastBoundary} className="min-w-[190px] flex-1">
+            <div className="min-w-[190px] flex-1">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.startAt}</AkFieldLabel>
+                <AkFieldLabel className="text-xs text-[var(--ak-text-secondary)] font-medium">{copy.startAt}</AkFieldLabel>
                 <AkInput
                   type="datetime-local"
                   aria-label={copy.startAt}
@@ -231,11 +231,10 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                   className="text-xs h-8 font-mono"
                 />
               </label>
-            </AkField>
-
-            <AkField hint={copy.seedWindow} className="w-28">
+            </div>
+            <div className="w-28">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.pastBars}</AkFieldLabel>
+                <AkFieldLabel className="text-xs text-[var(--ak-text-secondary)] font-medium">{copy.pastBars}</AkFieldLabel>
                 <AkSelect
                   aria-label={copy.pastBars}
                   value={limit}
@@ -247,11 +246,10 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                   <option value={400}>{copy.bars(400)}</option>
                 </AkSelect>
               </label>
-            </AkField>
-
-            <AkField hint={copy.baseCapital} className="w-32">
+            </div>
+            <div className="w-32">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.initialCapital}</AkFieldLabel>
+                <AkFieldLabel className="text-xs text-[var(--ak-text-secondary)] font-medium">{copy.initialCapital}</AkFieldLabel>
                 <AkInput
                   type="number"
                   aria-label={copy.initialCapitalQuote}
@@ -261,11 +259,10 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                   className="text-xs h-8 font-mono"
                 />
               </label>
-            </AkField>
-
-            <AkField hint={copy.perFill} className="w-24">
+            </div>
+            <div className="w-24">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.feeRate}</AkFieldLabel>
+                <AkFieldLabel className="text-xs text-[var(--ak-text-secondary)] font-medium">{copy.feeRate}</AkFieldLabel>
                 <AkInput
                   type="number"
                   aria-label={copy.feeRate}
@@ -277,11 +274,10 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                   className="text-xs h-8 font-mono"
                 />
               </label>
-            </AkField>
-
-            <AkField hint={copy.adverse} className="w-24">
+            </div>
+            <div className="w-24">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.slippageRate}</AkFieldLabel>
+                <AkFieldLabel className="text-xs text-[var(--ak-text-secondary)] font-medium">{copy.slippageRate}</AkFieldLabel>
                 <AkInput
                   type="number"
                   aria-label={copy.slippageRate}
@@ -293,7 +289,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                   className="text-xs h-8 font-mono"
                 />
               </label>
-            </AkField>
+            </div>
 
             <Button
               data-testid="replay-seed"

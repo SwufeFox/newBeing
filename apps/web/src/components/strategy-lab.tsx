@@ -267,13 +267,32 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
     window.setTimeout(() => setPresetNotice(null), 2200);
   };
 
+  const [selectedPresetName, setSelectedPresetName] = useState<string | null>("default");
+
   const isDefault = useMemo(() => {
     if (!strategy) return true;
     return Object.entries(strategy.defaults).every(([k, v]) => params[k] === v);
   }, [strategy, params]);
 
+  useEffect(() => {
+    setSelectedPresetName((current) => {
+      if (current === "default") {
+        const matchesDefault = strategy && Object.entries(strategy.defaults).every(([k, v]) => params[k] === v);
+        return matchesDefault ? "default" : null;
+      }
+      if (current && strategy) {
+        const allPresets = [...(BUILTIN_PRESETS[strategy.id] ?? []), ...customPresets];
+        const target = allPresets.find((p) => p.name === current);
+        if (target && Object.entries(target.params).every(([k, v]) => params[k] === v)) return current;
+      }
+      if (strategy && Object.entries(strategy.defaults).every(([k, v]) => params[k] === v)) return "default";
+      return null;
+    });
+  }, [params, strategy, customPresets]);
+
   const applyPreset = (name: string, nextParams: StrategyParameters): void => {
     if (!strategy) return;
+    setSelectedPresetName(name);
     setParams({ ...strategy.defaults, ...nextParams });
     setPresetNotice(copy.presetLoaded(copy.presetLabels[name] ?? name));
     window.setTimeout(() => setPresetNotice(null), 2200);
@@ -281,6 +300,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
 
   const resetDefaults = (): void => {
     if (!strategy) return;
+    setSelectedPresetName("default");
     setParams({ ...strategy.defaults });
     setPresetNotice(copy.presetReset);
     window.setTimeout(() => setPresetNotice(null), 2200);
@@ -329,7 +349,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         </AkSelect>
       </div>
 
-      <div className="strategy-description bg-[var(--ak-surface-sunken)] p-2.5 border border-[var(--ak-border-subtle)] border-l-2 border-l-[var(--ak-signal-info)]" data-testid="executable-strategy">
+      <div className="strategy-description bg-[var(--ak-surface-sunken)] p-2.5 border border-[var(--ak-border-subtle)] border-l-2 border-l-[var(--c-line-strong)]" data-testid="executable-strategy">
         <div className="flex items-center gap-2 mb-1">
           <strong className="text-xs font-mono text-[var(--ak-text-primary)]">
             <span className="text-[var(--c-accent)] font-bold">{copy.executable}</span> · {strategy.id}@{strategy.version}
@@ -357,46 +377,58 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           </button>
         </div>
 
-        <div className="preset-bar flex items-center flex-wrap gap-1 py-0.5">
-          <span className="text-[9px] font-mono text-[var(--ak-text-secondary)] uppercase mr-1">{copy.presetBar}</span>
-          <button
-            type="button"
-            onClick={resetDefaults}
-            className={`px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all cursor-pointer ${
-              isDefault
-                ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-signal-info)] font-semibold shadow-xs"
-                : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white hover:border-[var(--ak-border-strong)]"
-            }`}
-          >
-            {copy.defaultPreset}
-          </button>
-          {BUILTIN_PRESETS[strategy.id]?.map((preset) => {
-            const isActive = Object.entries(preset.params).every(([k, v]) => params[k] === v);
-            return (
+        <div className="preset-bar space-y-1.5 py-0.5">
+          <div className="flex items-center justify-between text-[10px] text-[var(--c-fg-3)]">
+            <span className="font-semibold text-[9px] uppercase tracking-wider text-[var(--c-fg-4)]">{copy.presetBar}</span>
+            {!showSaveInput && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSaveInput(true);
+                  setNewPresetName("");
+                }}
+                className="text-[10px] text-[var(--c-accent)] hover:underline cursor-pointer transition-colors"
+                title={copy.savePresetTitle}
+              >
+                {copy.savePreset}
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={resetDefaults}
+              className={`px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all cursor-pointer ${
+                selectedPresetName === "default"
+                  ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-signal-info)] font-semibold shadow-xs"
+                  : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white hover:border-[var(--ak-border-strong)]"
+              }`}
+            >
+              {copy.defaultPreset}
+            </button>
+            {BUILTIN_PRESETS[strategy.id]?.map((preset) => (
               <button
                 key={preset.name}
                 type="button"
                 onClick={() => applyPreset(preset.name, preset.params)}
                 className={`px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all cursor-pointer ${
-                  isActive
+                  selectedPresetName === preset.name
                     ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-signal-info)] font-semibold shadow-xs"
                     : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white hover:border-[var(--ak-border-strong)]"
                 }`}
               >
                 {copy.presetLabels[preset.name] ?? preset.name}
               </button>
-            );
-          })}
-          {customPresets.map((preset) => {
-            const isActive = Object.entries(preset.params).every(([k, v]) => params[k] === v);
-            return (
+            ))}
+            {customPresets.map((preset) => (
               <div
                 key={preset.name}
                 role="group"
                 aria-label={copy.customPresetGroup(copy.presetLabels[preset.name] ?? preset.name)}
                 className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all ${
-                  isActive
-                    ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-signal-action)] font-semibold shadow-xs"
+                  selectedPresetName === preset.name
+                    ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--c-accent)] font-semibold shadow-xs"
                     : "bg-[var(--ak-surface-sunken)] text-[var(--ak-text-primary)] border-[var(--ak-border-subtle)] hover:border-[var(--ak-border-strong)]"
                 }`}
                 title={copy.customPresetTitle(copy.presetLabels[preset.name] ?? preset.name)}
@@ -404,7 +436,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                 <button
                   type="button"
                   onClick={() => applyPreset(preset.name, preset.params)}
-                  aria-pressed={isActive}
+                  aria-pressed={selectedPresetName === preset.name}
                   className="cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--ak-signal-info)]"
                 >
                   {copy.presetLabels[preset.name] ?? preset.name}
@@ -419,10 +451,11 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                   ×
                 </button>
               </div>
-            );
-          })}
-          {showSaveInput ? (
-            <div className="inline-flex items-center gap-1 bg-[var(--ak-surface-sunken-2)] px-1 py-0.5 border border-[var(--ak-signal-info)]">
+            ))}
+          </div>
+
+          {showSaveInput && (
+            <div className="inline-flex items-center gap-1.5 bg-[var(--ak-surface-sunken-2)] px-2 py-1 border border-[var(--c-accent)] rounded-xs mt-1">
               <input
                 type="text"
                 placeholder={copy.presetNamePlaceholder}
@@ -437,14 +470,14 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                   }
                   if (e.key === "Escape") setShowSaveInput(false);
                 }}
-                className="px-1 py-0 text-[9px] font-mono bg-transparent border-0 text-[var(--ak-text-primary)] outline-none w-20"
+                className="px-1 py-0 text-xs font-mono bg-transparent border-0 text-[var(--ak-text-primary)] outline-none w-28"
                 autoFocus
               />
               <button
                 type="button"
                 onClick={() => saveCustomPreset(newPresetName)}
                 disabled={!canSavePreset}
-                className="px-1.5 py-0.5 text-[9px] font-mono bg-[var(--ak-signal-info)] text-black font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                className="px-2 py-0.5 text-[10px] font-mono bg-[var(--c-accent)] text-black font-bold rounded-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                 title={canSavePreset ? copy.presetSaveTitle : copy.presetSaveDisabledTitle}
               >
                 {copy.save}
@@ -452,28 +485,16 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
               <button
                 type="button"
                 onClick={() => setShowSaveInput(false)}
-                className="px-1 py-0.5 text-[9px] font-mono text-[var(--ak-text-secondary)] hover:text-white cursor-pointer"
+                className="px-1.5 py-0.5 text-[10px] font-mono text-[var(--ak-text-secondary)] hover:text-white cursor-pointer"
               >
                 {copy.cancel}
               </button>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setShowSaveInput(true);
-                setNewPresetName("");
-              }}
-              className="px-1.5 py-0.5 text-[9px] font-mono border border-dashed border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:border-[var(--ak-signal-info)] hover:text-white transition-all cursor-pointer"
-              title={copy.savePresetTitle}
-            >
-              {copy.savePreset}
-            </button>
           )}
         </div>
 
         {presetNotice && (
-          <div role="status" className="text-[10px] text-[var(--ak-signal-info)] font-mono px-1 py-0.5 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-info)]">
+          <div role="status" className="text-[10px] text-[var(--c-accent)] font-mono px-2 py-1 bg-[var(--c-surface-3)] border border-[var(--ak-border-subtle)] border-l-2 border-l-[var(--c-accent)] rounded-xs">
             {presetNotice}
           </div>
         )}

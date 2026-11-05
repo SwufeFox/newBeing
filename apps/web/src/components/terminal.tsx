@@ -37,6 +37,7 @@ import { replayIdentity, useWorkspaceStore, type DockTab, type InspectorTab } fr
 import { useShallow } from "zustand/react/shallow";
 import {
   EXCHANGE_TIMEFRAMES,
+  STRATEGIES,
   replayReport,
   type ReplayConfig,
   type ReplayExecution,
@@ -907,8 +908,8 @@ function RailRunHistoryContent(): React.JSX.Element {
 
   return (
     <div className="rail-block font-mono text-xs">
-      <span className="rail-block-head flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)]">
-        <span>{copy.runHistory}</span> <b>{items.length || "—"}</b>
+      <span className="rail-block-head flex items-center justify-between text-xs font-semibold text-[var(--c-fg-3)] pb-1 border-b border-[var(--ak-border-subtle)]">
+        <span>{copy.runHistory}</span> {items.length > 0 && <span className="text-[10px] text-[var(--c-fg-4)] font-mono">{items.length}</span>}
       </span>
       {state === "loading" && <span className="rail-hint text-[10px] text-[var(--ak-text-secondary)] p-1">{copy.loadingRuns}</span>}
       {state === "blocked" && <span className="rail-hint text-[10px] text-[var(--ak-signal-action)] p-1">{copy.historySuppressed}</span>}
@@ -950,7 +951,7 @@ function RailStrategyRosterContent(): React.JSX.Element {
   const [selectedStrategyId, setStrategy, setInspectorTab] = useWorkspaceStore(useShallow((state) => [
     state.selectedStrategyId, state.setStrategy, state.setInspectorTab,
   ]));
-  const [items, setItems] = useState<Array<{ id: string; name?: string; description?: string }>>([]);
+  const [items, setItems] = useState<Array<{ id: string; name?: string; description?: string }>>(() => [...STRATEGIES]);
 
   useEffect(() => {
     let alive = true;
@@ -968,15 +969,15 @@ function RailStrategyRosterContent(): React.JSX.Element {
 
   return (
     <div className="rail-block font-mono text-xs">
-      <span className="rail-block-head flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)]">
-        <span>{copy.strategies}</span> <b>{items.length || "—"}</b>
+      <span className="rail-block-head flex items-center justify-between text-xs font-semibold text-[var(--c-fg-3)] pb-1 border-b border-[var(--ak-border-subtle)]">
+        <span>{copy.strategies}</span> {items.length > 0 && <span className="text-[10px] text-[var(--c-fg-4)] font-mono">{items.length}</span>}
       </span>
       <div className="rail-list space-y-1 mt-1 max-h-40 overflow-auto">
         {items.map((s) => (
           <button
             key={s.id}
             type="button"
-            className={`rail-item w-full p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${selectedStrategyId === s.id ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-action)] font-bold" : ""}`}
+            className={`rail-item w-full p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${selectedStrategyId === s.id ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--c-accent)] font-semibold text-[var(--c-fg)]" : ""}`}
             onClick={() => { setStrategy(s.id, {}); setInspectorTab("strategy"); }}
           >
             <div className="rail-item-main truncate">{strategyNames[s.id] ?? s.name ?? s.id}</div>
@@ -1578,27 +1579,24 @@ export function Terminal(): React.JSX.Element {
               <div className="h-5 w-[1px] bg-[var(--ak-border)] mx-0.5 opacity-50" />
 
               <nav className="nav-cockpit flex items-center gap-1 shrink-0" aria-label={shell.navLabel}>
-                <div className="workspace-flow-sequence" role="group" aria-label={shell.workflowLabel}>
-                  {([ ["terminal", shell.markets, "1"], ["research", shell.research, "2"], ["replay", shell.replay, "3"] ] as const).map(([item, label, num], index) => (
-                    <Fragment key={item}>
-                      <button
-                        data-testid={`workspace-${item}`}
-                        aria-current={workspace === item ? "page" : undefined}
-                        aria-label={shell.workspaceShortcut(label, num)}
-                        className={`workspace-tab relative px-3 py-1 text-xs font-sans font-medium transition-all ${workspace === item ? "active text-[var(--ak-text-primary)] bg-[var(--c-surface-2)] border-b-2 border-[var(--c-accent)] shadow-xs" : "text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-sunken)]"}`}
-                        onClick={() => setPage(item)}
-                        title={shell.switchShortcut(label, num)}
-                      >
-                        {label}
-                      </button>
-                      {index < 2 && <span className="workflow-step-separator" aria-hidden="true">›</span>}
-                    </Fragment>
+                <div className="workspace-flow-sequence flex items-center gap-1" role="group" aria-label={shell.workflowLabel}>
+                  {([ ["terminal", shell.markets, "1"], ["research", shell.research, "2"], ["replay", shell.replay, "3"] ] as const).map(([item, label, num]) => (
+                    <button
+                      key={item}
+                      data-testid={`workspace-${item}`}
+                      aria-current={workspace === item ? "page" : undefined}
+                      aria-label={shell.workspaceShortcut(label, num)}
+                      className={`workspace-tab relative px-3 py-1 text-xs font-sans font-medium transition-all ${workspace === item ? "active text-[var(--ak-text-primary)] bg-[var(--c-surface-2)] border-b-2 border-[var(--c-accent)] shadow-xs" : "text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-sunken)]"}`}
+                      onClick={() => setPage(item)}
+                      title={shell.switchShortcut(label, num)}
+                    >
+                      {label}
+                    </button>
                   ))}
+                  <Link href="/derivatives" className="workspace-tab px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0" aria-label={shell.derivativesAria} title={shell.derivativesTitle}>
+                    {shell.derivatives}
+                  </Link>
                 </div>
-                <span className="workspace-nav-separator" aria-hidden="true" />
-                <Link href="/derivatives" className="workspace-tab px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0" aria-label={shell.derivativesAria} title={shell.derivativesTitle}>
-                  {shell.derivatives}
-                </Link>
               </nav>
             </div>
 
@@ -1680,16 +1678,16 @@ export function Terminal(): React.JSX.Element {
         <div className="replay-sync-banner px-3 py-1.5 bg-amber-950/40 border-b border-amber-500/40 text-xs font-mono text-amber-300 flex items-center justify-between z-20 backdrop-blur-md">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none shrink-0" />
-            <span className="text-[10px] font-bold px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 uppercase tracking-wider">{copy.replaySync}</span>
+            <span className="text-[10px] font-medium px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded-xs">{copy.replaySync}</span>
             <span role={replaySyncError ? "alert" : "status"} className="text-[11px]">{replaySyncError ?? copy.replaySyncing}</span>
           </div>
           <div className="flex items-center gap-2">
             {replaySyncError && (
-              <button className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 uppercase tracking-wider transition-all cursor-pointer" onClick={retryReplaySync}>
+              <button className="px-2 py-0.5 text-[11px] font-medium bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xs transition-all cursor-pointer" onClick={retryReplaySync}>
                 {copy.retry}
               </button>
             )}
-            <button className="px-2 py-0.5 text-[10px] font-bold bg-[var(--ak-surface-sunken-2)] hover:bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border border-[var(--ak-border-subtle)] uppercase tracking-wider transition-all cursor-pointer" onClick={() => setPage("terminal")}>
+            <button className="px-2.5 py-0.5 text-[11px] font-medium bg-[var(--c-surface-3)] hover:bg-[var(--c-line-strong)] text-[var(--c-fg)] border border-[var(--c-line-strong)] rounded-xs transition-all cursor-pointer" onClick={() => setPage("terminal")}>
               {copy.returnToMarkets}
             </button>
           </div>
@@ -1751,14 +1749,9 @@ export function Terminal(): React.JSX.Element {
                 : copy.feedAwaiting}
             </span>
           )}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[10px] font-bold">
-            <span className="relative flex h-2 w-2">
-              {!summaryError && workspace !== "replay" && (
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${summary ? "bg-emerald-400" : "bg-amber-400"}`} />
-              )}
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${summaryError ? "bg-rose-500" : workspace === "replay" ? "bg-cyan-400" : summary ? "bg-emerald-500" : "bg-amber-400"}`} />
-            </span>
-            <span className={summaryError ? "text-rose-400" : workspace === "replay" ? "text-cyan-400" : summary ? "text-emerald-400" : "text-amber-400"}>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] rounded-xs text-[10px] font-mono">
+            <span className={`inline-block rounded-full h-1.5 w-1.5 shrink-0 ${summaryError ? "bg-[var(--c-down)]" : workspace === "replay" ? "bg-[var(--c-accent)]" : summary ? "bg-[var(--c-up)]" : "bg-[var(--c-warn)]"}`} />
+            <span className={`font-semibold ${summaryError ? "text-[var(--c-down)]" : workspace === "replay" ? "text-[var(--c-accent)]" : summary ? "text-[var(--c-up)]" : "text-[var(--c-warn)]"}`}>
               {workspace === "replay" ? copy.feedReplayData : summaryError ? copy.feedDelayed : summary?.source?.toLowerCase().includes("fixture") ? copy.feedFixture : summary ? copy.feedRealtime : copy.feedConnecting}
             </span>
           </div>

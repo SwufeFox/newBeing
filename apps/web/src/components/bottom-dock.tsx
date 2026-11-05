@@ -768,7 +768,7 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
       {closeError && <div role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)] mb-2">{closeError}</div>}
       {(closeNeedsRefresh || hasUnresolvedPaperOrder) && <div role="status" className="table-footnote text-xs text-[var(--ak-signal-action)] mb-2">{copy.stalePending}</div>}
       <div className="overflow-auto border border-[var(--ak-border-subtle)] shadow-sm">
-        <table className="data-table w-full text-left">
+        <table className="data-table w-full text-left min-w-[640px]">
           <thead>
             <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] uppercase">
               <th className="p-2">{copy.asset}</th>
@@ -778,7 +778,7 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
               <th className="p-2">{copy.unrealizedPnl}</th>
               <th className="p-2">{copy.realizedPnl}</th>
               <th className="p-2">{copy.available}</th>
-              <th className="p-2 text-right">{copy.action}</th>
+              <th className="p-2 text-right min-w-[85px]">{copy.action}</th>
             </tr>
           </thead>
           <tbody>
@@ -804,7 +804,7 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
                 {money(portfolio.realizedPnl, quoteCurrency)}
               </td>
               <td className="p-2 font-mono tabular-nums">{money(portfolio.quoteBalance, quoteCurrency)}</td>
-              <td className="p-2 text-right">
+              <td className="p-2 text-right whitespace-nowrap min-w-[85px]">
                 {portfolio.baseBalance > 0 ? (
                   <Button
                     size="sm"
@@ -841,7 +841,7 @@ function ReplayPositions({ session, portfolio }: { session: ReplaySession | null
   return (
     <div className="position-table-wrap p-2 font-mono text-xs">
       <div className="overflow-auto border border-[var(--ak-border-subtle)] shadow-sm">
-        <table className="data-table w-full text-left">
+        <table className="data-table w-full text-left min-w-[640px]">
           <thead>
             <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] uppercase">
               <th className="p-2">{copy.asset}</th>
@@ -965,13 +965,13 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
 
   if (!result) {
     return (
-      <div className="empty-state p-8 text-center text-xs text-[var(--ak-text-secondary)] space-y-2">
-        <FileText size={22} className="mx-auto text-[var(--ak-signal-action)]" />
-        <strong className="block text-sm text-[var(--ak-text-primary)]">{copy.noBacktest}</strong>
-        <p className="max-w-md mx-auto opacity-80 leading-relaxed">
+      <div className="empty-state p-6 text-center text-xs text-[var(--c-fg-3)] space-y-2 max-w-sm mx-auto">
+        <FileText size={20} className="mx-auto text-[var(--c-fg-4)]" />
+        <strong className="block text-xs font-semibold text-[var(--c-fg)]">{copy.noBacktest}</strong>
+        <p className="text-[11px] text-[var(--c-fg-3)] opacity-80 leading-relaxed m-0">
           {copy.noBacktestHint}
         </p>
-        <Button variant="outline" size="sm" onClick={onOpenStrategy} className="mt-2 text-xs">
+        <Button variant="outline" size="sm" onClick={onOpenStrategy} className="text-xs">
           {copy.openStrategyLab}
         </Button>
       </div>
@@ -1674,7 +1674,7 @@ export const BottomDock = memo(function BottomDock({
           )
         )}
         {activeTab === "history" && workspace === "research" && replayMode && (
-          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>{copy.replayHistoryHidden}</strong><span>{copy.replayHistoryHiddenHint}</span></div>
+          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--c-fg-4)]" /><strong>{copy.replayHistoryHidden}</strong><span>{copy.replayHistoryHiddenHint}</span></div>
         )}
         {!replayMode && (historyPanelVisited || showHistoryPanel) && (
           <div hidden={!showHistoryPanel}>
@@ -1682,7 +1682,7 @@ export const BottomDock = memo(function BottomDock({
           </div>
         )}
         {activeTab === "backtest" && workspace === "research" && replayMode && (
-          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>{copy.replayBacktestHidden}</strong><span>{copy.replayBacktestHiddenHint}</span></div>
+          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--c-fg-4)]" /><strong>{copy.replayBacktestHidden}</strong><span>{copy.replayBacktestHiddenHint}</span></div>
         )}
         {!replayMode && (backtestPanelVisited || showBacktestPanel) && (
           <div hidden={!showBacktestPanel}>
@@ -1690,7 +1690,7 @@ export const BottomDock = memo(function BottomDock({
           </div>
         )}
         {activeTab === "sweep" && workspace === "research" && replayMode && (
-          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>{copy.replaySweepsHidden}</strong><span>{copy.replaySweepsHiddenHint}</span></div>
+          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--c-fg-4)]" /><strong>{copy.replaySweepsHidden}</strong><span>{copy.replaySweepsHiddenHint}</span></div>
         )}
         {workspace === "research" && !replayMode && (sweepPanelVisited || showSweepPanel) && (
           <div hidden={!showSweepPanel}>
@@ -1698,7 +1698,7 @@ export const BottomDock = memo(function BottomDock({
           </div>
         )}
         {activeTab === "evaluate" && workspace === "research" && replayMode && (
-          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--ak-signal-action)]" /><strong>{copy.replayEvaluationsHidden}</strong><span>{copy.replayEvaluationsHiddenHint}</span></div>
+          <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><AlertCircle size={18} className="mx-auto mb-2 text-[var(--c-fg-4)]" /><strong>{copy.replayEvaluationsHidden}</strong><span>{copy.replayEvaluationsHiddenHint}</span></div>
         )}
         {workspace === "research" && !replayMode && (evaluationPanelVisited || showEvaluationPanel) && (
           <div hidden={!showEvaluationPanel}>

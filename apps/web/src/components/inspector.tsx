@@ -1202,9 +1202,9 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
           type="button"
           onClick={() => setSubTab("briefing")}
           aria-pressed={subTab === "briefing"}
-          className={`flex-1 py-1 px-1.5 font-bold uppercase transition-all text-center cursor-pointer select-none ${
+          className={`flex-1 py-1 px-1.5 font-medium transition-all text-center cursor-pointer select-none ${
             subTab === "briefing"
-              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-signal-info)] border-b-2 border-[var(--ak-signal-info)]"
+              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-b-2 border-[var(--c-accent)] font-semibold"
               : "text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]"
           }`}
         >
@@ -1214,9 +1214,9 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
           type="button"
           onClick={() => setSubTab("prompts")}
           aria-pressed={subTab === "prompts"}
-          className={`flex-1 py-1 px-1.5 font-bold uppercase transition-all text-center cursor-pointer select-none ${
+          className={`flex-1 py-1 px-1.5 font-medium transition-all text-center cursor-pointer select-none ${
             subTab === "prompts"
-              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-signal-action)] border-b-2 border-[var(--ak-signal-action)]"
+              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-b-2 border-[var(--c-accent)] font-semibold"
               : "text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]"
           }`}
         >
@@ -1226,9 +1226,9 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
           type="button"
           onClick={() => setSubTab("factor")}
           aria-pressed={subTab === "factor"}
-          className={`flex-1 py-1 px-1.5 font-bold uppercase transition-all text-center cursor-pointer select-none ${
+          className={`flex-1 py-1 px-1.5 font-medium transition-all text-center cursor-pointer select-none ${
             subTab === "factor"
-              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-signal-success)] border-b-2 border-[var(--ak-signal-success)]"
+              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-b-2 border-[var(--c-accent)] font-semibold"
               : "text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]"
           }`}
         >
@@ -1238,9 +1238,9 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
           type="button"
           onClick={() => setSubTab("raw")}
           aria-pressed={subTab === "raw"}
-          className={`py-1 px-1.5 font-bold uppercase transition-all text-center cursor-pointer select-none ${
+          className={`py-1 px-1.5 font-medium transition-all text-center cursor-pointer select-none ${
             subTab === "raw"
-              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-b-2 border-[var(--ak-text-primary)]"
+              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-b-2 border-[var(--c-accent)] font-semibold"
               : "text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]"
           }`}
         >
@@ -1251,107 +1251,113 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
       {/* Mode 1: Briefing */}
       {subTab === "briefing" && (
         <div className="space-y-2.5">
-          <div className="p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)]">
-              <span className="uppercase font-bold tracking-wider">{copy.activeAsset}</span>
-              <span className="text-[var(--ak-signal-info)] font-bold">{exchangeLabel(state.exchange)} · {state.timeframe}</span>
+          <div className="p-3 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] rounded-xs space-y-3">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)]">
+                <span className="uppercase font-bold tracking-wider">{copy.activeAsset}</span>
+                <span className="text-[var(--ak-signal-info)] font-bold">{exchangeLabel(state.exchange)} · {state.timeframe}</span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-base font-extrabold text-[var(--ak-text-primary)] tabular-nums">{state.symbol}</span>
+                <div className="flex items-baseline gap-1.5 text-xs font-bold tabular-nums">
+                  <span>{summary?.last != null ? price(summary.last) : "—"}</span>
+                  {summary?.changePct24h != null && (
+                    <span className={summary.changePct24h >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}>
+                      {summary.changePct24h >= 0 ? "+" : ""}{summary.changePct24h.toFixed(2)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+              {!replayMode && summary && (
+                <div role="status" className="text-[10px] text-[var(--ak-text-secondary)] break-words">
+                  {summaryError && <div className="text-[var(--ak-signal-action)]">{copy.quoteStale}</div>}
+                  <div>{copy.quoteTime}: {quoteTime ?? copy.quoteTimeUnavailable}</div>
+                </div>
+              )}
+              {!replayMode && !summary && summaryError && (
+                <div role="status" className="text-[10px] text-[var(--ak-signal-action)]">{copy.quoteUnavailable}</div>
+              )}
             </div>
-            <div className="flex items-baseline justify-between">
-              <span className="text-base font-extrabold text-[var(--ak-text-primary)] tabular-nums">{state.symbol}</span>
-              <div className="flex items-baseline gap-1.5 text-xs font-bold tabular-nums">
-                <span>{summary?.last != null ? price(summary.last) : "—"}</span>
-                {summary?.changePct24h != null && (
-                  <span className={summary.changePct24h >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}>
-                    {summary.changePct24h >= 0 ? "+" : ""}{summary.changePct24h.toFixed(2)}%
+
+            <div className="h-[1px] bg-[var(--ak-border-subtle)]" />
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)]">
+                <span className="uppercase font-bold tracking-wider">{copy.activeStrategy}</span>
+                <span className="text-[var(--c-accent)] font-semibold font-mono">{state.selectedStrategyId}</span>
+              </div>
+              <div className="flex flex-wrap gap-1 text-[10px]">
+                {Object.entries(strategyParameters).map(([k, v]) => (
+                  <span key={k} className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] font-mono">
+                    {k}: <strong className="text-[var(--ak-text-primary)]">{String(v)}</strong>
                   </span>
-                )}
+                ))}
               </div>
             </div>
-            {!replayMode && summary && (
-              <div role="status" className="text-[10px] text-[var(--ak-text-secondary)] break-words">
-                {summaryError && <div className="text-[var(--ak-signal-action)]">{copy.quoteStale}</div>}
-                <div>{copy.quoteTime}: {quoteTime ?? copy.quoteTimeUnavailable}</div>
+
+            <div className="h-[1px] bg-[var(--ak-border-subtle)]" />
+
+            <div className="space-y-1.5" data-testid="ai-backtest-evidence">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="uppercase font-bold tracking-wider text-[var(--ak-text-secondary)]">{copy.backtestStatus}</span>
               </div>
-            )}
-            {!replayMode && !summary && summaryError && (
-              <div role="status" className="text-[10px] text-[var(--ak-signal-action)]">{copy.quoteUnavailable}</div>
-            )}
-          </div>
 
-          <div className="p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1">
-            <div className="flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)]">
-              <span className="uppercase font-bold tracking-wider">{copy.activeStrategy}</span>
-              <span className="text-[var(--ak-signal-action)] font-bold">{state.selectedStrategyId}</span>
+              {backtest ? (
+                <>
+                  <p className="m-0 text-[10px] text-[var(--ak-text-primary)] break-words">{exchangeLabel(backtest.exchange)} · {backtest.symbol} · {backtest.timeframe} · {backtest.strategyId}</p>
+                  <div className="flex flex-wrap gap-1 text-[10px] text-[var(--ak-text-secondary)]">
+                    <span>{copy.backtestParameters}:</span>
+                    {Object.entries(backtest.parameters).map(([key, value]) => (
+                      <span key={key} className="px-1 bg-[var(--ak-surface-sunken)] break-words">{key}: <strong className="text-[var(--ak-text-primary)]">{String(value)}</strong></span>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-[var(--ak-text-secondary)] font-mono">
+                    <span>{copy.sampleRangeLabel}: <strong className="text-[var(--ak-text-primary)]">{sampleRange}</strong></span>
+                    <span>{copy.segmentNatureLabel}: <strong className="text-[var(--ak-signal-info)]">{copy.segmentNatures[researchEvidence.segmentNature]}</strong></span>
+                  </div>
+                  {researchEvidence.segmentNature === "unknown" && (
+                    <p className="m-0 text-[10px] text-[var(--ak-text-secondary)]">{copy.segmentLookupNote}</p>
+                  )}
+                  {researchEvidence.evaluationEvidence && (
+                    <p className="m-0 text-[10px] text-[var(--ak-signal-info)] font-mono break-words">{researchEvidence.evaluationEvidence}</p>
+                  )}
+                  {researchEvidence.walkForwardEvidence && (
+                    <p className="m-0 text-[10px] text-[var(--ak-signal-action)] font-mono break-words">{researchEvidence.walkForwardEvidence}</p>
+                  )}
+                  <p className="m-0 text-[10px] text-[var(--ak-text-secondary)]">{copy.backtestEvidenceNote}</p>
+                  <div className="grid grid-cols-4 gap-1 text-center font-mono py-1">
+                    <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                      <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.sharpeLabel}</span>
+                      <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
+                        {backtest.metrics.sharpeRatio?.toFixed(2) ?? "—"}
+                      </strong>
+                    </div>
+                    <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                      <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.maxDdLabel}</span>
+                      <strong className="text-xs font-bold text-[var(--ak-signal-danger)]">
+                        {(backtest.metrics.maxDrawdown * 100).toFixed(1)}%
+                      </strong>
+                    </div>
+                    <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                      <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.winRateLabel}</span>
+                      <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
+                        {(backtest.metrics.winRate * 100).toFixed(0)}%
+                      </strong>
+                    </div>
+                    <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                      <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.tradesLabel}</span>
+                      <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
+                        {backtest.metrics.tradeCount}
+                      </strong>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[10px] text-[var(--ak-text-secondary)] opacity-80 leading-relaxed m-0">
+                  {replayMode ? copy.replayBacktestHidden : copy.noBacktestPrompt}
+                </p>
+              )}
             </div>
-            <div className="flex flex-wrap gap-1 text-[10px]">
-              {Object.entries(strategyParameters).map(([k, v]) => (
-                <span key={k} className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] font-mono">
-                  {k}: <strong className="text-[var(--ak-text-primary)]">{String(v)}</strong>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1.5" data-testid="ai-backtest-evidence">
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="uppercase font-bold tracking-wider text-[var(--ak-text-secondary)]">{copy.backtestStatus}</span>
-            </div>
-
-            {backtest ? (
-              <>
-                <p className="m-0 text-[10px] text-[var(--ak-text-primary)] break-words">{exchangeLabel(backtest.exchange)} · {backtest.symbol} · {backtest.timeframe} · {backtest.strategyId}</p>
-                <div className="flex flex-wrap gap-1 text-[10px] text-[var(--ak-text-secondary)]">
-                  <span>{copy.backtestParameters}:</span>
-                  {Object.entries(backtest.parameters).map(([key, value]) => (
-                    <span key={key} className="px-1 bg-[var(--ak-surface-sunken)] break-words">{key}: <strong className="text-[var(--ak-text-primary)]">{String(value)}</strong></span>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-[var(--ak-text-secondary)] font-mono">
-                  <span>{copy.sampleRangeLabel}: <strong className="text-[var(--ak-text-primary)]">{sampleRange}</strong></span>
-                  <span>{copy.segmentNatureLabel}: <strong className="text-[var(--ak-signal-info)]">{copy.segmentNatures[researchEvidence.segmentNature]}</strong></span>
-                </div>
-                {researchEvidence.segmentNature === "unknown" && (
-                  <p className="m-0 text-[10px] text-[var(--ak-text-secondary)]">{copy.segmentLookupNote}</p>
-                )}
-                {researchEvidence.evaluationEvidence && (
-                  <p className="m-0 text-[10px] text-[var(--ak-signal-info)] font-mono break-words">{researchEvidence.evaluationEvidence}</p>
-                )}
-                {researchEvidence.walkForwardEvidence && (
-                  <p className="m-0 text-[10px] text-[var(--ak-signal-action)] font-mono break-words">{researchEvidence.walkForwardEvidence}</p>
-                )}
-                <p className="m-0 text-[10px] text-[var(--ak-text-secondary)]">{copy.backtestEvidenceNote}</p>
-                <div className="grid grid-cols-4 gap-1 text-center font-mono py-1">
-                  <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                    <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.sharpeLabel}</span>
-                    <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
-                      {backtest.metrics.sharpeRatio?.toFixed(2) ?? "—"}
-                    </strong>
-                  </div>
-                  <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                    <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.maxDdLabel}</span>
-                    <strong className="text-xs font-bold text-[var(--ak-signal-danger)]">
-                      {(backtest.metrics.maxDrawdown * 100).toFixed(1)}%
-                    </strong>
-                  </div>
-                  <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                    <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.winRateLabel}</span>
-                    <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
-                      {(backtest.metrics.winRate * 100).toFixed(0)}%
-                    </strong>
-                  </div>
-                  <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                    <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.tradesLabel}</span>
-                    <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
-                      {backtest.metrics.tradeCount}
-                    </strong>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <p className="text-[10px] text-[var(--ak-text-secondary)] opacity-80 leading-relaxed m-0">
-                {replayMode ? copy.replayBacktestHidden : copy.noBacktestPrompt}
-              </p>
-            )}
           </div>
 
           <Button
@@ -2060,16 +2066,16 @@ function ReplayTicket({
       <div className="paper-ticket replay-ticket p-3 bg-[var(--ak-surface-canvas)] font-mono text-xs space-y-3">
         <div className="ticket-heading flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
           <div className="flex items-center gap-1.5">
-            <Clock3 size={13} className="text-[var(--ak-signal-info)]" />
-            <span className="font-bold">{copy.replayAccount}</span>
+            <Clock3 size={13} className="text-[var(--c-accent)]" />
+            <span className="font-semibold text-xs text-[var(--c-fg)]">{copy.replayAccount}</span>
           </div>
-          <AkTag variant="advanced" className="text-[10px]">{copy.isolated}</AkTag>
+          <AkTag variant="neutral" className="text-[10px] font-mono">{copy.isolated}</AkTag>
         </div>
         <div className="p-3 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-2">
           <div className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase flex items-center justify-between">
             <span>{copy.replayProtocol}</span>
-            <span className="text-[var(--ak-signal-action)] flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-action)] animate-pulse motion-reduce:animate-none inline-block" />
+            <span className="text-[var(--c-fg-3)] flex items-center gap-1.5 font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--c-accent)] inline-block" />
               {copy.awaitingSeed}
             </span>
           </div>
