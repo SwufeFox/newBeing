@@ -144,7 +144,7 @@ function applyFill(account: DerivativesAccount, r: DerivativesOrderRequest, i: D
   }
   const order: DerivativesOrder = { ...r, status: "filled", fillPrice: price.toString(), fee: fee.toString(), realizedPnl: pnl.toString(), createdAt: now };
   account.available = available.toString(); account.realizedPnl = new D(account.realizedPnl).add(pnl).toString();
-  account.feesPaid = new D(account.feesPaid).add(fee).toString(); account.orders.push(order);
+  account.feesPaid = new D(account.feesPaid).add(fee).toString(); account.orders = [...account.orders, order].slice(-100);
   return order;
 }
 /** Atomic immediate local fill. No venue order is submitted, and failed validation moves no money. */

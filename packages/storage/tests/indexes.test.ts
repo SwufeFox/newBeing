@@ -56,6 +56,7 @@ describe("query indexes", () => {
       .map((row) => row.name);
     expect(names).toContain("paper_orders_status_idx");
     expect(names).toContain("order_previews_symbol_idx");
+    expect(names).toContain("saved_sweeps_created_at_idx");
   });
 
   it("plans pending-order lookups through paper_orders_status_idx", () => {
