@@ -3,12 +3,12 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { AreaSeries, ColorType, createChart, type UTCTimestamp } from "lightweight-charts";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileDown, FileText, FlaskConical, ListChecks, RotateCcw, ScanSearch, Wallet, Filter } from "lucide-react";
-import { STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplaySession } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplaySession } from "@newbeing/core";
 import type { ExperimentSummary } from "@newbeing/storage";
 import { SweepPanel } from "@/components/sweep-panel";
 import { EvaluationPanel } from "@/components/evaluation-panel";
 import { Button } from "@/components/ui/button";
-import { EXCHANGE_LABELS } from "@/lib/exchanges";
+import { EXCHANGE_LABELS, symbolForExchange } from "@/lib/exchanges";
 import { useCopy, translate, type CopyTable } from "@/lib/i18n";
 import { captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { buildResearchReport, researchReportFilename } from "@/lib/research-report";
@@ -103,6 +103,15 @@ interface DockCopy {
   startingReplay: string;
   continueReplay: string;
   continueReplayHint: string;
+  researchInputs: string;
+  inputsDiffer: string;
+  inputsMatch: string;
+  savedInputs: string;
+  currentInputs: string;
+  restoreInputs: string;
+  restoreInputsHint: string;
+  restoreInputsUnavailable: string;
+  replayPracticeHint: string;
   tradeHeading: (count: number) => string;
   filters: Record<"all" | "long" | "short" | "win" | "loss", string>;
   showAllTrades: string;
@@ -263,7 +272,16 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     rerunBacktest: "Rerun backtest",
     startingReplay: "Starting replay…",
     continueReplay: "Continue to Replay",
-    continueReplayHint: "Continue to Replay from the final equity point of this backtest.",
+    continueReplayHint: "Practise from an earlier point in this backtest's frozen dataset, with its original starting capital and costs.",
+    researchInputs: "Research inputs",
+    inputsDiffer: "Result and current workspace inputs differ",
+    inputsMatch: "Result and current workspace inputs match",
+    savedInputs: "Saved result",
+    currentInputs: "Current workspace",
+    restoreInputs: "Use result inputs",
+    restoreInputsHint: "Replace the current market, strategy, parameters and simulation assumptions with this result's saved inputs.",
+    restoreInputsUnavailable: "Saved inputs cannot be applied because the venue, timeframe, strategy version or parameters are unavailable or incompatible.",
+    replayPracticeHint: "Replay practises on this reviewed backtest's historical snapshot; it is not an untouched test.",
     tradeHeading: (count) => `SIMULATED EXECUTION TRADES (${count})`,
     filters: { all: "all", long: "long", short: "short", win: "win", loss: "loss" },
     showAllTrades: "Show all trades",
@@ -420,7 +438,16 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     rerunBacktest: "重跑回测",
     startingReplay: "正在启动回放…",
     continueReplay: "继续回放",
-    continueReplayHint: "从本次回测的最终权益点继续回放。",
+    continueReplayHint: "从本次回测冻结数据集的较早位置开始练习，使用原始初始资金和成本。",
+    researchInputs: "研究输入",
+    inputsDiffer: "结果与当前工作区的输入不同",
+    inputsMatch: "结果与当前工作区的输入一致",
+    savedInputs: "已保存结果",
+    currentInputs: "当前工作区",
+    restoreInputs: "使用结果输入",
+    restoreInputsHint: "将当前市场、策略、参数和模拟假设替换为此结果保存的输入。",
+    restoreInputsUnavailable: "交易所、周期、策略版本或参数不可用或不兼容，无法应用已保存的输入。",
+    replayPracticeHint: "回放使用已查看回测的历史快照进行练习，不是未触碰的测试集。",
     tradeHeading: (count) => `模拟成交记录 (${count})`,
     filters: { all: "全部", long: "做多", short: "做空", win: "盈利", loss: "亏损" },
     showAllTrades: "显示全部交易",
@@ -932,6 +959,9 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
   const [rerunning, setRerunning] = useState(false);
   const [rerunError, setRerunError] = useState<{ resultId: string; message: string } | null>(null);
   const setBacktest = useWorkspaceStore((state) => state.setBacktest);
+  const [currentExchange, currentSymbol, currentTimeframe, currentStrategy, currentParameters, currentConfig] = useWorkspaceStore(useShallow((state) => [
+    state.exchange, state.symbol, state.timeframe, state.selectedStrategyId, state.strategyParameters, state.backtestConfig,
+  ]));
 
   if (!result) {
     return (
@@ -947,6 +977,31 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
       </div>
     );
   }
+  const savedStrategy = STRATEGIES.find((strategy) => strategy.id === result.strategyId && strategy.version === result.strategyVersion);
+  const parametersCompatible = savedStrategy !== undefined && Object.keys(savedStrategy.defaults).every((key) => Object.hasOwn(result.parameters, key))
+    && Object.entries(result.parameters).every(([key, value]) => Object.hasOwn(savedStrategy.defaults, key)
+      && typeof value === typeof savedStrategy.defaults[key] && (typeof value !== "number" || Number.isFinite(value)));
+  const inputsAvailable = Object.hasOwn(EXCHANGE_TIMEFRAMES, result.exchange)
+    && EXCHANGE_TIMEFRAMES[result.exchange].includes(result.timeframe)
+    && /^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/.test(result.symbol) && parametersCompatible;
+  const normalized = (value: object): string => JSON.stringify(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+  const inputsDiffer = result.exchange !== currentExchange || result.symbol !== currentSymbol || result.timeframe !== currentTimeframe
+    || result.strategyId !== currentStrategy || normalized(result.parameters) !== normalized(currentParameters)
+    || normalized(result.assumptions) !== normalized(currentConfig);
+  const restoreInputs = (): void => {
+    if (!inputsAvailable || useWorkspaceStore.getState().activeWorkspace !== "research") return;
+    useWorkspaceStore.setState((state) => ({
+      exchange: result.exchange,
+      symbol: result.symbol,
+      timeframe: result.timeframe,
+      watchlist: state.exchange === result.exchange ? state.watchlist : state.watchlist.map((symbol) => symbolForExchange(symbol, result.exchange)),
+      selectedStrategyId: result.strategyId,
+      strategyParameters: { ...result.parameters },
+      backtestConfig: { ...result.assumptions },
+      visibleRange: { from: null, to: null },
+    }));
+  };
+
 
   const metric = result.metrics;
   const filteredTrades = result.trades.filter((trade) => {
@@ -1027,7 +1082,7 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
 
       <div className="backtest-meta flex flex-wrap items-center justify-between gap-2 p-2 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] text-[11px] text-[var(--ak-text-secondary)]">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="font-bold text-[var(--ak-text-primary)]">{result.symbol} · {result.timeframe}</span>
+          <span className="font-bold text-[var(--ak-text-primary)]">{EXCHANGE_LABELS[result.exchange] ?? result.exchange ?? "—"} · {result.symbol} · {result.timeframe}</span>
           <span>{result.strategyId} v{result.strategyVersion}</span>
           <span>{copy.costs((result.assumptions.feeRate * 10_000).toFixed(1), (result.assumptions.slippageRate * 10_000).toFixed(1))}</span>
           <span title={result.execution?.fillTiming}>{result.execution?.fillTiming ?? copy.nextBarOpen} · {result.engineVersion}</span>
@@ -1079,6 +1134,17 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
           {replayError && <span role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)]">{replayError}</span>}
         </div>
       </div>
+      <details className="border border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken)] p-2 text-xs">
+        <summary className="cursor-pointer font-semibold">{copy.researchInputs} · {inputsDiffer ? copy.inputsDiffer : copy.inputsMatch}</summary>
+        <div className="mt-2 space-y-2 break-words text-[var(--ak-text-secondary)]">
+          <p><strong>{copy.savedInputs}:</strong> {EXCHANGE_LABELS[result.exchange] ?? result.exchange ?? "—"} · {result.symbol} · {result.timeframe} · {result.strategyId} v{result.strategyVersion}<br /><code className="break-all">{JSON.stringify(result.parameters)} · {JSON.stringify(result.assumptions)}</code></p>
+          <p><strong>{copy.currentInputs}:</strong> {EXCHANGE_LABELS[currentExchange]} · {currentSymbol} · {currentTimeframe} · {currentStrategy}<br /><code className="break-all">{JSON.stringify(currentParameters)} · {JSON.stringify(currentConfig)}</code></p>
+          <p>{copy.restoreInputsHint}</p>
+          <Button size="sm" variant="outline" disabled={!inputsAvailable} onClick={restoreInputs}>{copy.restoreInputs}</Button>
+          {!inputsAvailable && <p role="status">{copy.restoreInputsUnavailable}</p>}
+        </div>
+      </details>
+      <p className="m-0 text-[11px] text-[var(--ak-text-secondary)]">{copy.replayPracticeHint}</p>
 
       <div className="trades-section space-y-2">
         <div className="backtest-trade-heading flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">

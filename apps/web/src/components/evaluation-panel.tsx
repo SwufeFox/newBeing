@@ -72,6 +72,7 @@ interface EvaluationDatasetMetadata {
   exchange: ExchangeId;
   symbol: string;
   timeframe: Timeframe;
+  timestamps: number[];
 }
 
 interface EvaluationCopy {
@@ -106,6 +107,15 @@ interface EvaluationCopy {
   splitTooShort: string;
   splitRangeHint: (last: number) => string;
   midpoint: (index: number) => string;
+  sourceSummary: (source: string) => string;
+  currentInputs: string;
+  loadedInputs: string;
+  inputsDiffer: string;
+  applyBacktest: string;
+  backtestUnavailable: string;
+  reportIncompatible: string;
+  replayLocked: string;
+  splitPreview: (train: number, holdout: number, trainStart: string, trainEnd: string, holdoutStart: string, holdoutEnd: string) => string;
   /* Parameter scan form. */
   parameterLabel: string;
   parameterAria: string;
@@ -184,6 +194,15 @@ const EVALUATION_COPY: CopyTable<EvaluationCopy> = {
     splitTooShort: "At least 4 bars are needed.",
     splitRangeHint: (last) => `Use a whole number from 2 to ${last}.`,
     midpoint: (index) => `Midpoint ${index}`,
+    sourceSummary: (source) => `Selected snapshot source: ${source}`,
+    currentInputs: "New evaluation uses current strategy, parameters and config",
+    loadedInputs: "Loaded backtest strategy, parameters and config",
+    inputsDiffer: "Current inputs differ from the loaded backtest.",
+    applyBacktest: "Replace current strategy and config with loaded backtest",
+    backtestUnavailable: "The loaded strategy version or parameter schema is unavailable or incompatible; its settings remain read-only.",
+    reportIncompatible: "Select the report's strategy with a compatible parameter schema before applying these parameters.",
+    replayLocked: "Leave Replay to change research settings.",
+    splitPreview: (train, holdout, trainStart, trainEnd, holdoutStart, holdoutEnd) => `Train [0, ${train}): ${train} bars, ${trainStart} to ${trainEnd}. Holdout [${train}, ${train + holdout}): ${holdout} bars, ${holdoutStart} to ${holdoutEnd}. Times are first and last included candle opens.`,
     parameterLabel: "PARAMETER",
     parameterAria: "Evaluation parameter",
     from: "FROM",
@@ -256,6 +275,15 @@ const EVALUATION_COPY: CopyTable<EvaluationCopy> = {
     splitTooShort: "至少需要 4 根 K 线。",
     splitRangeHint: (last) => `请输入 2 到 ${last} 之间的整数。`,
     midpoint: (index) => `中点 ${index}`,
+    sourceSummary: (source) => `所选快照来源：${source}`,
+    currentInputs: "新验证使用当前策略、参数和配置",
+    loadedInputs: "已加载回测的策略、参数和配置",
+    inputsDiffer: "当前输入与已加载回测不同。",
+    applyBacktest: "用已加载回测替换当前策略和配置",
+    backtestUnavailable: "已加载的策略版本或参数结构不可用或不兼容；其设置仅供查看。",
+    reportIncompatible: "请先选择报告对应的策略并确保参数结构兼容，再应用这些参数。",
+    replayLocked: "请先退出回放，再更改研究设置。",
+    splitPreview: (train, holdout, trainStart, trainEnd, holdoutStart, holdoutEnd) => `训练 [0, ${train})：${train} 根，${trainStart} 至 ${trainEnd}。留出 [${train}, ${train + holdout})：${holdout} 根，${holdoutStart} 至 ${holdoutEnd}。时间为首尾纳入 K 线的开盘时间。`,
     parameterLabel: "参数",
     parameterAria: "验证参数",
     from: "起始",
@@ -307,6 +335,18 @@ function numericKeys(parameters: StrategyParameters): string[] {
     .map(([key]) => key);
 }
 
+function compatibleParameters(parameters: StrategyParameters, defaults: StrategyParameters): boolean {
+  return parameters !== null && typeof parameters === "object" && !Array.isArray(parameters)
+    && Object.entries(parameters).every(([key, value]) => Object.hasOwn(defaults, key)
+      && typeof value === typeof defaults[key] && (typeof value !== "number" || Number.isFinite(value)));
+}
+
+function sameValues(a: object, b: object): boolean {
+  const left = Object.entries(a).sort(([x], [y]) => x.localeCompare(y));
+  const right = Object.entries(b).sort(([x], [y]) => x.localeCompare(y));
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function label(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (first) => first.toUpperCase());
 }
@@ -345,10 +385,9 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const copy = useCopy(EVALUATION_COPY);
   /* useShallow is required: a selector returning a fresh array is a new
      reference on every render, and React treats that as an uncached snapshot. */
-  const [strategyId, parameters, config, result] = useWorkspaceStore(useShallow((state) => [state.selectedStrategyId, state.strategyParameters, state.backtestConfig, state.backtest]));
-  const setStrategyParameters = useWorkspaceStore((state) => state.setStrategyParameters);
+  const [strategyId, parameters, config, result, replayLocked] = useWorkspaceStore(useShallow((state) => [state.selectedStrategyId, state.strategyParameters, state.backtestConfig, state.backtest, state.activeWorkspace === "replay"]));
   const [appliedSelected, setAppliedSelected] = useState(false);
-  const strategy = STRATEGIES.find((item) => item.id === strategyId) ?? STRATEGIES[0];
+  const strategy = STRATEGIES.find((item) => item.id === strategyId);
   const keys = useMemo(() => numericKeys(strategy?.defaults ?? {}), [strategy]);
 
   // Follow newly completed backtests; a manual id belongs to its source result only.
@@ -357,7 +396,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const datasetId = (datasetOverride?.source === sourceDataset || (datasetOverride !== null && datasetOverride.source === ""))
     ? datasetOverride.value
     : DATASET_ID.test(sourceDataset) ? sourceDataset : "";
-  const [splitIndex, setSplitIndex] = useState("300");
+  const [splits, setSplits] = useState<Record<string, string>>({});
   const [parameter, setParameter] = useState<string>(keys[0] ?? "");
   const [from, setFrom] = useState("5");
   const [to, setTo] = useState("30");
@@ -472,9 +511,15 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const spotOnly = (config.accountMode ?? "spot") === "spot" && config.allowShorts === false;
   const validDataset = DATASET_ID.test(datasetId.trim());
   const currentDatasetId = datasetId.trim();
-  const currentDatasetMetadata = datasetMetadata?.datasetId === currentDatasetId ? datasetMetadata : null;
+  const currentDatasetMetadata = !replayLocked && datasetMetadata?.datasetId === currentDatasetId ? datasetMetadata : null;
   const currentDatasetMetadataError = datasetMetadataFailure?.datasetId === currentDatasetId ? datasetMetadataFailure.message : null;
-  const datasetMetadataLoading = validDataset && currentDatasetMetadata === null && currentDatasetMetadataError === null;
+  const datasetMetadataLoading = !replayLocked && validDataset && currentDatasetMetadata === null && currentDatasetMetadataError === null;
+  const splitIndex = splits[currentDatasetId] ?? (currentDatasetMetadata ? String(Math.floor(currentDatasetMetadata.bars / 2)) : "");
+  const setSplitIndex = (value: string): void => setSplits((previous) => ({ ...previous, [currentDatasetId]: value }));
+  const loadedStrategy = result && STRATEGIES.find((item) => item.id === result.strategyId);
+  const canRestoreBacktest = Boolean(result && loadedStrategy && result.strategyVersion === loadedStrategy.version && compatibleParameters(result.parameters, loadedStrategy.defaults));
+  const inputsDiffer = Boolean(result && (strategyId !== result.strategyId || !sameValues(parameters, result.parameters) || !sameValues(config, result.assumptions)));
+  const canApplyReport = Boolean(report && strategy && report.strategyId === strategyId && compatibleParameters(report.selectedParameters, strategy.defaults) && compatibleParameters(parameters, strategy.defaults));
   const split = Number(splitIndex);
   const splitValid = currentDatasetMetadata !== null
     && Number.isInteger(split)
@@ -483,9 +528,9 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
 
   useEffect(() => {
     const requestedDatasetId = datasetId.trim();
-    if (!DATASET_ID.test(requestedDatasetId)) return;
+    if (replayLocked || !DATASET_ID.test(requestedDatasetId)) return;
     const controller = new AbortController();
-    void fetch(`/api/datasets/${encodeURIComponent(requestedDatasetId)}`, { cache: "force-cache", signal: controller.signal })
+    void fetch(`/api/datasets/${encodeURIComponent(requestedDatasetId)}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const payload: unknown = await response.json();
         if (!response.ok) {
@@ -497,7 +542,9 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
           || !("bars" in payload) || typeof payload.bars !== "number" || !Number.isSafeInteger(payload.bars) || payload.bars < 2
           || !("exchange" in payload) || typeof payload.exchange !== "string"
           || !("symbol" in payload) || typeof payload.symbol !== "string"
-          || !("timeframe" in payload) || typeof payload.timeframe !== "string") {
+          || !("timeframe" in payload) || typeof payload.timeframe !== "string"
+          || !("timestamps" in payload) || !Array.isArray(payload.timestamps) || payload.timestamps.length !== payload.bars
+          || !payload.timestamps.every((timestamp: unknown) => typeof timestamp === "number" && Number.isSafeInteger(timestamp) && timestamp >= 0 && Number.isFinite(new Date(timestamp).getTime()))) {
           throw new Error(copy.datasetMalformed);
         }
         if (!controller.signal.aborted) {
@@ -511,7 +558,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
         }
       });
     return () => controller.abort();
-  }, [datasetId, datasetMetadataRetry, copy.datasetMalformed, copy.datasetUnreadable]);
+  }, [datasetId, datasetMetadataRetry, replayLocked, copy.datasetMalformed, copy.datasetUnreadable]);
 
   const context = JSON.stringify({ datasetId, strategyId, parameters, config, symbol, timeframe, exchange, activeKey, from, to, step, splitIndex });
   const running = pending?.context === context && !pending.controller.signal.aborted;
@@ -535,7 +582,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
     activeRequest.current?.abort();
     activeRequest.current = null;
     setPending(null);
-    if (keys.length === 0 || !validDataset || !currentDatasetMetadata || !splitValid || !spotOnly) return;
+    if (useWorkspaceStore.getState().activeWorkspace === "replay" || keys.length === 0 || !validDataset || !currentDatasetMetadata || !splitValid || !spotOnly) return;
     const built = buildEvaluationCandidates(parameters, activeKey, from, to, step);
     if (built.error) {
       setFailure({ context, message: built.error });
@@ -590,10 +637,23 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   }, [report]);
 
   const applySelected = (): void => {
-    if (!report) return;
-    setStrategyParameters({ ...parameters, ...report.selectedParameters });
+    const current = useWorkspaceStore.getState();
+    const currentStrategy = STRATEGIES.find((item) => item.id === current.selectedStrategyId);
+    if (!report || current.activeWorkspace === "replay" || !currentStrategy || report.strategyId !== current.selectedStrategyId
+      || !compatibleParameters(report.selectedParameters, currentStrategy.defaults) || !compatibleParameters(current.strategyParameters, currentStrategy.defaults)) return;
+    current.setStrategyParameters({ ...current.strategyParameters, ...report.selectedParameters });
     setAppliedSelected(true);
     window.setTimeout(() => setAppliedSelected(false), 2000);
+  };
+
+  const applyBacktest = (): void => {
+    const current = useWorkspaceStore.getState();
+    const saved = current.backtest;
+    const builtIn = saved && STRATEGIES.find((item) => item.id === saved.strategyId);
+    if (!saved || saved.resultId !== result?.resultId || current.activeWorkspace === "replay" || !builtIn
+      || saved.strategyVersion !== builtIn.version || !compatibleParameters(saved.parameters, builtIn.defaults)) return;
+    current.setStrategy(saved.strategyId, { ...saved.parameters });
+    current.setBacktestConfig({ ...saved.assumptions });
   };
 
   return (
@@ -740,21 +800,29 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
           size="sm"
           data-testid="run-evaluation"
           onClick={() => void run()}
-          disabled={running || !validDataset || !currentDatasetMetadata || !splitValid || !spotOnly}
+          disabled={running || replayLocked || !validDataset || !currentDatasetMetadata || !splitValid || !spotOnly}
           icon={running ? <Play size={13} className="spin" /> : <FlaskConical size={13} />}
           className="h-7 text-xs font-bold"
         >
           {running ? copy.evaluating : copy.runEvaluation}
         </Button>
       </div>
-
-
-
       <p className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80">{copy.note}</p>
       </>
       ) : !report ? (
         <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><FlaskConical size={22} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>{copy.nothingTitle}</strong><span>{copy.nothingBody}</span></div>
       ) : null}
+      <div className="flex flex-col gap-1 p-2 text-xs text-[var(--ak-text-secondary)] bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] break-words">
+        {currentDatasetMetadata && <p className="m-0 break-all">{copy.sourceSummary(`${EXCHANGE_LABELS[currentDatasetMetadata.exchange] ?? currentDatasetMetadata.exchange} / ${currentDatasetMetadata.symbol} / ${currentDatasetMetadata.timeframe} / ${currentDatasetMetadata.datasetId}`)}</p>}
+        <p className="m-0"><strong>{copy.currentInputs}:</strong> {strategyId} / {formatParameters(parameters, copy)} / {JSON.stringify(config)}</p>
+        {result && <>
+          {inputsDiffer && <p className="m-0 text-[var(--ak-signal-action)]" role="status">{copy.inputsDiffer}</p>}
+          <p className="m-0"><strong>{copy.loadedInputs}:</strong> {result.strategyId} ({result.strategyVersion}) / {formatParameters(result.parameters, copy)} / {JSON.stringify(result.assumptions)}</p>
+          <Button type="button" size="sm" variant="outline" className="self-start h-auto min-h-7 whitespace-normal text-left" disabled={!canRestoreBacktest || replayLocked} onClick={applyBacktest} aria-describedby={!canRestoreBacktest || replayLocked ? "evaluation-restore-help" : undefined}>{copy.applyBacktest}</Button>
+          {(!canRestoreBacktest || replayLocked) && <span id="evaluation-restore-help">{replayLocked ? copy.replayLocked : copy.backtestUnavailable}</span>}
+        </>}
+        {currentDatasetMetadata && splitValid && <p className="m-0">{copy.splitPreview(split, currentDatasetMetadata.bars - split, new Date(currentDatasetMetadata.timestamps[0]!).toLocaleString(), new Date(currentDatasetMetadata.timestamps[split - 1]!).toLocaleString(), new Date(currentDatasetMetadata.timestamps[split]!).toLocaleString(), new Date(currentDatasetMetadata.timestamps[currentDatasetMetadata.bars - 1]!).toLocaleString())}</p>}
+      </div>
       <section className="evaluation-history flex flex-col gap-1 max-h-36 overflow-auto" aria-label={copy.historyLabel}>
         <strong className="text-[10px] uppercase font-mono text-[var(--ak-text-secondary)]">{copy.recentEvaluations}</strong>
         {historyError && <span role="alert" className="text-xs text-[var(--ak-signal-danger)]">{historyError}</span>}
@@ -809,10 +877,13 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                 variant="outline"
                 className="mt-1 h-5 text-[9px] px-1.5 font-bold self-start active:scale-95 transition-transform"
                 onClick={applySelected}
+                disabled={!canApplyReport || replayLocked}
+                aria-describedby={!canApplyReport || replayLocked ? "evaluation-apply-help" : undefined}
                 icon={appliedSelected ? <Check size={10} className="text-[var(--ak-signal-success)]" /> : undefined}
               >
                 {appliedSelected ? copy.appliedToStrategy : copy.applyToStrategy}
               </Button>
+              {(!canApplyReport || replayLocked) && <span id="evaluation-apply-help" className="text-xs text-[var(--ak-text-secondary)]">{replayLocked ? copy.replayLocked : copy.reportIncompatible}</span>}
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
               <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.trainReturnColumn}</span>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Play, ScanSearch, TrendingDown, TrendingUp, Check, ArrowRight, Clock3, RefreshCw, RotateCcw } from "lucide-react";
-import { STRATEGIES, type BacktestConfig, type ExchangeId, type StrategyParameters, type Timeframe } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestConfig, type ExchangeId, type StrategyParameters, type Timeframe } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { useCopy, translate, type CopyTable } from "@/lib/i18n";
@@ -40,6 +40,7 @@ export interface SweepResult {
   values: number[];
   runs: SweepRun[];
   parameters: StrategyParameters;
+  config: BacktestConfig;
   datasetId: string;
   bars: number;
   createdAt?: string;
@@ -103,6 +104,13 @@ interface SweepCopy {
   deterministicRerun: string;
   openSavedSweep: (id: string) => string;
   /* Form. */
+  source: string;
+  freshSource: string;
+  snapshotSource: string;
+  snapshotUnavailable: string;
+  currentInputs: string;
+  reportInputs: string;
+  incompatibleStrategy: string;
   mode: string;
   modeFullSample: string;
   modeWalkForward: string;
@@ -209,6 +217,13 @@ const SWEEP_COPY: CopyTable<SweepCopy> = {
     reproducing: "Reproducing saved sweep from its immutable input…",
     deterministicRerun: "Deterministic rerun",
     openSavedSweep: (id) => `Open saved sweep ${id}`,
+    source: "Candle source",
+    freshSource: "Fresh market candles",
+    snapshotSource: "Loaded backtest snapshot",
+    snapshotUnavailable: "The selected backtest snapshot changed or is unavailable. Select a source before running.",
+    currentInputs: "Current strategy and config",
+    reportInputs: "Report strategy and config",
+    incompatibleStrategy: "Select the report's strategy and version before applying a candidate.",
     mode: "MODE",
     modeFullSample: "Full sample · in-sample",
     modeWalkForward: "Walk-forward",
@@ -309,6 +324,13 @@ const SWEEP_COPY: CopyTable<SweepCopy> = {
     reproducing: "正在用不可变输入复现已保存的参数扫描…",
     deterministicRerun: "确定性重跑",
     openSavedSweep: (id) => `打开已保存的参数扫描 ${id}`,
+    source: "K 线来源",
+    freshSource: "最新市场 K 线",
+    snapshotSource: "已加载回测快照",
+    snapshotUnavailable: "所选回测快照已更改或不可用。请重新选择数据来源后再运行。",
+    currentInputs: "当前策略和配置",
+    reportInputs: "报告策略和配置",
+    incompatibleStrategy: "请先选择与报告相同的策略及版本，再应用候选参数。",
     mode: "模式",
     modeFullSample: "全样本 · 样本内",
     modeWalkForward: "滚动验证",
@@ -434,7 +456,13 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   const copy = useCopy(SWEEP_COPY);
   const strategy = STRATEGIES.find((item) => item.id === strategyId) ?? STRATEGIES[0];
   const keys = useMemo(() => sweepableKeys(strategy?.defaults ?? {}), [strategy]);
-  const setStrategyParameters = useWorkspaceStore((state) => state.setStrategyParameters);
+  const backtest = useWorkspaceStore((state) => state.backtest);
+  const [snapshotSelection, setSnapshotSelection] = useState<string | null>(null);
+  const usableBacktest = backtest && /^sha256:[a-f0-9]{64}$/.test(backtest.datasetId)
+    && Object.hasOwn(EXCHANGE_TIMEFRAMES, backtest.exchange) && EXCHANGE_TIMEFRAMES[backtest.exchange].includes(backtest.timeframe)
+    && /^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/.test(backtest.symbol) ? backtest : null;
+  const snapshot = usableBacktest && snapshotSelection === usableBacktest.resultId ? usableBacktest : null;
+  const snapshotUnavailable = snapshotSelection !== null && snapshot === null;
 
   const [parameter, setParameter] = useState<string>(keys[0] ?? "");
   const [from, setFrom] = useState("5");
@@ -447,7 +475,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   const [result, setResult] = useState<SweepResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [appliedVal, setAppliedVal] = useState<number | null>(null);
+  const [applied, setApplied] = useState<{ sweepId: string; value: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [savedSweeps, setSavedSweeps] = useState<SweepResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -555,15 +583,20 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   const activeKey = keys.includes(parameter) ? parameter : (keys[0] ?? "");
   const walkForwardReport = result?.walkForward;
   const showWalkForward = result ? Boolean(walkForwardReport) : mode === "walk-forward";
+  const canApply = Boolean(result && result.strategyId === strategyId && result.strategyVersion === strategy?.version && keys.includes(result.parameter));
 
   const run = async (): Promise<void> => {
+    if (snapshotUnavailable) {
+      setError(copy.snapshotUnavailable);
+      return;
+    }
     const maxTrainingDrawdownValue = maxTrainingDrawdown.trim() === "" ? undefined : Number(maxTrainingDrawdown);
     if (mode === "walk-forward" && maxTrainingDrawdownValue !== undefined &&
         (!Number.isFinite(maxTrainingDrawdownValue) || maxTrainingDrawdownValue < 0 || maxTrainingDrawdownValue > 1)) {
       setError(copy.drawdownInvalid);
       return;
     }
-    historySelectionRequest.current += 1;
+    const requestId = ++historySelectionRequest.current;
     historyOpenRequest.current?.abort();
     historyOpenRequest.current = null;
     setLoadingSweepId(null);
@@ -576,9 +609,9 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          exchange,
-          symbol,
-          timeframe,
+          exchange: snapshot?.exchange ?? exchange,
+          symbol: snapshot?.symbol ?? symbol,
+          timeframe: snapshot?.timeframe ?? timeframe,
           strategyId,
           parameters,
           config,
@@ -591,7 +624,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
             selectionMetric,
             ...(maxTrainingDrawdownValue === undefined ? {} : { maxTrainingDrawdown: maxTrainingDrawdownValue }),
           } : {}),
-          limit: 600,
+          ...(snapshot ? { datasetId: snapshot.datasetId } : { limit: 600 }),
         }),
       });
       const payload: unknown = await response.json();
@@ -601,9 +634,11 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
         throw new Error(message);
       }
       if (!isSweepResult(payload)) throw new Error(copy.sweepMalformed);
+      if (!historyLive.current || requestId !== historySelectionRequest.current) return;
       setResult(payload);
       void loadHistory();
     } catch (reason) {
+      if (!historyLive.current || requestId !== historySelectionRequest.current) return;
       setResult(null);
       setError(reason instanceof Error ? reason.message : copy.sweepFailed);
     } finally {
@@ -612,11 +647,14 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   };
 
   const applyParameter = (val: number): void => {
-    setStrategyParameters({ ...parameters, [activeKey]: val });
-    setAppliedVal(val);
-    setNotice(copy.appliedNotice(parameterName(activeKey, copy), val));
+    const current = useWorkspaceStore.getState();
+    const currentStrategy = STRATEGIES.find((item) => item.id === current.selectedStrategyId);
+    if (!result || current.selectedStrategyId !== result.strategyId || currentStrategy?.version !== result.strategyVersion || typeof currentStrategy.defaults[result.parameter] !== "number") return;
+    current.setStrategyParameters({ ...current.strategyParameters, [result.parameter]: val });
+    setApplied({ sweepId: result.sweepId, value: val });
+    setNotice(copy.appliedNotice(parameterName(result.parameter, copy), val));
     window.setTimeout(() => {
-      setAppliedVal(null);
+      setApplied(null);
       setNotice(null);
     }, 2200);
   };
@@ -649,6 +687,18 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   return (
     <div className="sweep-panel flex flex-col gap-3 p-3 bg-[var(--ak-surface-canvas)]">
       <div className="sweep-form flex flex-wrap items-end gap-2.5 p-2.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+        <label className="sweep-field flex flex-col gap-1">
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)]">{copy.source}</span>
+          <AkSelect className="select-input h-7 text-xs font-bold" value={snapshotUnavailable ? "" : snapshot ? "snapshot" : "fresh"} onChange={(event) => setSnapshotSelection(event.target.value === "snapshot" && usableBacktest ? usableBacktest.resultId : null)}>
+            {snapshotUnavailable && <option value="" disabled>{copy.snapshotUnavailable}</option>}
+            <option value="fresh">{copy.freshSource}</option>
+            {usableBacktest && <option value="snapshot">{copy.snapshotSource}</option>}
+          </AkSelect>
+        </label>
+        {snapshotUnavailable
+          ? <p className="m-0 w-full text-[10px] text-[var(--ak-signal-action)]" role="status">{copy.snapshotUnavailable}</p>
+          : <p className="m-0 w-full break-all text-[10px] text-[var(--ak-text-secondary)]">{snapshot ? `${EXCHANGE_LABELS[snapshot.exchange]} · ${snapshot.symbol} · ${snapshot.timeframe} · ${snapshot.datasetId}` : `${EXCHANGE_LABELS[exchange]} · ${symbol} · ${timeframe}`}</p>}
+        <p className="m-0 w-full break-words text-[10px] text-[var(--ak-text-secondary)]">{copy.currentInputs}: {strategyId} · {JSON.stringify(parameters)} · {JSON.stringify(config)}</p>
         <label className="sweep-field flex flex-col gap-1">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">{copy.mode}</span>
           <AkSelect className="select-input h-7 text-xs font-bold" value={mode} onChange={(event) => setMode(event.target.value as "full-sample" | "walk-forward")}>
@@ -695,7 +745,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
           size="sm"
           data-testid="run-sweep"
           onClick={() => void run()}
-          disabled={running}
+          disabled={running || snapshotUnavailable}
           icon={running ? <Play size={13} className="spin" /> : <ScanSearch size={13} />}
           className="h-7 text-xs font-bold"
         >
@@ -759,9 +809,11 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
         {showWalkForward
           ? copy.noteWalkForward
           : copy.noteFullSample}
-        {` ${EXCHANGE_LABELS[exchange]} · ${symbol} · ${timeframe}`}
+        {` ${EXCHANGE_LABELS[result?.exchange ?? snapshot?.exchange ?? exchange]} · ${result?.symbol ?? snapshot?.symbol ?? symbol} · ${result?.timeframe ?? snapshot?.timeframe ?? timeframe}`}
         {result && copy.resultSummary(result.bars, result.values.length, result.runs.length, result.datasetId.slice(0, 24))}
       </p>
+      {result && <p className="m-0 break-words text-[10px] text-[var(--ak-text-secondary)]">{copy.reportInputs}: {result.strategyId} ({result.strategyVersion}) · {JSON.stringify(result.parameters)} · {JSON.stringify(result.config)} · {result.datasetId}</p>}
+      {result && !canApply && <p className="m-0 text-xs text-[var(--ak-signal-action)]" role="status">{copy.incompatibleStrategy}</p>}
 
       {walkForwardReport && (
         <section className="space-y-2 rounded border border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken)] p-2 text-xs">
@@ -790,7 +842,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
             <p className="m-0 font-semibold">{copy.finalTestHeading(walkForwardReport.boundaries.train80, walkForwardReport.boundaries.total, timeRange(walkForwardReport.finalTestStartTimestamp, walkForwardReport.finalTestEndTimestamp))}</p>
             <p className="m-0">{copy.finalTestMetrics(parameterName(result!.parameter, copy), walkForwardReport.finalCandidateValue, pct(walkForwardReport.finalTestMetrics.totalReturn), pct(-walkForwardReport.finalTestMetrics.maxDrawdown), walkForwardReport.finalTestMetrics.tradeCount, walkForwardReport.finalTestMetrics.totalFees.toFixed(2))}</p>
             <p className="m-0">{copy.finalTrainingMetrics(pct(walkForwardReport.finalTrainingMetrics.totalReturn), walkForwardReport.finalTrainingMetrics.sharpeRatio === null ? copy.notAvailable : walkForwardReport.finalTrainingMetrics.sharpeRatio.toFixed(3))}</p>
-            <Button size="sm" variant="outline" className="mt-1 h-6 text-[10px]" onClick={() => applyParameter(walkForwardReport.finalCandidateValue)}>
+            <Button size="sm" variant="outline" className="mt-1 h-6 text-[10px]" disabled={!canApply} onClick={() => applyParameter(walkForwardReport.finalCandidateValue)}>
               {copy.applyFinalCandidate}
             </Button>
           </div>
@@ -892,7 +944,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
             <tbody>
               {result.runs.map((entry) => {
                 const isBest = stats ? entry.value === stats.best.value : false;
-                const isApplied = appliedVal === entry.value;
+                const isApplied = applied?.sweepId === result.sweepId && applied.value === entry.value;
                 return (
                   <tr
                     key={entry.resultId || entry.value}
@@ -919,6 +971,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
                         size="sm"
                         variant={isBest ? "primary" : "outline"}
                         className="h-6 text-[10px] px-2"
+                        disabled={!canApply}
                         onClick={() => applyParameter(entry.value)}
                         icon={isApplied ? <Check size={11} /> : <ArrowRight size={11} />}
                       >

@@ -9,7 +9,10 @@ const DATASET_ID = /^sha256:[a-f0-9]{64}$/;
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
   const guard = researchReadGuard();
-  if (guard) return guard;
+  if (guard) {
+    guard.headers.set("Cache-Control", "no-store");
+    return guard;
+  }
 
   const { id } = await context.params;
   if (!DATASET_ID.test(id)) return NextResponse.json({ error: "Invalid dataset id." }, { status: 400 });
@@ -22,7 +25,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       symbol: snapshot.symbol,
       timeframe: snapshot.timeframe,
       bars: snapshot.candles.length,
-    }, { headers: { "Cache-Control": "private, max-age=3600, immutable" } });
+      timestamps: snapshot.candles.map((candle) => candle.timestamp),
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const missing = typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
     const message = missing ? "Dataset snapshot not found." : error instanceof Error ? error.message : "Dataset snapshot could not be read.";

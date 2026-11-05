@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Clock3, FastForward, LoaderCircle, Pause, Play, SkipForward, Square, RotateCcw } from "lucide-react";
 import type { ReplayConfig, ReplaySession, Timeframe } from "@newbeing/core";
-import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkProgress } from "@swufefox/ak-ui-react";
+import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkNum } from "@swufefox/ak-ui-react";
 import { Button } from "@/components/ui/button";
 import { useCopy, type CopyTable } from "@/lib/i18n";
 
@@ -62,9 +62,6 @@ interface ReplayCopy {
   replaySpeed: string;
   finish: string;
   newSession: string;
-  timeline: string;
-  timelineValue: (revealed: number, total: number) => string;
-  stepped: (count: number) => string;
   statusActive: string;
   statusFinished: string;
   exhaustedTitle: string;
@@ -93,7 +90,7 @@ const REPLAY_COPY: CopyTable<ReplayCopy> = {
     seed: (symbol, timeframe) => `Seed ${symbol} · ${timeframe}`,
     help: "Only completed bars at or before the selected boundary are loaded. Future candles remain strictly hidden until advanced.",
     cursor: "Cursor:",
-    barsRevealed: (count) => `${count} BARS REVEALED`,
+    barsRevealed: (count) => `${count} BARS ON CHART`,
     exhaustedTag: "DATASET EXHAUSTED",
     localCache: "LOCAL CACHE",
     play: "Play",
@@ -106,9 +103,6 @@ const REPLAY_COPY: CopyTable<ReplayCopy> = {
     replaySpeed: "Replay speed",
     finish: "Finish",
     newSession: "New session",
-    timeline: "Timeline revealed",
-    timelineValue: (revealed, total) => `${revealed} / ${total} bars`,
-    stepped: (count) => `${count} STEPPED`,
     statusActive: "ACTIVE",
     statusFinished: "FINISHED",
     exhaustedTitle: "Frozen dataset fully revealed",
@@ -135,7 +129,7 @@ const REPLAY_COPY: CopyTable<ReplayCopy> = {
     seed: (symbol, timeframe) => `初始化 ${symbol} · ${timeframe}`,
     help: "仅加载所选边界之前的已收盘 K 线；在推进前，未来 K 线严格隐藏。",
     cursor: "游标:",
-    barsRevealed: (count) => `${count} 根 K 线已揭示`,
+    barsRevealed: (count) => `图表显示 ${count} 根 K 线`,
     exhaustedTag: "数据集已用尽",
     localCache: "本地缓存",
     play: "播放",
@@ -148,9 +142,6 @@ const REPLAY_COPY: CopyTable<ReplayCopy> = {
     replaySpeed: "回放速度",
     finish: "结束",
     newSession: "新建回放",
-    timeline: "已揭示区间",
-    timelineValue: (revealed, total) => `${revealed} / ${total} 根`,
-    stepped: (count) => `已推进 ${count} 步`,
     statusActive: "进行中",
     statusFinished: "已结束",
     exhaustedTitle: "冻结数据集已完全揭示",
@@ -347,6 +338,9 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               <AkTag variant="neutral" className="text-[10px] font-mono">
                 {copy.barsRevealed(session.bars.length)}
               </AkTag>
+              <AkTag variant="neutral" className="text-[10px] font-mono">
+                {session.status === "active" ? copy.statusActive : copy.statusFinished}
+              </AkTag>
               {exhausted && session.status === "active" && (
                 <AkTag variant="advanced" className="text-[10px]">
                   {copy.exhaustedTag}
@@ -423,26 +417,6 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               >
                 {copy.newSession}
               </Button>
-            </div>
-          </div>
-
-          <div className="pt-1.5 border-t border-[var(--ak-border-subtle)] flex items-center gap-3">
-            <div className="flex-1">
-              <AkProgress
-                label={copy.timeline}
-                min={0}
-                max={Math.max(limit + 50, session.bars.length + 10)}
-                value={session.bars.length}
-                valueLabel={copy.timelineValue(session.bars.length, Math.max(limit + 50, session.bars.length + 10))}
-                size="sm"
-              />
-            </div>
-            <div className="flex items-center gap-2 text-[10px] font-mono text-[var(--ak-text-secondary)] shrink-0">
-              <span>{copy.stepped(Math.max(0, session.bars.length - limit))}</span>
-              <span>·</span>
-              <span className={session.status === "active" ? "text-[var(--ak-signal-success)] font-semibold" : "text-[var(--ak-text-disabled)]"}>
-                {session.status === "active" ? copy.statusActive : copy.statusFinished}
-              </span>
             </div>
           </div>
         </div>

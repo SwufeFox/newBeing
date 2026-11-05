@@ -11,6 +11,7 @@ import { closeDatabaseForTests, datasetSnapshotPath, getExperiment, listExperime
 import type { ResearchEvaluationResult } from "@newbeing/application";
 import { GET, POST } from "../src/app/api/evaluations/route.js";
 import { POST as rerun } from "../src/app/api/backtests/[id]/rerun/route.js";
+import { GET as getDataset } from "../src/app/api/datasets/[id]/route.js";
 
 let directory: string;
 let body: { datasetId: string; strategyId: string; candidates: Record<string, number>[]; splitIndex: number; config: { initialCapital: number; positionFraction: number; feeRate: number; slippageRate: number; allowShorts: false } };
@@ -30,6 +31,38 @@ beforeEach(() => {
   };
 });
 afterEach(() => { closeDatabaseForTests(); delete process.env.NEWBEING_DATA_DIR; rmSync(directory, { recursive: true, force: true }); });
+
+describe("GET /api/datasets/[id]", () => {
+  const request = (id: string) => getDataset(new Request("http://localhost/api/datasets/test"), { params: Promise.resolve({ id }) });
+
+  it("returns exact candle timestamps for an immutable snapshot", async () => {
+    const timestamps = [120_000, 180_000, 240_000, 300_000];
+    const datasetId = saveDatasetSnapshot({ exchange: "binance", symbol: "BTC/USDT", timeframe: "1m", candles: timestamps.map((timestamp) => ({ timestamp, open: 100, high: 101, low: 99, close: 100, volume: 10 })) });
+    const response = await request(datasetId);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ datasetId, bars: 4, timestamps });
+  });
+
+  it("returns metadata for snapshots too short to split", async () => {
+    const timestamps = [60_000, 120_000];
+    const datasetId = saveDatasetSnapshot({ exchange: "binance", symbol: "BTC/USDT", timeframe: "1m", candles: timestamps.map((timestamp) => ({ timestamp, open: 100, high: 101, low: 99, close: 100, volume: 10 })) });
+    const response = await request(datasetId);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ bars: 2, timestamps });
+  });
+
+  it("keeps invalid, missing, corrupted and Replay snapshots guarded", async () => {
+    expect((await request("invalid")).status).toBe(400);
+    expect((await request(`sha256:${"0".repeat(64)}`)).status).toBe(404);
+    writeFileSync(datasetSnapshotPath(body.datasetId), "{}");
+    expect((await request(body.datasetId)).status).toBe(422);
+    saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "replay" });
+    const response = await request(body.datasetId);
+    expect(response.status).toBe(409);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+});
 
 describe("POST /api/evaluations", () => {
   it("returns the complete saved single-holdout report and exposes resultIds usable by the existing rerun route", async () => {

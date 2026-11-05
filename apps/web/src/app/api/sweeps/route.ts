@@ -32,8 +32,9 @@ const requestSchema = z.object({
   mode: z.enum(["full-sample", "walk-forward"]).optional(),
   selectionMetric: z.enum(["totalReturn", "sharpeRatio"]).optional(),
   maxTrainingDrawdown: z.number().finite().min(0).max(1).optional(),
+  datasetId: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
   limit: z.number().int().min(50).max(1000).optional(),
-});
+}).refine((data) => data.datasetId === undefined || data.limit === undefined);
 
 function sweepReport(sweep: Awaited<ReturnType<typeof runBacktestSweep>>) {
   const mode = sweep.mode ?? (sweep.walkForward ? "walk-forward" : "full-sample");
@@ -86,6 +87,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         mode: parsed.data.mode ?? "full-sample",
         ...(parsed.data.selectionMetric === undefined ? {} : { selectionMetric: parsed.data.selectionMetric }),
         ...(parsed.data.maxTrainingDrawdown === undefined ? {} : { maxTrainingDrawdown: parsed.data.maxTrainingDrawdown }),
+        ...(parsed.data.datasetId === undefined ? {} : { datasetId: parsed.data.datasetId }),
         ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
       },
       { marketAdapter: getWebMarketAdapter(exchange) },

@@ -46,6 +46,29 @@ describe("research HTTP contracts", () => {
     expect(saved.metrics).toEqual(original.metrics); expect(saved.trades).toEqual(original.trades); expect(saved.signals).toEqual(original.signals); expect(saved.equityCurve).toEqual(original.equityCurve);
     expect(fixture.fetch).not.toHaveBeenCalled();
   });
+  it("sweeps the exact saved backtest snapshot without fetching and rejects conflicting sources", async () => {
+    const created = await createRun(post("/api/backtests", body));
+    expect(created.status).toBe(201);
+    const original = await created.json() as BacktestResult;
+    const { limit: _limit, ...snapshotRequest } = sweepBody;
+    fixture.fetch.mockRejectedValue(new Error("network disabled"));
+    fixture.fetch.mockClear();
+    const response = await createSweep(post("/api/sweeps", { ...snapshotRequest, datasetId: original.datasetId }));
+    expect(response.status).toBe(201);
+    const sweep = await response.json() as BacktestSweepResult;
+    expect(sweep.datasetId).toBe(original.datasetId);
+    expect(sweep.bars).toBe(fixture.bars.length);
+    expect(fixture.fetch).not.toHaveBeenCalled();
+    for (const run of sweep.runs) expect(getExperiment(run.resultId)!.datasetId).toBe(original.datasetId);
+
+    expect((await createSweep(post("/api/sweeps", { ...sweepBody, datasetId: original.datasetId }))).status).toBe(400);
+    expect((await createSweep(post("/api/sweeps", { ...snapshotRequest, datasetId: original.datasetId, symbol: "ETH/USDT" }))).status).toBe(422);
+    expect((await createSweep(post("/api/sweeps", { ...snapshotRequest, datasetId: original.datasetId, exchange: "okx" }))).status).toBe(422);
+    expect((await createSweep(post("/api/sweeps", { ...snapshotRequest, datasetId: original.datasetId, timeframe: "5m" }))).status).toBe(422);
+    expect(fixture.fetch).not.toHaveBeenCalled();
+    saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "replay" });
+    expect((await createSweep(post("/api/sweeps", { ...snapshotRequest, datasetId: original.datasetId }))).status).toBe(409);
+  });
   it("persists sweep values, metrics, and bound full runs and reruns them offline", async () => {
     const response = await createSweep(post("/api/sweeps", sweepBody)); expect(response.status).toBe(201);
     const original = await response.json() as BacktestSweepResult;
