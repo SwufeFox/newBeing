@@ -571,6 +571,36 @@ test("kept-alive inspector tabs pause hidden polling and reopen with data", asyn
   await expect(book).toContainText("PRICE (USDT)");
   await expect(page.getByText("Loading public depth…")).toHaveCount(0);
 });
+test("AI context deck offers tactical briefing, prompt synthesis, and live factor AST validation", async ({ page }) => {
+  await installApiMocks(page);
+  await page.goto("/");
+  await page.getByRole("tab", { name: "AI context", exact: true }).click();
+  const panel = page.locator(".context-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Tactical Briefing", exact: true })).toBeVisible();
+  await expect(panel.getByText("BTC/USDT")).toBeVisible();
+
+  await panel.getByRole("button", { name: "Prompt Synthesizer" }).click();
+  await expect(panel.getByText("# Quantitative Research Hypothesis")).toBeVisible();
+  await panel.getByRole("button", { name: "Overfit Audit" }).click();
+  await expect(panel.getByText("# Strategy Robustness & Overfit Audit")).toBeVisible();
+
+  await panel.getByRole("button", { name: "Factor AST Lab" }).click();
+  await expect(panel.getByText("COMPILED · AST VALID")).toBeVisible();
+  const factorInput = panel.locator("textarea");
+  await factorInput.fill("invalid_factor(close, 10)");
+  await expect(panel.locator(".ak-notice").getByText("COMPILE ERROR")).toBeVisible();
+  await expect(panel.getByRole("alert")).toContainText("Unsupported function 'invalid_factor'");
+
+  await panel.getByRole("button", { name: "Norm Volatility" }).click();
+  await expect(panel.getByText("COMPILED · AST VALID")).toBeVisible();
+  await expect(factorInput).toHaveValue("ts_std_dev(close, 20) / ts_mean(close, 20)");
+
+  await panel.getByRole("button", { name: "Raw Schema" }).click();
+  await expect(panel.getByText("Copy Context JSON")).toBeVisible();
+  await expect(panel.locator("details")).toBeVisible();
+});
+
 
 test("backtest report export downloads a versioned research bundle", async ({ page }) => {
   await installApiMocks(page);

@@ -3597,6 +3597,7 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .replay-ticket .replay-order-grid { grid-template-columns: minmax(0, 1fr); }
   .replay-ticket .ticket-field .ak-select,
   .replay-ticket .ticket-field > .ak-input { min-height: 44px; height: 44px; }
+  .context-subtabs button { min-height: 44px; }
 }
 
 /* ?? three cosmetic defects caught in the final screenshot ???????????

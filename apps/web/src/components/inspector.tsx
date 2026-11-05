@@ -1,8 +1,8 @@
 "use client";
 
-import { replayReport, type ReplayExecution, type ReplayOrderInput, type ReplayReport } from "@newbeing/core";
+import { compileFactor, replayReport, type ReplayExecution, type ReplayOrderInput, type ReplayReport } from "@newbeing/core";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Braces, Check, Clock3, Copy, History, Layers3, TrendingDown, TrendingUp, Wallet, ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { BookOpen, Braces, Check, Clock3, Copy, History, Layers3, TrendingDown, TrendingUp, Wallet, ArrowDownRight, ArrowUpRight, Sparkles, FlaskConical, Code2, Activity, AlertCircle } from "lucide-react";
 import type { BacktestResult, ExchangeId, OrderPreview, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
 import type { MarketSummary, OrderBookSnapshot, RecentTrade } from "@newbeing/market-data/types";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { StrategyLab } from "@/components/strategy-lab";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import { floorToDecimals } from "@/lib/indicators";
-import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress, AkSpinner } from "@swufefox/ak-ui-react";
+import { AkTag, AkNotice, AkStatus, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress, AkSpinner } from "@swufefox/ak-ui-react";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
 
 interface InspectorCopy {
@@ -56,6 +56,43 @@ interface InspectorCopy {
   bridgeNote: string;
   copiedJson: string;
   copyContextJson: string;
+  /* PRTS AI Deck */
+  aiModeBriefing: string;
+  aiModePrompts: string;
+  aiModeFactor: string;
+  aiModeRaw: string;
+  tacticalOverview: string;
+  activeAsset: string;
+  activeStrategy: string;
+  backtestStatus: string;
+  noBacktestPrompt: string;
+  sharpeLabel: string;
+  maxDdLabel: string;
+  winRateLabel: string;
+  tradesLabel: string;
+  highSharpeAlpha: string;
+  moderateAlpha: string;
+  suboptimalAlpha: string;
+  copyBriefing: string;
+  briefingCopied: string;
+  promptTypeHypothesis: string;
+  promptTypeFactor: string;
+  promptTypeAudit: string;
+  promptTypeRisk: string;
+  copyPrompt: string;
+  promptCopied: string;
+  factorTitle: string;
+  factorDescription: string;
+  factorPlaceholder: string;
+  factorValid: string;
+  factorInvalid: string;
+  factorPresets: string;
+  presetMomentum: string;
+  presetVolatility: string;
+  presetRange: string;
+  presetReversion: string;
+  copyFactor: string;
+  factorCopied: string;
   /* Paper ticket */
   paperTicket: string;
   simulated: string;
@@ -186,6 +223,43 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     bridgeNote: "The stdio MCP server reads this live SQLite workspace snapshot. No account credentials or exchange API keys are exposed.",
     copiedJson: "Copied JSON to clipboard",
     copyContextJson: "Copy Context JSON",
+    /* PRTS AI Deck */
+    aiModeBriefing: "Tactical Briefing",
+    aiModePrompts: "Prompt Synthesizer",
+    aiModeFactor: "Factor AST Lab",
+    aiModeRaw: "Raw Schema",
+    tacticalOverview: "TACTICAL OVERVIEW",
+    activeAsset: "ACTIVE ASSET",
+    activeStrategy: "ACTIVE STRATEGY",
+    backtestStatus: "BACKTEST ALPHA HEALTH",
+    noBacktestPrompt: "No active backtest loaded. Run a backtest in Strategy Lab to evaluate Sharpe and alpha robustness.",
+    sharpeLabel: "SHARPE",
+    maxDdLabel: "MAX DD",
+    winRateLabel: "WIN RATE",
+    tradesLabel: "TRADES",
+    highSharpeAlpha: "STRONG ALPHA",
+    moderateAlpha: "MODERATE",
+    suboptimalAlpha: "LOW / UNPROVEN",
+    copyBriefing: "Copy Tactical Briefing",
+    briefingCopied: "Copied Briefing to Clipboard",
+    promptTypeHypothesis: "Hypothesis",
+    promptTypeFactor: "Factor Mining",
+    promptTypeAudit: "Overfit Audit",
+    promptTypeRisk: "Risk Guardrails",
+    copyPrompt: "Copy Prompt for AI",
+    promptCopied: "Copied Prompt to Clipboard",
+    factorTitle: "ALPHA FACTOR AST PROBE",
+    factorDescription: "Validate factor syntax against newBeing's time-series AST compiler.",
+    factorPlaceholder: "Enter factor expression (e.g. ts_rank(close - ts_delay(close, 10), 20))",
+    factorValid: "COMPILED · AST VALID",
+    factorInvalid: "COMPILE ERROR",
+    factorPresets: "PRESETS:",
+    presetMomentum: "Momentum Rank",
+    presetVolatility: "Norm Volatility",
+    presetRange: "High-Low Spread",
+    presetReversion: "Z-Score Reversion",
+    copyFactor: "Copy Expression",
+    factorCopied: "Copied Expression",
     paperTicket: "PAPER EXECUTION TICKET",
     simulated: "SIMULATED",
     available: (quote) => `${quote} AVAILABLE`,
@@ -311,6 +385,43 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     bridgeNote: "stdio MCP 服务读取这份实时 SQLite 工作台快照。不暴露任何账户凭证或交易所 API 密钥。",
     copiedJson: "JSON 已复制到剪贴板",
     copyContextJson: "复制上下文 JSON",
+    /* PRTS AI Deck */
+    aiModeBriefing: "战术简报",
+    aiModePrompts: "投研指令",
+    aiModeFactor: "因子实验室",
+    aiModeRaw: "原始上下文",
+    tacticalOverview: "战术总览",
+    activeAsset: "当前标的",
+    activeStrategy: "当前策略",
+    backtestStatus: "回测 Alpha 健康度",
+    noBacktestPrompt: "暂无当前回测数据。在策略实验室运行回测后可评估夏普比率与 Alpha 稳健性。",
+    sharpeLabel: "夏普比率",
+    maxDdLabel: "最大回撤",
+    winRateLabel: "胜率",
+    tradesLabel: "交易数",
+    highSharpeAlpha: "高夏普 Alpha",
+    moderateAlpha: "中等 Alpha",
+    suboptimalAlpha: "表现欠佳 / 未经验证",
+    copyBriefing: "复制战术简报",
+    briefingCopied: "战术简报已复制到剪贴板",
+    promptTypeHypothesis: "假设生成",
+    promptTypeFactor: "因子挖掘",
+    promptTypeAudit: "过拟合审计",
+    promptTypeRisk: "执行风控",
+    copyPrompt: "复制投研指令给 AI",
+    promptCopied: "投研指令已复制到剪贴板",
+    factorTitle: "Alpha 因子 AST 探测器",
+    factorDescription: "使用 newBeing 时序 AST 编译器实时校验因子语法与运算深度。",
+    factorPlaceholder: "输入因子表达式（例如 ts_rank(close - ts_delay(close, 10), 20)）",
+    factorValid: "编译成功 · AST 有效",
+    factorInvalid: "编译错误",
+    factorPresets: "预设预构：",
+    presetMomentum: "动量排序",
+    presetVolatility: "归一化波动率",
+    presetRange: "高低价差比",
+    presetReversion: "均值回归 Z-Score",
+    copyFactor: "复制因子表达式",
+    factorCopied: "因子已复制",
     paperTicket: "模拟盘下单区",
     simulated: "模拟",
     available: (quote) => `${quote} 可用`,
@@ -716,8 +827,13 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
   );
 }
 
-function WorkspaceContext(): React.JSX.Element {
+function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): React.JSX.Element {
   const copy = useCopy(INSPECTOR_COPY);
+  const [subTab, setSubTab] = useState<"briefing" | "prompts" | "factor" | "raw">("briefing");
+  const [promptType, setPromptType] = useState<"hypothesis" | "factor" | "audit" | "risk">("hypothesis");
+  const [factorExpr, setFactorExpr] = useState("ts_rank(close - ts_delay(close, 10), 20)");
+  const [copiedKind, setCopiedKind] = useState<string | null>(null);
+
   const state = useWorkspaceStore(useShallow((workspace) => ({
     symbol: workspace.symbol,
     exchange: workspace.exchange,
@@ -729,73 +845,472 @@ function WorkspaceContext(): React.JSX.Element {
     mode: workspace.mode,
     visibleRange: workspace.visibleRange,
   })));
-  const [copied, setCopied] = useState(false);
-  const context = useMemo(() => ({
-    ...state,
-    quoteScope: "public market data only; paper portfolio is local; live trading disabled",
-  }), [state]);
 
-  const copyContext = async (): Promise<void> => {
+  const backtest = useWorkspaceStore((s) => s.backtest);
+  const strategyParameters = useWorkspaceStore((s) => s.strategyParameters);
+  const backtestConfig = useWorkspaceStore((s) => s.backtestConfig);
+
+  const handleCopy = async (text: string, kind: string): Promise<void> => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(context, null, 2));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      await navigator.clipboard.writeText(text);
+      setCopiedKind(kind);
+      window.setTimeout(() => setCopiedKind((curr) => (curr === kind ? null : curr)), 1800);
     } catch {
-      setCopied(false);
+      setCopiedKind(null);
     }
   };
 
+  const factorCompilation = useMemo(() => {
+    if (!factorExpr.trim()) return null;
+    return compileFactor(factorExpr.trim());
+  }, [factorExpr]);
+
+  const rawContext = useMemo(() => ({
+    ...state,
+    strategyParameters,
+    backtestConfig,
+    activeBacktestMetrics: backtest?.metrics ?? null,
+    quoteScope: "public market data only; paper portfolio is local; live trading disabled",
+  }), [state, strategyParameters, backtestConfig, backtest]);
+
+  const briefingMarkdown = useMemo(() => {
+    const lines = [
+      `# PRTS Tactical Briefing: ${state.symbol} (${exchangeLabel(state.exchange)})`,
+      `- Timeframe: ${state.timeframe}`,
+      `- Active Workspace: ${state.activeWorkspace.toUpperCase()}`,
+      `- Current Price: ${summary?.last != null ? price(summary.last) : "N/A"} (${summary?.changePct24h != null ? `${summary.changePct24h >= 0 ? "+" : ""}${summary.changePct24h.toFixed(2)}%` : "N/A"})`,
+      `- Active Strategy: ${state.selectedStrategyId}`,
+      `- Parameters: ${JSON.stringify(strategyParameters)}`,
+    ];
+    if (backtest) {
+      lines.push(
+        "",
+        "## Backtest Alpha Metrics:",
+        `- Return: ${(backtest.metrics.totalReturn * 100).toFixed(2)}%`,
+        `- Max Drawdown: ${(backtest.metrics.maxDrawdown * 100).toFixed(2)}%`,
+        `- Sharpe Ratio: ${backtest.metrics.sharpeRatio?.toFixed(2) ?? "N/A"}`,
+        `- Win Rate: ${(backtest.metrics.winRate * 100).toFixed(2)}%`,
+        `- Profit Factor: ${backtest.metrics.profitFactor?.toFixed(2) ?? "N/A"}`,
+        `- Total Trades: ${backtest.metrics.tradeCount}`,
+      );
+    }
+    return lines.join("\n");
+  }, [state, summary, strategyParameters, backtest]);
+
+  const activePromptText = useMemo(() => {
+    const sym = state.symbol;
+    const ex = exchangeLabel(state.exchange);
+    const tf = state.timeframe;
+    const strat = state.selectedStrategyId;
+
+    if (promptType === "hypothesis") {
+      return [
+        `# Quantitative Research Hypothesis: ${sym} on ${ex} (${tf})`,
+        `Current Baseline Strategy: ${strat}`,
+        `Parameter Configuration: ${JSON.stringify(strategyParameters)}`,
+        "",
+        "Please formulate 3 distinct, falsifiable market anomaly hypotheses for this asset and timeframe:",
+        "1. Volatility Regime Shift: Identify conditions where volatility clustering precedes directional expansion.",
+        "2. Mean Reversion vs. Momentum: Formulate an exact entry and exit condition with statistical justification.",
+        "3. Execution & Slippage Sensitivity: Detail how a 5 bps fee and 5 bps slippage assumption impacts the expected alpha edge.",
+        "",
+        "Specify measurable criteria (Sharpe, max drawdown threshold, sample size) for falsifying each hypothesis."
+      ].join("\n");
+    }
+
+    if (promptType === "factor") {
+      return [
+        `# Alpha Factor Formulation for ${sym} (${tf})`,
+        "Formulate 3 single-symbol alpha factor formulas compatible with newBeing's time-series AST compiler.",
+        "",
+        "Supported inputs: open, high, low, close, volume",
+        "Supported rolling functions: ts_delay(x, d), ts_delta(x, d), ts_sum(x, d), ts_mean(x, d), ts_std_dev(x, d), ts_min(x, d), ts_max(x, d), ts_rank(x, d)",
+        "Supported operators: +, -, *, /, ?, :, &&, ||, <, <=, >, >=, ==, !=",
+        "",
+        "Requirements:",
+        "1. Focus on normalized momentum or volume-volatility interaction.",
+        "2. Output each expression on a single line so it can be pasted directly into newBeing's factor compiler.",
+        "3. Explain the quantitative intuition behind each formula."
+      ].join("\n");
+    }
+
+    if (promptType === "audit") {
+      return [
+        `# Strategy Robustness & Overfit Audit: ${sym} (${tf})`,
+        `Strategy: ${strat}`,
+        `Parameters: ${JSON.stringify(strategyParameters)}`,
+        "",
+        backtest
+          ? [
+              "Current Backtest Execution Evidence:",
+              `- Total Return: ${(backtest.metrics.totalReturn * 100).toFixed(2)}%`,
+              `- Max Drawdown: ${(backtest.metrics.maxDrawdown * 100).toFixed(2)}%`,
+              `- Sharpe Ratio: ${backtest.metrics.sharpeRatio?.toFixed(2) ?? "N/A"}`,
+              `- Win Rate: ${(backtest.metrics.winRate * 100).toFixed(2)}%`,
+              `- Profit Factor: ${backtest.metrics.profitFactor?.toFixed(2) ?? "N/A"}`,
+              `- Total Trades: ${backtest.metrics.tradeCount}`,
+              `- Cost Model: Fee ${(backtest.assumptions.feeRate * 10000).toFixed(1)} bps, Slippage ${(backtest.assumptions.slippageRate * 10000).toFixed(1)} bps`,
+            ].join("\n")
+          : "No backtest currently executed in workspace.",
+        "",
+        "Critique this setup:",
+        "1. Evaluate whether the return is driven by genuine alpha or regime-dependent overfitting.",
+        "2. Suggest walk-forward parameter sweep intervals to verify parameter stability.",
+        "3. Identify market regime vulnerabilities (ranging vs trending vs high-volatility crash)."
+      ].join("\n");
+    }
+
+    return [
+      `# Risk Management & Sizing Guardrails: ${sym} (${tf})`,
+      `Simulation Mode: Paper Execution (Deterministic)`,
+      `Capital Model: Spot fee-inclusive sizing`,
+      `Initial Allocation: ${(backtestConfig.positionFraction * 100).toFixed(0)}%`,
+      "",
+      "Provide a rigorous risk management framework:",
+      "1. Calculate conservative position sizing using fractional Kelly given the asset's typical return distribution.",
+      "2. Propose stop-loss and take-profit bounds calibrated to ATR or rolling high-low range.",
+      "3. Specify maximum drawdown and consecutive loss shutdown criteria."
+    ].join("\n");
+  }, [state, strategyParameters, backtest, promptType, backtestConfig]);
+
   return (
     <div className="context-panel p-3 bg-[var(--ak-surface-canvas)] space-y-3 font-mono text-xs">
+      {/* Header callout */}
       <div className="context-callout flex items-center justify-between p-2 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
         <div className="flex items-center gap-1.5">
           <Braces size={13} className="text-[var(--ak-signal-info)]" />
           <span className="font-bold text-xs tracking-wider">{copy.bridge}</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)]" />
-          <span className="text-[10px] text-[var(--ak-signal-info)] uppercase">{copy.bridgeActive}</span>
-        </div>
+        <AkStatus label="MCP" detail={copy.bridgeActive} variant="default" size="sm" />
       </div>
 
-      {/* Eight equally-weighted label/value pairs at 9px uppercase read as a wall.
-          Lead with the one line that answers "where am I", and fold the rest into
-          a disclosure the reader opens only when they need to check a field. */}
-      <div className="context-summary flex items-baseline gap-2 px-2 py-1.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
-        <strong className="text-sm font-mono text-[var(--ak-text-primary)] truncate">{state.symbol}</strong>
-        <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{state.timeframe}</span>
-        <span className="text-[10px] font-mono text-[var(--ak-text-secondary)] opacity-70 truncate">{exchangeLabel(state.exchange)}</span>
-        <span className="ml-auto text-[10px] font-mono text-[var(--ak-signal-info)] uppercase">{state.activeWorkspace}</span>
+      {/* Sub-tab navigation */}
+      <div className="context-subtabs flex border-b border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken)] p-1 gap-1 text-[10px]">
+        <button
+          type="button"
+          onClick={() => setSubTab("briefing")}
+          aria-pressed={subTab === "briefing"}
+          className={`flex-1 py-1 px-1.5 font-bold uppercase transition-all text-center cursor-pointer select-none ${
+            subTab === "briefing"
+              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-signal-info)] border-b-2 border-[var(--ak-signal-info)]"
+              : "text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]"
+          }`}
+        >
+          {copy.aiModeBriefing}
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab("prompts")}
+          aria-pressed={subTab === "prompts"}
+          className={`flex-1 py-1 px-1.5 font-bold uppercase transition-all text-center cursor-pointer select-none ${
+            subTab === "prompts"
+              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-signal-action)] border-b-2 border-[var(--ak-signal-action)]"
+              : "text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]"
+          }`}
+        >
+          {copy.aiModePrompts}
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab("factor")}
+          aria-pressed={subTab === "factor"}
+          className={`flex-1 py-1 px-1.5 font-bold uppercase transition-all text-center cursor-pointer select-none ${
+            subTab === "factor"
+              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-signal-success)] border-b-2 border-[var(--ak-signal-success)]"
+              : "text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]"
+          }`}
+        >
+          {copy.aiModeFactor}
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab("raw")}
+          aria-pressed={subTab === "raw"}
+          className={`py-1 px-1.5 font-bold uppercase transition-all text-center cursor-pointer select-none ${
+            subTab === "raw"
+              ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-b-2 border-[var(--ak-text-primary)]"
+              : "text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]"
+          }`}
+        >
+          {copy.aiModeRaw}
+        </button>
       </div>
 
-      <details className="context-details text-[10px] text-[var(--ak-text-secondary)] font-mono">
-        <summary className="cursor-pointer opacity-70 hover:opacity-100 py-0.5">{copy.allContextFields}</summary>
-        <div className="context-list grid grid-cols-2 gap-1.5 p-2 mt-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
-          <ContextField label={copy.fieldStrategy} value={state.selectedStrategyId} />
-          <ContextField label={copy.fieldExecution} value={copy.executionPaperLocal} />
-          <ContextField label={copy.fieldActiveBacktest} value={state.activeBacktestId ? `${state.activeBacktestId.slice(0, 10)}…` : copy.none} />
-          <ContextField
-            label={copy.fieldChartRange}
-            value={state.visibleRange.from && state.visibleRange.to
-              ? `${new Date(state.visibleRange.from).toISOString().slice(5, 10)} → ${new Date(state.visibleRange.to).toISOString().slice(5, 10)}`
-              : copy.chartRangeDynamic}
-          />
-        </div>
-        <p className="context-note opacity-70 leading-normal mt-1.5 m-0">
-          {copy.bridgeNote}
-        </p>
-      </details>
+      {/* Mode 1: Briefing */}
+      {subTab === "briefing" && (
+        <div className="space-y-2.5">
+          <div className="p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1.5">
+            <div className="flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)]">
+              <span className="uppercase font-bold tracking-wider">{copy.activeAsset}</span>
+              <span className="text-[var(--ak-signal-info)] font-bold">{exchangeLabel(state.exchange)} · {state.timeframe}</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-base font-extrabold text-[var(--ak-text-primary)] tabular-nums">{state.symbol}</span>
+              <div className="flex items-baseline gap-1.5 text-xs font-bold tabular-nums">
+                <span>{summary?.last != null ? price(summary.last) : "—"}</span>
+                {summary?.changePct24h != null && (
+                  <span className={summary.changePct24h >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}>
+                    {summary.changePct24h >= 0 ? "+" : ""}{summary.changePct24h.toFixed(2)}%
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
 
-      <Button
-        variant="outline"
-        size="sm"
-        block
-        onClick={() => void copyContext()}
-        icon={copied ? <Check size={13} className="text-[var(--ak-signal-success)]" /> : <Copy size={13} />}
-        className="text-xs"
-      >
-        {copied ? copy.copiedJson : copy.copyContextJson}
-      </Button>
+          <div className="p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1">
+            <div className="flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)]">
+              <span className="uppercase font-bold tracking-wider">{copy.activeStrategy}</span>
+              <span className="text-[var(--ak-signal-action)] font-bold">{state.selectedStrategyId}</span>
+            </div>
+            <div className="flex flex-wrap gap-1 text-[10px]">
+              {Object.entries(strategyParameters).map(([k, v]) => (
+                <span key={k} className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] font-mono">
+                  {k}: <strong className="text-[var(--ak-text-primary)]">{String(v)}</strong>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1.5">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="uppercase font-bold tracking-wider text-[var(--ak-text-secondary)]">{copy.backtestStatus}</span>
+              {backtest?.metrics.sharpeRatio != null && (
+                <span className={`px-1 py-0.5 text-[9px] font-bold uppercase border ${
+                  backtest.metrics.sharpeRatio >= 1.5
+                    ? "bg-emerald-950/60 border-emerald-500/60 text-emerald-400"
+                    : backtest.metrics.sharpeRatio >= 1.0
+                      ? "bg-cyan-950/60 border-cyan-500/60 text-cyan-400"
+                      : "bg-amber-950/60 border-amber-500/60 text-amber-400"
+                }`}>
+                  {backtest.metrics.sharpeRatio >= 1.5 ? copy.highSharpeAlpha : backtest.metrics.sharpeRatio >= 1.0 ? copy.moderateAlpha : copy.suboptimalAlpha}
+                </span>
+              )}
+            </div>
+
+            {backtest ? (
+              <div className="grid grid-cols-4 gap-1 text-center font-mono py-1">
+                <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                  <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.sharpeLabel}</span>
+                  <strong className={`text-xs font-bold ${backtest.metrics.sharpeRatio != null && backtest.metrics.sharpeRatio >= 1 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-text-primary)]"}`}>
+                    {backtest.metrics.sharpeRatio?.toFixed(2) ?? "—"}
+                  </strong>
+                </div>
+                <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                  <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.maxDdLabel}</span>
+                  <strong className="text-xs font-bold text-[var(--ak-signal-danger)]">
+                    {(backtest.metrics.maxDrawdown * 100).toFixed(1)}%
+                  </strong>
+                </div>
+                <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                  <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.winRateLabel}</span>
+                  <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
+                    {(backtest.metrics.winRate * 100).toFixed(0)}%
+                  </strong>
+                </div>
+                <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                  <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.tradesLabel}</span>
+                  <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
+                    {backtest.metrics.tradeCount}
+                  </strong>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[10px] text-[var(--ak-text-secondary)] opacity-80 leading-relaxed m-0">
+                {copy.noBacktestPrompt}
+              </p>
+            )}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            block
+            onClick={() => void handleCopy(briefingMarkdown, "briefing")}
+            icon={copiedKind === "briefing" ? <Check size={13} className="text-[var(--ak-signal-success)]" /> : <Copy size={13} />}
+            className="text-xs"
+          >
+            {copiedKind === "briefing" ? copy.briefingCopied : copy.copyBriefing}
+          </Button>
+        </div>
+      )}
+
+      {/* Mode 2: Prompt Synthesizer */}
+      {subTab === "prompts" && (
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-2 gap-1 text-[10px]">
+            {([
+              ["hypothesis", copy.promptTypeHypothesis],
+              ["factor", copy.promptTypeFactor],
+              ["audit", copy.promptTypeAudit],
+              ["risk", copy.promptTypeRisk],
+            ] as const).map(([type, label]) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setPromptType(type)}
+                aria-pressed={promptType === type}
+                className={`py-1 px-1.5 font-bold uppercase border transition-all text-center cursor-pointer ${
+                  promptType === type
+                    ? "bg-[var(--ak-signal-action)] text-black border-transparent font-bold"
+                    : "bg-[var(--ak-surface-sunken-2)] border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="max-h-44 overflow-y-auto p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-primary)] whitespace-pre-wrap font-mono leading-relaxed select-all">
+            {activePromptText}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            block
+            onClick={() => void handleCopy(activePromptText, "prompt")}
+            icon={copiedKind === "prompt" ? <Check size={13} className="text-[var(--ak-signal-success)]" /> : <Copy size={13} />}
+            className="text-xs"
+          >
+            {copiedKind === "prompt" ? copy.promptCopied : copy.copyPrompt}
+          </Button>
+        </div>
+      )}
+
+      {/* Mode 3: Factor AST Probe */}
+      {subTab === "factor" && (
+        <div className="space-y-2.5">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="font-bold text-[var(--ak-text-primary)] uppercase tracking-wider">{copy.factorTitle}</span>
+              {factorCompilation && (
+                <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase border ${
+                  factorCompilation.ok
+                    ? "bg-emerald-950/60 border-emerald-500/60 text-emerald-400"
+                    : "bg-rose-950/60 border-rose-500/60 text-rose-400"
+                }`}>
+                  {factorCompilation.ok ? copy.factorValid : copy.factorInvalid}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-[var(--ak-text-secondary)] opacity-80 leading-tight m-0">
+              {copy.factorDescription}
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <span className="text-[9px] text-[var(--ak-text-secondary)] font-bold uppercase">{copy.factorPresets}</span>
+            <div className="grid grid-cols-2 gap-1 text-[10px]">
+              <button
+                type="button"
+                onClick={() => setFactorExpr("ts_rank(close - ts_delay(close, 10), 20)")}
+                className="py-0.5 px-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white hover:border-[var(--ak-signal-info)] text-left truncate cursor-pointer font-mono"
+                title="ts_rank(close - ts_delay(close, 10), 20)"
+              >
+                {copy.presetMomentum}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFactorExpr("ts_std_dev(close, 20) / ts_mean(close, 20)")}
+                className="py-0.5 px-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white hover:border-[var(--ak-signal-info)] text-left truncate cursor-pointer font-mono"
+                title="ts_std_dev(close, 20) / ts_mean(close, 20)"
+              >
+                {copy.presetVolatility}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFactorExpr("(high - low) / close")}
+                className="py-0.5 px-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white hover:border-[var(--ak-signal-info)] text-left truncate cursor-pointer font-mono"
+                title="(high - low) / close"
+              >
+                {copy.presetRange}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFactorExpr("(close - ts_mean(close, 20)) / ts_std_dev(close, 20)")}
+                className="py-0.5 px-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white hover:border-[var(--ak-signal-info)] text-left truncate cursor-pointer font-mono"
+                title="(close - ts_mean(close, 20)) / ts_std_dev(close, 20)"
+              >
+                {copy.presetReversion}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <textarea
+              value={factorExpr}
+              onChange={(e) => setFactorExpr(e.target.value)}
+              placeholder={copy.factorPlaceholder}
+              rows={3}
+              className="w-full p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] focus:border-[var(--ak-signal-info)] text-[11px] font-mono text-[var(--ak-text-primary)] outline-none resize-none leading-relaxed"
+            />
+          </div>
+
+          {factorCompilation && !factorCompilation.ok && factorCompilation.errors.length > 0 && (
+            <AkNotice title={copy.factorInvalid} code="PRTS.AST" variant="danger" size="sm" role="alert">
+              <div className="text-[10px] space-y-0.5 mt-0.5 font-mono">
+                {factorCompilation.errors.map((err, i) => (
+                  <div key={i}>
+                    [{err.code.toUpperCase()} L{err.line}:{err.column}] {err.message}
+                  </div>
+                ))}
+              </div>
+            </AkNotice>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            block
+            onClick={() => void handleCopy(factorExpr, "factor")}
+            icon={copiedKind === "factor" ? <Check size={13} className="text-[var(--ak-signal-success)]" /> : <Copy size={13} />}
+            className="text-xs"
+          >
+            {copiedKind === "factor" ? copy.factorCopied : copy.copyFactor}
+          </Button>
+        </div>
+      )}
+
+      {/* Mode 4: Raw Schema */}
+      {subTab === "raw" && (
+        <div className="space-y-3">
+          <div className="context-summary flex items-baseline gap-2 px-2 py-1.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
+            <strong className="text-sm font-mono text-[var(--ak-text-primary)] truncate">{state.symbol}</strong>
+            <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{state.timeframe}</span>
+            <span className="text-[10px] font-mono text-[var(--ak-text-secondary)] opacity-70 truncate">{exchangeLabel(state.exchange)}</span>
+            <span className="ml-auto text-[10px] font-mono text-[var(--ak-signal-info)] uppercase">{state.activeWorkspace}</span>
+          </div>
+
+          <details className="context-details text-[10px] text-[var(--ak-text-secondary)] font-mono" open>
+            <summary className="cursor-pointer opacity-70 hover:opacity-100 py-0.5">{copy.allContextFields}</summary>
+            <div className="context-list grid grid-cols-2 gap-1.5 p-2 mt-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
+              <ContextField label={copy.fieldStrategy} value={state.selectedStrategyId} />
+              <ContextField label={copy.fieldExecution} value={copy.executionPaperLocal} />
+              <ContextField label={copy.fieldActiveBacktest} value={state.activeBacktestId ? `${state.activeBacktestId.slice(0, 10)}…` : copy.none} />
+              <ContextField
+                label={copy.fieldChartRange}
+                value={state.visibleRange.from && state.visibleRange.to
+                  ? `${new Date(state.visibleRange.from).toISOString().slice(5, 10)} → ${new Date(state.visibleRange.to).toISOString().slice(5, 10)}`
+                  : copy.chartRangeDynamic}
+              />
+            </div>
+            <p className="context-note opacity-70 leading-normal mt-1.5 m-0">
+              {copy.bridgeNote}
+            </p>
+          </details>
+
+          <Button
+            variant="outline"
+            size="sm"
+            block
+            onClick={() => void handleCopy(JSON.stringify(rawContext, null, 2), "raw")}
+            icon={copiedKind === "raw" ? <Check size={13} className="text-[var(--ak-signal-success)]" /> : <Copy size={13} />}
+            className="text-xs"
+          >
+            {copiedKind === "raw" ? copy.copiedJson : copy.copyContextJson}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1689,7 +2204,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
           {visitedTabs.includes("book") && <TabsContent value="book" forceMount><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "book"} onPickPrice={handlePickPrice} /></TabsContent>}
           {visitedTabs.includes("trades") && <TabsContent value="trades" forceMount><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "trades"} onPickPrice={handlePickPrice} /></TabsContent>}
           {visitedTabs.includes("strategy") && <TabsContent value="strategy" forceMount><StrategyLab onRun={onRun} running={running} /></TabsContent>}
-          {visitedTabs.includes("context") && <TabsContent value="context" forceMount><WorkspaceContext /></TabsContent>}
+          {visitedTabs.includes("context") && <TabsContent value="context" forceMount><WorkspaceContext summary={summary} /></TabsContent>}
         </div>
       </Tabs>
 

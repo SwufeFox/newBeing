@@ -36,6 +36,7 @@ The local execution policy, funding coverage, expiry handling and research bound
 - **Replay:** Use the single speed selector or press Space to play/pause, Right Arrow or N to step, and comma/period or `<`/`>` to change speed. Controls reflow on narrow screens.
 - **History:** A row in the research rail loads that saved run into the chart and the Results panel. The list is suppressed while a frozen Replay owns the workspace, because saved results can encode future bars.
 - **Layout:** Panel widths and the bottom dock height are reset from **Workstation settings**, together with the language and colour preferences. Research dock tabs wrap on narrow layouts so their labels remain readable.
+- **AI Context Deck:** The inspector's AI tab provides tactical asset telemetry, single-click research prompt synthesis (hypothesis, factor mining, overfit audit, risk guardrails) injecting live backtest metrics, interactive alpha factor AST validation via `@newbeing/core`'s compiler, and the raw stdio MCP snapshot.
 
 ## Settings, language and accessibility
 
