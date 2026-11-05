@@ -377,6 +377,31 @@ test.describe("evaluation and shared spot browser regressions", () => {
     await prepareWorkspace(request, "research");
     await page.goto("/");
     const result = await runUiBacktest(page);
+    // The selected result retains its own provenance when the draft changes.
+    await page.getByRole("tab", { name: "Strategy lab", exact: true }).click();
+    await page.locator(".strategy-lab .param-row").filter({ hasText: "Fast period" }).getByRole("spinbutton").fill("10");
+    await page.locator(".strategy-lab").getByLabel("FEE (BPS)", { exact: true }).fill("25");
+    await page.locator(".timeframe-selector").getByRole("button", { name: "1h", exact: true }).click();
+    await page.getByRole("tab", { name: "AI context", exact: true }).click();
+    const panel = page.locator(".context-panel");
+    const evidence = panel.getByTestId("ai-backtest-evidence");
+    await expect(evidence).toContainText(`${result.symbol} · ${result.timeframe} · ${result.strategyId}`);
+    await expect(evidence).toContainText(`fastPeriod: ${String(result.parameters.fastPeriod)}`);
+    await expect(evidence).toContainText("independent validation");
+    await panel.getByRole("button", { name: "Prompt Synthesizer" }).click();
+    await expect(panel).toContainText("25.0 bps fee and 5.0 bps slippage");
+    await panel.getByRole("button", { name: "Overfit Audit" }).click();
+    await expect(panel).toContainText(`# Strategy Robustness & Overfit Audit: ${result.symbol} (${result.timeframe})`);
+    await expect(panel).toContainText(`Parameters: ${JSON.stringify(result.parameters)}`);
+    await expect(panel).toContainText(`Result ID: ${result.resultId}`);
+    await expect(panel).toContainText(`Dataset ID: ${result.datasetId}`);
+    await expect(panel).not.toContainText('"fastPeriod":10');
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await panel.getByRole("button", { name: "Copy Prompt for AI" }).click();
+    const audit = await page.evaluate(() => navigator.clipboard.readText());
+    expect(audit).toContain(JSON.stringify(result.parameters));
+    expect(audit).toContain(JSON.stringify(result.assumptions));
+    expect(audit).toContain(result.datasetId);
     const bars = canonicalBars(candles, result);
     const limit = Math.min(200, Math.floor(bars.length / 2));
     const pending = postResponse(page, "/api/replay");
@@ -397,6 +422,27 @@ test.describe("evaluation and shared spot browser regressions", () => {
     expect(seed.execution.fills).toEqual([]);
     expect(seed.portfolio.quoteBalance).toBe(config.initialCapital);
     await expect(page.locator(".replay-ticket").getByText("REPLAY SIMULATOR", { exact: true })).toBeVisible();
+    await panel.getByRole("button", { name: "Tactical Briefing", exact: true }).click();
+    await expect(evidence).toContainText("Backtest results are hidden during Replay.");
+    await expect(evidence.getByText("SHARPE", { exact: true })).toHaveCount(0);
+    await panel.getByRole("button", { name: "Copy Tactical Briefing" }).click();
+    const replayBriefing = await page.evaluate(() => navigator.clipboard.readText());
+    expect(replayBriefing).toContain("Backtest results are hidden during Replay.");
+    expect(replayBriefing).not.toContain(result.resultId);
+    expect(replayBriefing).not.toContain(result.datasetId);
+
+    await panel.getByRole("button", { name: "Prompt Synthesizer" }).click();
+    await expect(panel).toContainText("Backtest results are hidden during Replay.");
+    await expect(panel).not.toContainText("Total Return:");
+    await panel.getByRole("button", { name: "Copy Prompt for AI" }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).not.toContain(result.resultId);
+
+    await panel.getByRole("button", { name: "Raw Schema" }).click();
+    await panel.getByRole("button", { name: "Copy Context JSON" }).click();
+    const replayContext = JSON.parse(await page.evaluate(() => navigator.clipboard.readText())) as Record<string, unknown>;
+    expect(replayContext.activeBacktestId).toBeNull();
+    expect(replayContext.activeBacktest).toBeNull();
+    expect(replayContext.activeBacktestMetrics).toBeNull();
     const stepped = postResponse(page, `/api/replay/${seed.session.id}`);
     await page.getByTestId("replay-step").click();
     const stepResponse = await stepped;
@@ -411,6 +457,11 @@ test.describe("evaluation and shared spot browser regressions", () => {
     expect(state.session.bars.every((bar) => bar.timestamp <= state.session.cursor)).toBe(true);
     expect(state.futureBarsLoaded).toBe(0);
     await expect(page.getByTestId("replay-step")).toBeEnabled();
+    await page.getByTestId("workspace-research").click();
+    await page.getByRole("tab", { name: "AI context", exact: true }).click();
+    await panel.getByRole("button", { name: "Tactical Briefing", exact: true }).click();
+    await expect(evidence).toContainText(`fastPeriod: ${String(result.parameters.fastPeriod)}`);
+    await expect(evidence).toContainText("SHARPE");
   });
 
   test("late Replay creation cannot hijack the user's new research workspace", async ({ page, request }) => {

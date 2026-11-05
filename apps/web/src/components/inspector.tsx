@@ -13,7 +13,7 @@ import { StrategyLab } from "@/components/strategy-lab";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import { floorToDecimals } from "@/lib/indicators";
-import { AkTag, AkNotice, AkStatus, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress, AkSpinner } from "@swufefox/ak-ui-react";
+import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress, AkSpinner } from "@swufefox/ak-ui-react";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
 
 interface InspectorCopy {
@@ -44,7 +44,7 @@ interface InspectorCopy {
   columnTime: string;
   /* Context bridge */
   bridge: string;
-  bridgeActive: string;
+  bridgeLocal: string;
   allContextFields: string;
   fieldStrategy: string;
   fieldExecution: string;
@@ -61,18 +61,17 @@ interface InspectorCopy {
   aiModePrompts: string;
   aiModeFactor: string;
   aiModeRaw: string;
-  tacticalOverview: string;
   activeAsset: string;
   activeStrategy: string;
   backtestStatus: string;
   noBacktestPrompt: string;
+  replayBacktestHidden: string;
+  backtestEvidenceNote: string;
+  backtestParameters: string;
   sharpeLabel: string;
   maxDdLabel: string;
   winRateLabel: string;
   tradesLabel: string;
-  highSharpeAlpha: string;
-  moderateAlpha: string;
-  suboptimalAlpha: string;
   copyBriefing: string;
   briefingCopied: string;
   promptTypeHypothesis: string;
@@ -210,8 +209,8 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     columnPrice: "PRICE",
     columnAmount: "AMOUNT",
     columnTime: "TIME",
-    bridge: "MCP CONTEXT BRIDGE",
-    bridgeActive: "ACTIVE",
+    bridge: "AI RESEARCH CONTEXT",
+    bridgeLocal: "LOCAL",
     allContextFields: "All context fields",
     fieldStrategy: "STRATEGY",
     fieldExecution: "EXECUTION",
@@ -220,7 +219,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     none: "None",
     fieldChartRange: "CHART RANGE",
     chartRangeDynamic: "Dynamic",
-    bridgeNote: "The stdio MCP server reads this live SQLite workspace snapshot. No account credentials or exchange API keys are exposed.",
+    bridgeNote: "This JSON is assembled in the browser. The optional stdio MCP server reads its own SQLite workspace context; its connection status is not shown here.",
     copiedJson: "Copied JSON to clipboard",
     copyContextJson: "Copy Context JSON",
     /* PRTS AI Deck */
@@ -228,18 +227,17 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     aiModePrompts: "Prompt Synthesizer",
     aiModeFactor: "Factor AST Lab",
     aiModeRaw: "Raw Schema",
-    tacticalOverview: "TACTICAL OVERVIEW",
     activeAsset: "ACTIVE ASSET",
     activeStrategy: "ACTIVE STRATEGY",
-    backtestStatus: "BACKTEST ALPHA HEALTH",
-    noBacktestPrompt: "No active backtest loaded. Run a backtest in Strategy Lab to evaluate Sharpe and alpha robustness.",
+    backtestStatus: "SELECTED BACKTEST",
+    noBacktestPrompt: "No backtest loaded. Run or select a backtest to see its results.",
+    replayBacktestHidden: "Backtest results are hidden during Replay.",
+    backtestEvidenceNote: "Historical simulation; independent validation is required.",
+    backtestParameters: "Run parameters",
     sharpeLabel: "SHARPE",
     maxDdLabel: "MAX DD",
     winRateLabel: "WIN RATE",
     tradesLabel: "TRADES",
-    highSharpeAlpha: "STRONG ALPHA",
-    moderateAlpha: "MODERATE",
-    suboptimalAlpha: "LOW / UNPROVEN",
     copyBriefing: "Copy Tactical Briefing",
     briefingCopied: "Copied Briefing to Clipboard",
     promptTypeHypothesis: "Hypothesis",
@@ -372,8 +370,8 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     columnPrice: "价格",
     columnAmount: "数量",
     columnTime: "时间",
-    bridge: "MCP 上下文桥",
-    bridgeActive: "活跃",
+    bridge: "AI 投研上下文",
+    bridgeLocal: "本地",
     allContextFields: "全部上下文字段",
     fieldStrategy: "策略",
     fieldExecution: "执行",
@@ -382,7 +380,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     none: "无",
     fieldChartRange: "图表区间",
     chartRangeDynamic: "动态",
-    bridgeNote: "stdio MCP 服务读取这份实时 SQLite 工作台快照。不暴露任何账户凭证或交易所 API 密钥。",
+    bridgeNote: "此 JSON 由浏览器生成。可选的 stdio MCP 服务读取自己的 SQLite 工作台上下文；此处不显示服务连接状态。",
     copiedJson: "JSON 已复制到剪贴板",
     copyContextJson: "复制上下文 JSON",
     /* PRTS AI Deck */
@@ -390,18 +388,17 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     aiModePrompts: "投研指令",
     aiModeFactor: "因子实验室",
     aiModeRaw: "原始上下文",
-    tacticalOverview: "战术总览",
     activeAsset: "当前标的",
     activeStrategy: "当前策略",
-    backtestStatus: "回测 Alpha 健康度",
-    noBacktestPrompt: "暂无当前回测数据。在策略实验室运行回测后可评估夏普比率与 Alpha 稳健性。",
+    backtestStatus: "已选回测",
+    noBacktestPrompt: "暂无回测数据。运行或选择回测后可查看结果。",
+    replayBacktestHidden: "回放期间隐藏回测结果。",
+    backtestEvidenceNote: "历史模拟结果；需要独立验证。",
+    backtestParameters: "回测参数",
     sharpeLabel: "夏普比率",
     maxDdLabel: "最大回撤",
     winRateLabel: "胜率",
     tradesLabel: "交易数",
-    highSharpeAlpha: "高夏普 Alpha",
-    moderateAlpha: "中等 Alpha",
-    suboptimalAlpha: "表现欠佳 / 未经验证",
     copyBriefing: "复制战术简报",
     briefingCopied: "战术简报已复制到剪贴板",
     promptTypeHypothesis: "假设生成",
@@ -827,7 +824,7 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
   );
 }
 
-function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): React.JSX.Element {
+function WorkspaceContext({ summary, result, replayMode }: { summary: MarketSummary | null; result: BacktestResult | null; replayMode: boolean }): React.JSX.Element {
   const copy = useCopy(INSPECTOR_COPY);
   const [subTab, setSubTab] = useState<"briefing" | "prompts" | "factor" | "raw">("briefing");
   const [promptType, setPromptType] = useState<"hypothesis" | "factor" | "audit" | "risk">("hypothesis");
@@ -846,7 +843,7 @@ function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): Reac
     visibleRange: workspace.visibleRange,
   })));
 
-  const backtest = useWorkspaceStore((s) => s.backtest);
+  const backtest = !replayMode && state.activeWorkspace !== "replay" && result?.resultId === state.activeBacktestId ? result : null;
   const strategyParameters = useWorkspaceStore((s) => s.strategyParameters);
   const backtestConfig = useWorkspaceStore((s) => s.backtestConfig);
 
@@ -869,9 +866,35 @@ function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): Reac
     ...state,
     strategyParameters,
     backtestConfig,
+    activeBacktest: backtest ? {
+      resultId: backtest.resultId,
+      datasetId: backtest.datasetId,
+      exchange: backtest.exchange,
+      symbol: backtest.symbol,
+      timeframe: backtest.timeframe,
+      strategyId: backtest.strategyId,
+      strategyVersion: backtest.strategyVersion,
+      parameters: backtest.parameters,
+      assumptions: backtest.assumptions,
+    } : null,
     activeBacktestMetrics: backtest?.metrics ?? null,
     quoteScope: "public market data only; paper portfolio is local; live trading disabled",
   }), [state, strategyParameters, backtestConfig, backtest]);
+
+  const backtestEvidence = useMemo(() => backtest ? [
+    `- Result ID: ${backtest.resultId}`,
+    `- Dataset ID: ${backtest.datasetId}`,
+    `- Market: ${exchangeLabel(backtest.exchange)} · ${backtest.symbol} · ${backtest.timeframe}`,
+    `- Strategy: ${backtest.strategyId} (${backtest.strategyVersion})`,
+    `- Parameters: ${JSON.stringify(backtest.parameters)}`,
+    `- Assumptions: ${JSON.stringify(backtest.assumptions)}`,
+    `- Total Return: ${(backtest.metrics.totalReturn * 100).toFixed(2)}%`,
+    `- Max Drawdown: ${(backtest.metrics.maxDrawdown * 100).toFixed(2)}%`,
+    `- Sharpe Ratio: ${backtest.metrics.sharpeRatio?.toFixed(2) ?? "N/A"}`,
+    `- Win Rate: ${(backtest.metrics.winRate * 100).toFixed(2)}%`,
+    `- Profit Factor: ${backtest.metrics.profitFactor?.toFixed(2) ?? "N/A"}`,
+    `- Total Trades: ${backtest.metrics.tradeCount}`,
+  ].join("\n") : null, [backtest]);
 
   const briefingMarkdown = useMemo(() => {
     const lines = [
@@ -882,20 +905,13 @@ function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): Reac
       `- Active Strategy: ${state.selectedStrategyId}`,
       `- Parameters: ${JSON.stringify(strategyParameters)}`,
     ];
-    if (backtest) {
-      lines.push(
-        "",
-        "## Backtest Alpha Metrics:",
-        `- Return: ${(backtest.metrics.totalReturn * 100).toFixed(2)}%`,
-        `- Max Drawdown: ${(backtest.metrics.maxDrawdown * 100).toFixed(2)}%`,
-        `- Sharpe Ratio: ${backtest.metrics.sharpeRatio?.toFixed(2) ?? "N/A"}`,
-        `- Win Rate: ${(backtest.metrics.winRate * 100).toFixed(2)}%`,
-        `- Profit Factor: ${backtest.metrics.profitFactor?.toFixed(2) ?? "N/A"}`,
-        `- Total Trades: ${backtest.metrics.tradeCount}`,
-      );
+    if (backtestEvidence) {
+      lines.push("", "## Selected historical backtest (independent validation required)", backtestEvidence);
+    } else if (replayMode) {
+      lines.push("", "Backtest results are hidden during Replay.");
     }
     return lines.join("\n");
-  }, [state, summary, strategyParameters, backtest]);
+  }, [state, summary, strategyParameters, backtestEvidence, replayMode]);
 
   const activePromptText = useMemo(() => {
     const sym = state.symbol;
@@ -912,7 +928,7 @@ function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): Reac
         "Please formulate 3 distinct, falsifiable market anomaly hypotheses for this asset and timeframe:",
         "1. Volatility Regime Shift: Identify conditions where volatility clustering precedes directional expansion.",
         "2. Mean Reversion vs. Momentum: Formulate an exact entry and exit condition with statistical justification.",
-        "3. Execution & Slippage Sensitivity: Detail how a 5 bps fee and 5 bps slippage assumption impacts the expected alpha edge.",
+        `3. Execution & Slippage Sensitivity: Analyze the current backtest settings of ${(backtestConfig.feeRate * 10_000).toFixed(1)} bps fee and ${(backtestConfig.slippageRate * 10_000).toFixed(1)} bps slippage.`,
         "",
         "Specify measurable criteria (Sharpe, max drawdown threshold, sample size) for falsifying each hypothesis."
       ].join("\n");
@@ -936,25 +952,18 @@ function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): Reac
 
     if (promptType === "audit") {
       return [
-        `# Strategy Robustness & Overfit Audit: ${sym} (${tf})`,
-        `Strategy: ${strat}`,
-        `Parameters: ${JSON.stringify(strategyParameters)}`,
-        "",
-        backtest
-          ? [
-              "Current Backtest Execution Evidence:",
-              `- Total Return: ${(backtest.metrics.totalReturn * 100).toFixed(2)}%`,
-              `- Max Drawdown: ${(backtest.metrics.maxDrawdown * 100).toFixed(2)}%`,
-              `- Sharpe Ratio: ${backtest.metrics.sharpeRatio?.toFixed(2) ?? "N/A"}`,
-              `- Win Rate: ${(backtest.metrics.winRate * 100).toFixed(2)}%`,
-              `- Profit Factor: ${backtest.metrics.profitFactor?.toFixed(2) ?? "N/A"}`,
-              `- Total Trades: ${backtest.metrics.tradeCount}`,
-              `- Cost Model: Fee ${(backtest.assumptions.feeRate * 10000).toFixed(1)} bps, Slippage ${(backtest.assumptions.slippageRate * 10000).toFixed(1)} bps`,
-            ].join("\n")
-          : "No backtest currently executed in workspace.",
+        `# Strategy Robustness & Overfit Audit: ${backtest?.symbol ?? sym} (${backtest?.timeframe ?? tf})`,
+        ...(backtestEvidence ? [
+          "Selected historical backtest (independent validation required):",
+          backtestEvidence,
+        ] : [
+          `Current workspace strategy: ${strat}`,
+          `Current workspace parameters: ${JSON.stringify(strategyParameters)}`,
+          replayMode ? "Backtest results are hidden during Replay." : "No backtest currently loaded in the workspace.",
+        ]),
         "",
         "Critique this setup:",
-        "1. Evaluate whether the return is driven by genuine alpha or regime-dependent overfitting.",
+        "1. Assess whether the available evidence supports alpha or is consistent with regime-dependent overfitting.",
         "2. Suggest walk-forward parameter sweep intervals to verify parameter stability.",
         "3. Identify market regime vulnerabilities (ranging vs trending vs high-volatility crash)."
       ].join("\n");
@@ -963,7 +972,7 @@ function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): Reac
     return [
       `# Risk Management & Sizing Guardrails: ${sym} (${tf})`,
       `Simulation Mode: Paper Execution (Deterministic)`,
-      `Capital Model: Spot fee-inclusive sizing`,
+      `Backtest account mode: ${backtestConfig.accountMode ?? "spot"}`,
       `Initial Allocation: ${(backtestConfig.positionFraction * 100).toFixed(0)}%`,
       "",
       "Provide a rigorous risk management framework:",
@@ -971,7 +980,7 @@ function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): Reac
       "2. Propose stop-loss and take-profit bounds calibrated to ATR or rolling high-low range.",
       "3. Specify maximum drawdown and consecutive loss shutdown criteria."
     ].join("\n");
-  }, [state, strategyParameters, backtest, promptType, backtestConfig]);
+  }, [state, strategyParameters, backtest, backtestEvidence, promptType, backtestConfig, replayMode]);
 
   return (
     <div className="context-panel p-3 bg-[var(--ak-surface-canvas)] space-y-3 font-mono text-xs">
@@ -981,7 +990,7 @@ function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): Reac
           <Braces size={13} className="text-[var(--ak-signal-info)]" />
           <span className="font-bold text-xs tracking-wider">{copy.bridge}</span>
         </div>
-        <AkStatus label="MCP" detail={copy.bridgeActive} variant="default" size="sm" />
+        <AkTag variant="neutral" size="sm">{copy.bridgeLocal}</AkTag>
       </div>
 
       {/* Sub-tab navigation */}
@@ -1071,52 +1080,51 @@ function WorkspaceContext({ summary }: { summary?: MarketSummary | null }): Reac
             </div>
           </div>
 
-          <div className="p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1.5">
+          <div className="p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1.5" data-testid="ai-backtest-evidence">
             <div className="flex items-center justify-between text-[10px]">
               <span className="uppercase font-bold tracking-wider text-[var(--ak-text-secondary)]">{copy.backtestStatus}</span>
-              {backtest?.metrics.sharpeRatio != null && (
-                <span className={`px-1 py-0.5 text-[9px] font-bold uppercase border ${
-                  backtest.metrics.sharpeRatio >= 1.5
-                    ? "bg-emerald-950/60 border-emerald-500/60 text-emerald-400"
-                    : backtest.metrics.sharpeRatio >= 1.0
-                      ? "bg-cyan-950/60 border-cyan-500/60 text-cyan-400"
-                      : "bg-amber-950/60 border-amber-500/60 text-amber-400"
-                }`}>
-                  {backtest.metrics.sharpeRatio >= 1.5 ? copy.highSharpeAlpha : backtest.metrics.sharpeRatio >= 1.0 ? copy.moderateAlpha : copy.suboptimalAlpha}
-                </span>
-              )}
             </div>
 
             {backtest ? (
-              <div className="grid grid-cols-4 gap-1 text-center font-mono py-1">
-                <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                  <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.sharpeLabel}</span>
-                  <strong className={`text-xs font-bold ${backtest.metrics.sharpeRatio != null && backtest.metrics.sharpeRatio >= 1 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-text-primary)]"}`}>
-                    {backtest.metrics.sharpeRatio?.toFixed(2) ?? "—"}
-                  </strong>
+              <>
+                <p className="m-0 text-[10px] text-[var(--ak-text-primary)] break-words">{exchangeLabel(backtest.exchange)} · {backtest.symbol} · {backtest.timeframe} · {backtest.strategyId}</p>
+                <div className="flex flex-wrap gap-1 text-[10px] text-[var(--ak-text-secondary)]">
+                  <span>{copy.backtestParameters}:</span>
+                  {Object.entries(backtest.parameters).map(([key, value]) => (
+                    <span key={key} className="px-1 bg-[var(--ak-surface-sunken)] break-words">{key}: <strong className="text-[var(--ak-text-primary)]">{String(value)}</strong></span>
+                  ))}
                 </div>
-                <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                  <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.maxDdLabel}</span>
-                  <strong className="text-xs font-bold text-[var(--ak-signal-danger)]">
-                    {(backtest.metrics.maxDrawdown * 100).toFixed(1)}%
-                  </strong>
+                <p className="m-0 text-[10px] text-[var(--ak-text-secondary)]">{copy.backtestEvidenceNote}</p>
+                <div className="grid grid-cols-4 gap-1 text-center font-mono py-1">
+                  <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                    <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.sharpeLabel}</span>
+                    <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
+                      {backtest.metrics.sharpeRatio?.toFixed(2) ?? "—"}
+                    </strong>
+                  </div>
+                  <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                    <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.maxDdLabel}</span>
+                    <strong className="text-xs font-bold text-[var(--ak-signal-danger)]">
+                      {(backtest.metrics.maxDrawdown * 100).toFixed(1)}%
+                    </strong>
+                  </div>
+                  <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                    <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.winRateLabel}</span>
+                    <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
+                      {(backtest.metrics.winRate * 100).toFixed(0)}%
+                    </strong>
+                  </div>
+                  <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
+                    <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.tradesLabel}</span>
+                    <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
+                      {backtest.metrics.tradeCount}
+                    </strong>
+                  </div>
                 </div>
-                <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                  <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.winRateLabel}</span>
-                  <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
-                    {(backtest.metrics.winRate * 100).toFixed(0)}%
-                  </strong>
-                </div>
-                <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                  <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.tradesLabel}</span>
-                  <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
-                    {backtest.metrics.tradeCount}
-                  </strong>
-                </div>
-              </div>
+              </>
             ) : (
               <p className="text-[10px] text-[var(--ak-text-secondary)] opacity-80 leading-relaxed m-0">
-                {copy.noBacktestPrompt}
+                {replayMode ? copy.replayBacktestHidden : copy.noBacktestPrompt}
               </p>
             )}
           </div>
@@ -2204,7 +2212,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
           {visitedTabs.includes("book") && <TabsContent value="book" forceMount><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "book"} onPickPrice={handlePickPrice} /></TabsContent>}
           {visitedTabs.includes("trades") && <TabsContent value="trades" forceMount><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "trades"} onPickPrice={handlePickPrice} /></TabsContent>}
           {visitedTabs.includes("strategy") && <TabsContent value="strategy" forceMount><StrategyLab onRun={onRun} running={running} /></TabsContent>}
-          {visitedTabs.includes("context") && <TabsContent value="context" forceMount><WorkspaceContext summary={summary} /></TabsContent>}
+          {visitedTabs.includes("context") && <TabsContent value="context" forceMount><WorkspaceContext summary={summary} result={result} replayMode={replayMode} /></TabsContent>}
         </div>
       </Tabs>
 
