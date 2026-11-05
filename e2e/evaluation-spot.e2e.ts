@@ -388,6 +388,9 @@ test.describe("evaluation and shared spot browser regressions", () => {
     await expect(evidence).toContainText(`${result.symbol} · ${result.timeframe} · ${result.strategyId}`);
     await expect(evidence).toContainText(`fastPeriod: ${String(result.parameters.fastPeriod)}`);
     await expect(evidence).toContainText("independent validation");
+    await expect(evidence).toContainText("SAMPLE:");
+    await expect(evidence).toContainText("SEGMENT:");
+    await expect(evidence).toContainText("unknown");
     await panel.getByRole("button", { name: "Prompt Synthesizer" }).click();
     await expect(panel).toContainText("25.0 bps fee and 5.0 bps slippage");
     await panel.getByRole("button", { name: "Overfit Audit" }).click();
@@ -395,6 +398,8 @@ test.describe("evaluation and shared spot browser regressions", () => {
     await expect(panel).toContainText(`Parameters: ${JSON.stringify(result.parameters)}`);
     await expect(panel).toContainText(`Result ID: ${result.resultId}`);
     await expect(panel).toContainText(`Dataset ID: ${result.datasetId}`);
+    await expect(panel).toContainText("Sample Range:");
+    await expect(panel).toContainText("Segment Nature: unknown");
     await expect(panel).not.toContainText('"fastPeriod":10');
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     await panel.getByRole("button", { name: "Copy Prompt for AI" }).click();
@@ -402,6 +407,23 @@ test.describe("evaluation and shared spot browser regressions", () => {
     expect(audit).toContain(JSON.stringify(result.parameters));
     expect(audit).toContain(JSON.stringify(result.assumptions));
     expect(audit).toContain(result.datasetId);
+    expect(audit).toContain("Sample Range:");
+    expect(audit).toContain("Segment Nature: unknown");
+
+    await panel.getByRole("button", { name: "Risk Guardrails" }).click();
+    await expect(panel).toContainText("# Risk Management & Sizing Guardrails:");
+    await expect(panel).toContainText(`# Risk Management & Sizing Guardrails: ${result.symbol} (${result.timeframe})`);
+    await expect(panel).toContainText(`Input source: Selected historical backtest ${result.resultId}`);
+    await expect(panel).toContainText("Initial Allocation: 25%");
+    await expect(panel).toContainText("Execution Fees: 10.0 bps fee, 5.0 bps slippage");
+    await expect(panel).toContainText("Missing Empirical Inputs");
+    await expect(panel).toContainText("DO NOT fabricate arbitrary percentage Kelly sizing");
+    await panel.getByRole("button", { name: "Copy Prompt for AI" }).click();
+    const risk = await page.evaluate(() => navigator.clipboard.readText());
+    expect(risk).toContain("Missing Empirical Inputs");
+    expect(risk).toContain("f* = c * (p*b - q) / b");
+    expect(risk).toContain("Volatility-Calibrated Exits");
+    await panel.getByRole("button", { name: "Overfit Audit" }).click();
     const bars = canonicalBars(candles, result);
     const limit = Math.min(200, Math.floor(bars.length / 2));
     const pending = postResponse(page, "/api/replay");
@@ -438,6 +460,13 @@ test.describe("evaluation and shared spot browser regressions", () => {
     await expect(panel).not.toContainText("Total Return:");
     await panel.getByRole("button", { name: "Copy Prompt for AI" }).click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).not.toContain(result.resultId);
+    await panel.getByRole("button", { name: "Risk Guardrails" }).click();
+    await expect(panel).toContainText("Backtest results are hidden during Replay.");
+    await expect(panel).toContainText("Input source: Current workspace settings");
+    await panel.getByRole("button", { name: /Copy Prompt for AI|Copied Prompt to Clipboard/ }).click();
+    const replayRisk = await page.evaluate(() => navigator.clipboard.readText());
+    expect(replayRisk).not.toContain(result.resultId);
+    expect(replayRisk).not.toContain("Backtest Trade Count:");
 
     await panel.getByRole("button", { name: "Raw Schema" }).click();
     await panel.getByRole("button", { name: "Copy Context JSON" }).click();
@@ -464,6 +493,64 @@ test.describe("evaluation and shared spot browser regressions", () => {
     await panel.getByRole("button", { name: "Tactical Briefing", exact: true }).click();
     await expect(evidence).toContainText(`fastPeriod: ${String(result.parameters.fastPeriod)}`);
     await expect(evidence).toContainText("SHARPE");
+  });
+
+  test("AI evidence links saved holdout and walk-forward results by their actual identity", async ({ page, request }) => {
+    await trainingCandles(request);
+    await prepareWorkspace(request, "research");
+    const original = await readJson<BacktestResult>(await request.post("/api/backtests", {
+      data: { ...REPLAY_MARKET, strategyId: "sma-crossover", parameters, config, limit: 500 },
+    }), 201);
+    const evaluation = await readJson<{
+      reportId: string;
+      resultIds: { training: string[]; holdout: string };
+      trainingBoundary: { startIndex: number; endIndexExclusive: number };
+      holdoutBoundary: { startIndex: number; endIndexExclusive: number };
+    }>(await request.post("/api/evaluations", {
+      data: { datasetId: original.datasetId, strategyId: "sma-crossover", candidates: [parameters], config, splitIndex: 300 },
+    }), 201);
+    const sweep = await readJson<{
+      sweepId: string;
+      walkForward: { finalTestResultId: string; folds: Array<{ validationResultId: string }> };
+    }>(await request.post("/api/sweeps", {
+      data: { ...REPLAY_MARKET, strategyId: "sma-crossover", parameters, config, parameter: "fastPeriod", from: 20, to: 20, step: 1, mode: "walk-forward", limit: 500 },
+    }), 201);
+
+    await page.goto("/");
+    await page.getByRole("tab", { name: "AI context", exact: true }).click();
+    const panel = page.locator(".context-panel");
+    const evidence = panel.getByTestId("ai-backtest-evidence");
+    const openResult = async (id: string) => {
+      await page.getByRole("tab", { name: "Experiments", exact: true }).click();
+      await page.getByRole("button", { name: `Open result ${id.slice(0, 12)}`, exact: true }).click();
+    };
+
+    await openResult(evaluation.resultIds.holdout);
+    await expect(evidence).toContainText("Holdout (out-of-sample partition)");
+    await expect(evidence).toContainText(`Evaluation ${evaluation.reportId}: Holdout partition [${evaluation.holdoutBoundary.startIndex}, ${evaluation.holdoutBoundary.endIndexExclusive})`);
+    await expect(evidence).toContainText("retuning after inspection");
+    await panel.getByRole("button", { name: "Prompt Synthesizer" }).click();
+    await panel.getByRole("button", { name: "Overfit Audit" }).click();
+    await expect(panel).toContainText(`Holdout partition [${evaluation.holdoutBoundary.startIndex}, ${evaluation.holdoutBoundary.endIndexExclusive})`);
+    await panel.getByRole("button", { name: "Tactical Briefing" }).click();
+
+    await openResult(evaluation.resultIds.training[0]!);
+    await expect(evidence).toContainText("Training (in-sample candidate partition)");
+    await expect(evidence).toContainText(`Training candidate partition [${evaluation.trainingBoundary.startIndex}, ${evaluation.trainingBoundary.endIndexExclusive})`);
+
+    await openResult(sweep.walkForward.finalTestResultId);
+    await expect(evidence).toContainText("Walk-forward final test (out-of-sample)");
+    await expect(evidence).toContainText(`Walk-forward ${sweep.sweepId} final test`);
+    await expect(evidence).toContainText("retuning after inspection");
+
+    await openResult(sweep.walkForward.folds[0]!.validationResultId);
+    await expect(evidence).toContainText("Walk-forward fold validation (out-of-sample fold)");
+    await expect(evidence).toContainText("Historical folds are not independent evidence.");
+
+    await openResult(original.resultId);
+    await expect(evidence).toContainText("SEGMENT: unknown");
+    await expect(evidence).toContainText("Only the 20 most recent evaluations and sweeps are searched");
+    await expect(evidence).not.toContainText(`Evaluation ${evaluation.reportId}`);
   });
 
   test("late Replay creation cannot hijack the user's new research workspace", async ({ page, request }) => {

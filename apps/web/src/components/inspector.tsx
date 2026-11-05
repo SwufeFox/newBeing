@@ -3,7 +3,8 @@
 import { compileFactor, replayReport, type ReplayExecution, type ReplayOrderInput, type ReplayReport } from "@newbeing/core";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Braces, Check, Clock3, Copy, History, Layers3, TrendingDown, TrendingUp, Wallet, ArrowDownRight, ArrowUpRight, Sparkles, FlaskConical, Code2, Activity, AlertCircle } from "lucide-react";
-import type { BacktestResult, ExchangeId, OrderPreview, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
+import type { BacktestResult, BacktestSweepResult, ExchangeId, OrderPreview, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
+import type { ResearchEvaluationResult } from "@newbeing/application";
 import type { MarketSummary, OrderBookSnapshot, RecentTrade } from "@newbeing/market-data/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,6 +16,17 @@ import { useShallow } from "zustand/react/shallow";
 import { floorToDecimals } from "@/lib/indicators";
 import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress, AkSpinner } from "@swufefox/ak-ui-react";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
+
+type SegmentNature =
+  | "unknown"
+  | "Holdout (out-of-sample partition)"
+  | "Training (in-sample candidate partition)"
+  | "Walk-forward final test (out-of-sample)"
+  | "Walk-forward final training (in-sample)"
+  | "Walk-forward fold validation (out-of-sample fold)"
+  | "Walk-forward fold training (in-sample fold)";
+
+const REPORT_LOOKUP_NOTE = "Only the 20 most recent evaluations and sweeps are searched; older or unavailable reports may not be reflected.";
 
 interface InspectorCopy {
   /* Depth ladder and tape */
@@ -72,6 +84,10 @@ interface InspectorCopy {
   replayBacktestHidden: string;
   backtestEvidenceNote: string;
   backtestParameters: string;
+  sampleRangeLabel: string;
+  segmentNatureLabel: string;
+  segmentNatures: Record<SegmentNature, string>;
+  segmentLookupNote: string;
   sharpeLabel: string;
   maxDdLabel: string;
   winRateLabel: string;
@@ -242,6 +258,18 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     replayBacktestHidden: "Backtest results are hidden during Replay.",
     backtestEvidenceNote: "Historical simulation; independent validation is required.",
     backtestParameters: "Run parameters",
+    sampleRangeLabel: "SAMPLE",
+    segmentNatureLabel: "SEGMENT",
+    segmentNatures: {
+      "unknown": "unknown",
+      "Holdout (out-of-sample partition)": "Holdout (out-of-sample partition)",
+      "Training (in-sample candidate partition)": "Training (in-sample candidate partition)",
+      "Walk-forward final test (out-of-sample)": "Walk-forward final test (out-of-sample)",
+      "Walk-forward final training (in-sample)": "Walk-forward final training (in-sample)",
+      "Walk-forward fold validation (out-of-sample fold)": "Walk-forward fold validation (out-of-sample fold)",
+      "Walk-forward fold training (in-sample fold)": "Walk-forward fold training (in-sample fold)",
+    },
+    segmentLookupNote: REPORT_LOOKUP_NOTE,
     sharpeLabel: "SHARPE",
     maxDdLabel: "MAX DD",
     winRateLabel: "WIN RATE",
@@ -407,6 +435,18 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     replayBacktestHidden: "回放期间隐藏回测结果。",
     backtestEvidenceNote: "历史模拟结果；需要独立验证。",
     backtestParameters: "回测参数",
+    sampleRangeLabel: "样本区间",
+    segmentNatureLabel: "分段性质",
+    segmentNatures: {
+      "unknown": "未知",
+      "Holdout (out-of-sample partition)": "留出区间（样本外分区）",
+      "Training (in-sample candidate partition)": "训练候选区间（样本内）",
+      "Walk-forward final test (out-of-sample)": "滚动前推最终测试（样本外）",
+      "Walk-forward final training (in-sample)": "滚动前推最终训练（样本内）",
+      "Walk-forward fold validation (out-of-sample fold)": "滚动前推分折验证（样本外分折）",
+      "Walk-forward fold training (in-sample fold)": "滚动前推分折训练（样本内分折）",
+    },
+    segmentLookupNote: "仅检索最近 20 条验证和参数扫描；较早或不可用的报告可能未被反映。",
     sharpeLabel: "夏普比率",
     maxDdLabel: "最大回撤",
     winRateLabel: "胜率",
@@ -836,6 +876,20 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
     </div>
   );
 }
+type SavedEvaluationReport = Pick<ResearchEvaluationResult, "reportId" | "resultIds" | "trainingBoundary" | "holdoutBoundary">;
+
+interface ResearchEvidence {
+  segmentNature: SegmentNature;
+  evaluationEvidence: string | null;
+  walkForwardEvidence: string | null;
+}
+
+const UNKNOWN_RESEARCH_EVIDENCE: ResearchEvidence = {
+  segmentNature: "unknown",
+  evaluationEvidence: null,
+  walkForwardEvidence: null,
+};
+
 
 function WorkspaceContext({ summary, summaryError, result, replayMode }: { summary: MarketSummary | null; summaryError: string | null; result: BacktestResult | null; replayMode: boolean }): React.JSX.Element {
   const copy = useCopy(INSPECTOR_COPY);
@@ -863,6 +917,93 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
   const quoteDate = typeof timestamp === "number" && Number.isFinite(timestamp) ? new Date(timestamp) : null;
   const quoteTime = quoteDate && Number.isFinite(quoteDate.getTime()) ? quoteDate.toISOString() : null;
 
+  const sampleRange = useMemo(() => {
+    if (!backtest || backtest.equityCurve.length === 0) return "unknown";
+    const firstBar = backtest.equityCurve[0];
+    const lastBar = backtest.equityCurve.at(-1);
+    if (!firstBar || !lastBar) return "unknown";
+    return `${new Date(firstBar.timestamp).toISOString()} to ${new Date(lastBar.timestamp).toISOString()} (${backtest.equityCurve.length} bars)`;
+  }, [backtest]);
+
+  const [evidenceCache, setEvidenceCache] = useState<Record<string, ResearchEvidence>>({});
+  const researchEvidence = (backtest && evidenceCache[backtest.resultId]) || UNKNOWN_RESEARCH_EVIDENCE;
+
+  useEffect(() => {
+    if (!backtest) return;
+    const target = backtest;
+    let disposed = false;
+    const loadResearchReports = async () => {
+      try {
+        const [evalsRes, sweepsRes] = await Promise.all([
+          fetch("/api/evaluations?limit=20", { cache: "no-store" }).catch(() => null),
+          fetch("/api/sweeps?limit=20", { cache: "no-store" }).catch(() => null),
+        ]);
+        if (disposed) return;
+        const evals: SavedEvaluationReport[] = evalsRes?.ok ? (await evalsRes.json() as SavedEvaluationReport[]) : [];
+        const sweeps: BacktestSweepResult[] = sweepsRes?.ok ? (((await sweepsRes.json() as { items?: BacktestSweepResult[] }).items) ?? []) : [];
+        if (disposed) return;
+
+        let nature: SegmentNature = "unknown";
+        let evalEv: string | null = null;
+        let wfEv: string | null = null;
+
+        for (const ev of evals) {
+          if (ev.resultIds.holdout === target.resultId) {
+            nature = "Holdout (out-of-sample partition)";
+            evalEv = `Evaluation ${ev.reportId}: Holdout partition [${ev.holdoutBoundary.startIndex}, ${ev.holdoutBoundary.endIndexExclusive}), Total Return ${(target.metrics.totalReturn * 100).toFixed(2)}%, Max DD ${(target.metrics.maxDrawdown * 100).toFixed(2)}%. Historical split; retuning after inspection invalidates an untouched holdout.`;
+            break;
+          }
+          if (ev.resultIds.training.includes(target.resultId)) {
+            nature = "Training (in-sample candidate partition)";
+            evalEv = `Evaluation ${ev.reportId}: Training candidate partition [${ev.trainingBoundary.startIndex}, ${ev.trainingBoundary.endIndexExclusive})`;
+            break;
+          }
+        }
+
+        for (const sw of sweeps) {
+          const wf = sw.walkForward;
+          if (wf) {
+            if (wf.finalTestResultId === target.resultId) {
+              nature = "Walk-forward final test (out-of-sample)";
+              wfEv = `Walk-forward ${sw.sweepId} final test: Total Return ${(wf.finalTestMetrics.totalReturn * 100).toFixed(2)}%, Max DD ${(wf.finalTestMetrics.maxDrawdown * 100).toFixed(2)}%. Historical test; retuning after inspection invalidates an untouched test.`;
+              break;
+            }
+            if (wf.finalTrainingResultId === target.resultId) {
+              nature = "Walk-forward final training (in-sample)";
+              wfEv = `Walk-forward final training: Total Return ${(wf.finalTrainingMetrics.totalReturn * 100).toFixed(2)}%`;
+              break;
+            }
+            const matchingFold = wf.folds.find((f) => f.validationResultId === target.resultId);
+            if (matchingFold) {
+              nature = "Walk-forward fold validation (out-of-sample fold)";
+              wfEv = `Walk-forward ${sw.sweepId} validation fold: Total Return ${(matchingFold.validationMetrics.totalReturn * 100).toFixed(2)}%. Historical folds are not independent evidence.`;
+              break;
+            }
+            const matchingTrainFold = wf.folds.find((f) => f.trainingResultId === target.resultId);
+            if (matchingTrainFold) {
+              nature = "Walk-forward fold training (in-sample fold)";
+              wfEv = `Walk-forward training fold: Total Return ${(matchingTrainFold.trainingMetrics.totalReturn * 100).toFixed(2)}%`;
+              break;
+            }
+          }
+        }
+
+        setEvidenceCache((prev) => ({
+          ...prev,
+          [target.resultId]: { segmentNature: nature, evaluationEvidence: evalEv, walkForwardEvidence: wfEv },
+        }));
+      } catch {
+        if (!disposed) {
+          setEvidenceCache((prev) => ({
+            ...prev,
+            [target.resultId]: UNKNOWN_RESEARCH_EVIDENCE,
+          }));
+        }
+      }
+    };
+    void loadResearchReports();
+    return () => { disposed = true; };
+  }, [backtest]);
   const handleCopy = async (text: string, kind: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
@@ -892,10 +1033,15 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
       strategyVersion: backtest.strategyVersion,
       parameters: backtest.parameters,
       assumptions: backtest.assumptions,
+      sampleRange,
+      segmentNature: researchEvidence.segmentNature,
+      reportLookup: researchEvidence.segmentNature === "unknown" ? REPORT_LOOKUP_NOTE : null,
+      evaluationEvidence: researchEvidence.evaluationEvidence,
+      walkForwardEvidence: researchEvidence.walkForwardEvidence,
     } : null,
     activeBacktestMetrics: backtest?.metrics ?? null,
     quoteScope: "public market data only; paper portfolio is local; live trading disabled",
-  }), [state, strategyParameters, backtestConfig, backtest]);
+  }), [state, strategyParameters, backtestConfig, backtest, sampleRange, researchEvidence]);
 
   const backtestEvidence = useMemo(() => backtest ? [
     `- Result ID: ${backtest.resultId}`,
@@ -904,13 +1050,18 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
     `- Strategy: ${backtest.strategyId} (${backtest.strategyVersion})`,
     `- Parameters: ${JSON.stringify(backtest.parameters)}`,
     `- Assumptions: ${JSON.stringify(backtest.assumptions)}`,
+    `- Sample Range: ${sampleRange}`,
+    `- Segment Nature: ${researchEvidence.segmentNature}`,
+    ...(researchEvidence.segmentNature === "unknown" ? [`- Report lookup: ${REPORT_LOOKUP_NOTE}`] : []),
+    ...(researchEvidence.evaluationEvidence ? [`- Evaluation Evidence: ${researchEvidence.evaluationEvidence}`] : []),
+    ...(researchEvidence.walkForwardEvidence ? [`- Walk-Forward Evidence: ${researchEvidence.walkForwardEvidence}`] : []),
     `- Total Return: ${(backtest.metrics.totalReturn * 100).toFixed(2)}%`,
     `- Max Drawdown: ${(backtest.metrics.maxDrawdown * 100).toFixed(2)}%`,
     `- Sharpe Ratio: ${backtest.metrics.sharpeRatio?.toFixed(2) ?? "N/A"}`,
     `- Win Rate: ${(backtest.metrics.winRate * 100).toFixed(2)}%`,
     `- Profit Factor: ${backtest.metrics.profitFactor?.toFixed(2) ?? "N/A"}`,
     `- Total Trades: ${backtest.metrics.tradeCount}`,
-  ].join("\n") : null, [backtest]);
+  ].join("\n") : null, [backtest, sampleRange, researchEvidence]);
 
   const briefingMarkdown = useMemo(() => {
     const lines = [
@@ -983,23 +1134,56 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
         "",
         "Critique this setup:",
         "1. Assess whether the available evidence supports alpha or is consistent with regime-dependent overfitting.",
-        "2. Suggest walk-forward parameter sweep intervals to verify parameter stability.",
-        "3. Identify market regime vulnerabilities (ranging vs trending vs high-volatility crash)."
+        `2. Evaluate the sample range (${sampleRange}) and segment nature (${researchEvidence.segmentNature}).`,
+        "3. Suggest walk-forward parameter sweep intervals to verify parameter stability.",
+        "4. Identify market regime vulnerabilities (ranging vs trending vs high-volatility crash)."
       ].join("\n");
     }
 
+    const riskConfig = backtest?.assumptions ?? backtestConfig;
+    const riskSymbol = backtest?.symbol ?? sym;
+    const riskTimeframe = backtest?.timeframe ?? tf;
+    const riskExchange = backtest ? exchangeLabel(backtest.exchange) : ex;
+    const knownInputs = [
+      `- Input source: ${backtest ? `Selected historical backtest ${backtest.resultId}` : "Current workspace settings"}`,
+      `- Asset: ${riskSymbol} (${riskExchange} · ${riskTimeframe})`,
+      `- Account Mode: ${riskConfig.accountMode ?? (backtest ? "unknown (not recorded)" : "spot")}`,
+      `- Initial Allocation: ${(riskConfig.positionFraction * 100).toFixed(0)}%`,
+      `- Execution Fees: ${(riskConfig.feeRate * 10_000).toFixed(1)} bps fee, ${(riskConfig.slippageRate * 10_000).toFixed(1)} bps slippage`,
+    ];
+    if (replayMode) {
+      knownInputs.push("- Backtest results: Backtest results are hidden during Replay.");
+    } else if (backtest) {
+      knownInputs.push(
+        `- Backtest Trade Count: ${backtest.metrics.tradeCount}`,
+        `- Backtest Win Rate: ${(backtest.metrics.winRate * 100).toFixed(2)}%`,
+        `- Backtest Profit Factor: ${backtest.metrics.profitFactor?.toFixed(2) ?? "N/A"}`,
+        `- Backtest Max Drawdown: ${(backtest.metrics.maxDrawdown * 100).toFixed(2)}%`,
+        `- Sample Range: ${sampleRange}`,
+        `- Segment Nature: ${researchEvidence.segmentNature}`,
+        ...(researchEvidence.segmentNature === "unknown" ? [`- Report lookup: ${REPORT_LOOKUP_NOTE}`] : []),
+        ...(researchEvidence.evaluationEvidence ? [`- Evaluation Evidence: ${researchEvidence.evaluationEvidence}`] : []),
+        ...(researchEvidence.walkForwardEvidence ? [`- Walk-Forward Evidence: ${researchEvidence.walkForwardEvidence}`] : []),
+      );
+    }
+
     return [
-      `# Risk Management & Sizing Guardrails: ${sym} (${tf})`,
+      `# Risk Management & Sizing Guardrails: ${riskSymbol} (${riskTimeframe})`,
       `Simulation Mode: Paper Execution (Deterministic)`,
-      `Backtest account mode: ${backtestConfig.accountMode ?? "spot"}`,
-      `Initial Allocation: ${(backtestConfig.positionFraction * 100).toFixed(0)}%`,
+      ...knownInputs,
       "",
-      "Provide a rigorous risk management framework:",
-      "1. Calculate conservative position sizing using fractional Kelly given the asset's typical return distribution.",
-      "2. Propose stop-loss and take-profit bounds calibrated to ATR or rolling high-low range.",
-      "3. Specify maximum drawdown and consecutive loss shutdown criteria."
+      "## Missing Empirical Inputs",
+      "- Payoff distribution: Average win size vs average loss size (win/loss payout ratio b) is not provided.",
+      "- Volatility series: Rolling ATR, realized variance or high-low range values are not provided.",
+      "- Return distribution shape: Higher moments (variance, skewness, kurtosis/fat tails) are not provided.",
+      "",
+      "## Guardrails & Instructions for AI",
+      "1. DO NOT fabricate arbitrary percentage Kelly sizing (e.g. 'allocate 18.5%') or static percentage stop-losses without empirical volatility series.",
+      "2. Fractional Kelly Sizing: State the formula symbolically f* = c * (p*b - q) / b (with safety factor c <= 0.5); explicitly state what win/loss payoff ratio b and win probability p must be empirically calibrated from verified out-of-sample trades before a concrete allocation can be calculated.",
+      "3. Volatility-Calibrated Exits: Define dynamic parametric stop-loss and take-profit rules (e.g. k * ATR(n) or trailing swing extremes) instead of static percentages; specify the calibration hurdle relative to the specified execution cost of " + ((riskConfig.feeRate + riskConfig.slippageRate) * 10_000).toFixed(1) + " bps.",
+      "4. Systematic Circuit Breakers: Formulate an explicit maximum portfolio drawdown hard-stop threshold and consecutive loss shutdown criteria calibrated to this deterministic paper execution setup.",
     ].join("\n");
-  }, [state, strategyParameters, backtest, backtestEvidence, promptType, backtestConfig, replayMode]);
+  }, [state, strategyParameters, backtest, backtestEvidence, promptType, backtestConfig, replayMode, sampleRange, researchEvidence]);
 
   return (
     <div className="context-panel p-3 bg-[var(--ak-surface-canvas)] space-y-3 font-mono text-xs">
@@ -1122,6 +1306,19 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
                     <span key={key} className="px-1 bg-[var(--ak-surface-sunken)] break-words">{key}: <strong className="text-[var(--ak-text-primary)]">{String(value)}</strong></span>
                   ))}
                 </div>
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-[var(--ak-text-secondary)] font-mono">
+                  <span>{copy.sampleRangeLabel}: <strong className="text-[var(--ak-text-primary)]">{sampleRange}</strong></span>
+                  <span>{copy.segmentNatureLabel}: <strong className="text-[var(--ak-signal-info)]">{copy.segmentNatures[researchEvidence.segmentNature]}</strong></span>
+                </div>
+                {researchEvidence.segmentNature === "unknown" && (
+                  <p className="m-0 text-[10px] text-[var(--ak-text-secondary)]">{copy.segmentLookupNote}</p>
+                )}
+                {researchEvidence.evaluationEvidence && (
+                  <p className="m-0 text-[10px] text-[var(--ak-signal-info)] font-mono break-words">{researchEvidence.evaluationEvidence}</p>
+                )}
+                {researchEvidence.walkForwardEvidence && (
+                  <p className="m-0 text-[10px] text-[var(--ak-signal-action)] font-mono break-words">{researchEvidence.walkForwardEvidence}</p>
+                )}
                 <p className="m-0 text-[10px] text-[var(--ak-text-secondary)]">{copy.backtestEvidenceNote}</p>
                 <div className="grid grid-cols-4 gap-1 text-center font-mono py-1">
                   <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
