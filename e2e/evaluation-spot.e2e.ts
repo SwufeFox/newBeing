@@ -105,7 +105,7 @@ async function configureStrategy(page: Page) {
 
 async function openSharedTicket(page: Page) {
   await page.getByRole("tab", { name: "Order book", exact: true }).click();
-  await page.getByLabel("Paper account mode").selectOption("shared-spot");
+  await page.getByLabel("Paper wallet").selectOption("shared-spot");
   return page.getByTestId("shared-spot-ticket");
 }
 

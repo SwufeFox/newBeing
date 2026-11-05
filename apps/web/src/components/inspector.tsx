@@ -66,7 +66,8 @@ interface InspectorCopy {
   closeFullHint: string;
   unrealizedPnl: (value: string) => string;
   positionAllocation: string;
-  bookReference: (value: string) => string;
+  sizingReference: (value: string) => string;
+  sizingReferenceNote: string;
   reset: string;
   quantity: (base: string) => string;
   toggleSizingSide: string;
@@ -194,7 +195,8 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     closeFullHint: "Market close full position",
     unrealizedPnl: (value) => `uPnL ${value}`,
     positionAllocation: "POSITION ALLOCATION",
-    bookReference: (value) => `BOOK REF: ${value}`,
+    sizingReference: (value) => `SIZING REF: ${value}`,
+    sizingReferenceNote: "Percentage sizing and the notional estimate use this price. The Paper order still fills at the live quote.",
     reset: "Reset",
     quantity: (base) => `QUANTITY · ${base}`,
     toggleSizingSide: "Toggle sizing side",
@@ -266,7 +268,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     ariaRecentTrades: "Recent trades",
     ariaStrategyLab: "Strategy lab",
     ariaAiContext: "AI context",
-    paperAccountMode: "Paper account mode",
+    paperAccountMode: "Paper wallet",
     legacyWallet: "Legacy pair wallet",
     sharedSpotWallet: "New shared spot wallet",
     priceAppliedToTicket: (value) => `Price $${value} applied to ticket`,
@@ -318,7 +320,8 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     closeFullHint: "市价全平持仓",
     unrealizedPnl: (value) => `未实现盈亏 ${value}`,
     positionAllocation: "仓位占比",
-    bookReference: (value) => `盘口参考: ${value}`,
+    sizingReference: (value) => `${value} 规模参考价`,
+    sizingReferenceNote: "比例下单与名义价值预估使用该价格；模拟盘仍按实时报价成交。",
     reset: "重置",
     quantity: (base) => `数量 · ${base}`,
     toggleSizingSide: "切换规模方向",
@@ -390,7 +393,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     ariaRecentTrades: "成交明细",
     ariaStrategyLab: "策略实验室",
     ariaAiContext: "AI 上下文",
-    paperAccountMode: "模拟盘账户模式",
+    paperAccountMode: "模拟盘钱包",
     legacyWallet: "旧版币对钱包",
     sharedSpotWallet: "新版共享现货钱包",
     priceAppliedToTicket: (value) => `价格 $${value} 已填入下单区`,
@@ -1039,7 +1042,7 @@ function PaperTicket({
 
       {prefilledPrice !== null && prefilledPrice !== undefined && (
         <div className="flex items-center justify-between px-2 py-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-info)] text-[10px] text-[var(--ak-signal-info)] font-mono">
-          <span className="tabular-nums">{copy.bookReference(`$${price(prefilledPrice)} ${quote}`)}</span>
+          <span className="tabular-nums" title={copy.sizingReferenceNote}>{copy.sizingReference(`${price(prefilledPrice)} ${quote}`)}</span>
           {onClearPrefilledPrice && (
             <button
               type="button"
