@@ -349,7 +349,6 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
                 dropBelow ? "drop-after" : "",
               ].filter(Boolean).join(" ")}
             >
-              {isSelected && <AkCorner position="tl" tone="info" />}
               <span
                 className="watch-grip cursor-grab active:cursor-grabbing"
                 role="button"

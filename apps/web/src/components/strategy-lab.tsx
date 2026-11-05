@@ -312,7 +312,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
   return (
     <div className="strategy-lab flex flex-col gap-3 p-3 bg-[var(--ak-surface-canvas)]">
       <div className="strategy-toolbar flex items-center justify-between gap-2 border-b border-[var(--ak-border-subtle)] pb-2">
-        <label className="field-label text-xs font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider" htmlFor="strategy-select">
+        <label className="field-label text-xs font-semibold text-[var(--ak-text-secondary)] tracking-normal" htmlFor="strategy-select">
           {copy.template}
         </label>
         <AkSelect
@@ -329,10 +329,10 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         </AkSelect>
       </div>
 
-      <div className="strategy-description bg-[var(--ak-surface-sunken)] p-2.5 border-l-2 border-[var(--ak-signal-info)]" data-testid="executable-strategy">
+      <div className="strategy-description bg-[var(--ak-surface-sunken)] p-2.5 border border-[var(--ak-border-subtle)] border-l-2 border-l-[var(--ak-signal-info)]" data-testid="executable-strategy">
         <div className="flex items-center gap-2 mb-1">
-          <strong className="text-xs font-mono text-[var(--ak-signal-info)]">
-            {copy.executable} · {strategy.id}@{strategy.version}
+          <strong className="text-xs font-mono text-[var(--ak-text-primary)]">
+            <span className="text-[var(--c-accent)] font-bold">{copy.executable}</span> · {strategy.id}@{strategy.version}
           </strong>
         </div>
         <p className="text-xs text-[var(--ak-text-secondary)] leading-relaxed m-0">
@@ -342,8 +342,8 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
 
       <div className="strategy-params space-y-2 bg-[var(--ak-surface-sunken-2)] p-2.5 border border-[var(--ak-border-subtle)]">
         <div className="flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">
-            <Sliders size={12} className="text-[var(--ak-signal-action)]" />
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--c-fg-2)] tracking-normal">
+            <Sliders size={12} className="text-[var(--ak-text-secondary)]" />
             <span>{copy.tunable}</span>
           </div>
           <button
@@ -362,10 +362,10 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           <button
             type="button"
             onClick={resetDefaults}
-            className={`px-1.5 py-0.5 text-[9px] font-mono border transition-all cursor-pointer ${
+            className={`px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all cursor-pointer ${
               isDefault
-                ? "bg-[var(--ak-signal-info)] text-black border-transparent font-bold"
-                : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white"
+                ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-signal-info)] font-semibold shadow-xs"
+                : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white hover:border-[var(--ak-border-strong)]"
             }`}
           >
             {copy.defaultPreset}
@@ -377,10 +377,10 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                 key={preset.name}
                 type="button"
                 onClick={() => applyPreset(preset.name, preset.params)}
-                className={`px-1.5 py-0.5 text-[9px] font-mono border transition-all cursor-pointer ${
+                className={`px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all cursor-pointer ${
                   isActive
-                    ? "bg-[var(--ak-signal-info)] text-black border-transparent font-bold"
-                    : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white"
+                    ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-signal-info)] font-semibold shadow-xs"
+                    : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white hover:border-[var(--ak-border-strong)]"
                 }`}
               >
                 {copy.presetLabels[preset.name] ?? preset.name}
@@ -394,10 +394,10 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                 key={preset.name}
                 role="group"
                 aria-label={copy.customPresetGroup(copy.presetLabels[preset.name] ?? preset.name)}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-mono border transition-all ${
+                className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all ${
                   isActive
-                    ? "bg-[var(--ak-signal-action)] text-black border-transparent font-bold"
-                    : "bg-[var(--ak-surface-sunken)] text-[var(--ak-text-primary)] border-[var(--ak-border-subtle)] hover:border-[var(--ak-signal-action)]"
+                    ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-signal-action)] font-semibold shadow-xs"
+                    : "bg-[var(--ak-surface-sunken)] text-[var(--ak-text-primary)] border-[var(--ak-border-subtle)] hover:border-[var(--ak-border-strong)]"
                 }`}
                 title={copy.customPresetTitle(copy.presetLabels[preset.name] ?? preset.name)}
               >
@@ -603,7 +603,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           />
         </label>
       </div>
-      <label className="flex flex-col gap-1 text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">
+      <label className="flex flex-col gap-1 text-xs font-medium text-[var(--ak-text-secondary)] tracking-normal">
         <span>{copy.executionAccount}</span>
         <AkSelect aria-label={copy.accountModeLabel} value={config.accountMode ?? "spot"} onChange={(event) => setConfig({ ...config, accountMode: event.target.value as "spot" | "legacy-margin", allowShorts: false })} className="h-7 text-xs font-mono font-normal">
           <option value="spot">{copy.accountSpot}</option>
@@ -626,7 +626,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           onClick={onRun}
           disabled={running || invalidSma}
           icon={running ? <Play size={13} className="spin" /> : <Play size={13} />}
-          className="w-full text-xs font-bold transition-transform active:scale-95"
+          className="w-full text-xs font-semibold py-1.5 transition-transform active:scale-95"
           title={copy.runBacktestTitle}
         >
           {running ? copy.running : copy.runBacktest}

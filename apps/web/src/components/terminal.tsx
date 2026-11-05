@@ -1566,15 +1566,13 @@ export function Terminal(): React.JSX.Element {
             {/* Wing 1: Brand Lockup & Navigation Cockpit */}
             <div className="flex items-center gap-3 shrink-0">
               <div className="brand-lockup flex items-center gap-2">
-                <AkGlow tone="info" className="inline-flex items-center">
-                  <div className="brand-mark p-1 bg-[var(--ak-signal-info)] text-black">
-                    <Activity size={15} strokeWidth={2.6} />
-                  </div>
-                </AkGlow>
-                <AkBrackets className="font-bold text-xs tracking-wider flex items-center gap-1">
-                  <span className="text-[var(--ak-text-primary)]">newBeing</span>
-                  <span className="text-[var(--ak-signal-info)] text-[10px]">PRTS</span>
-                </AkBrackets>
+                <div className="brand-mark p-1 rounded-xs bg-[var(--c-surface-3)] border border-[var(--ak-border-strong)] text-[var(--c-accent)] flex items-center justify-center">
+                  <Activity size={14} strokeWidth={2.4} />
+                </div>
+                <div className="font-bold text-xs tracking-wide flex items-center gap-1.5 font-mono">
+                  <span className="text-[var(--ak-text-primary)] font-semibold">newBeing</span>
+                  <span className="text-[var(--c-fg-4)] text-[9px] px-1 py-0.2 bg-[var(--c-surface-2)] border border-[var(--c-line)] rounded-xs">PRTS</span>
+                </div>
               </div>
 
               <div className="h-5 w-[1px] bg-[var(--ak-border)] mx-0.5 opacity-50" />
@@ -1587,11 +1585,10 @@ export function Terminal(): React.JSX.Element {
                         data-testid={`workspace-${item}`}
                         aria-current={workspace === item ? "page" : undefined}
                         aria-label={shell.workspaceShortcut(label, num)}
-                        className={`workspace-tab relative px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase transition-all ${workspace === item ? "active text-[var(--ak-signal-action)] bg-[var(--ak-surface-raised)] border-b-2 border-[var(--ak-signal-action)]" : "text-[var(--ak-text-secondary)] hover:text-white"}`}
+                        className={`workspace-tab relative px-3 py-1 text-xs font-sans font-medium transition-all ${workspace === item ? "active text-[var(--ak-text-primary)] bg-[var(--c-surface-2)] border-b-2 border-[var(--c-accent)] shadow-xs" : "text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-sunken)]"}`}
                         onClick={() => setPage(item)}
                         title={shell.switchShortcut(label, num)}
                       >
-                        {workspace === item && <AkCorner position="tl" tone="yellow" />}
                         {label}
                       </button>
                       {index < 2 && <span className="workflow-step-separator" aria-hidden="true">›</span>}
@@ -1599,7 +1596,7 @@ export function Terminal(): React.JSX.Element {
                   ))}
                 </div>
                 <span className="workspace-nav-separator" aria-hidden="true" />
-                <Link href="/derivatives" className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0" aria-label={shell.derivativesAria} title={shell.derivativesTitle}>
+                <Link href="/derivatives" className="workspace-tab px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0" aria-label={shell.derivativesAria} title={shell.derivativesTitle}>
                   {shell.derivatives}
                 </Link>
               </nav>
@@ -1616,7 +1613,7 @@ export function Terminal(): React.JSX.Element {
                   <button
                     key={item}
                     disabled={replayLocked || !EXCHANGE_TIMEFRAMES[exchange].includes(item)}
-                    className={`px-1.5 py-0.5 text-[11px] font-mono font-bold transition-all ${timeframe === item ? "active bg-[var(--ak-signal-info)] text-black" : "text-[var(--ak-text-secondary)] hover:text-white"}`}
+                    className={`px-1.5 py-0.5 text-[11px] font-mono font-medium transition-all ${timeframe === item ? "active bg-[var(--ak-surface-raised)] text-[var(--c-accent)] border border-[var(--ak-border-strong)] font-bold" : "text-[var(--ak-text-secondary)] hover:text-white"}`}
                     onClick={() => useWorkspaceStore.getState().setTimeframe(item)}
                   >
                     {item}
@@ -1627,7 +1624,7 @@ export function Terminal(): React.JSX.Element {
               <div className="h-4 w-[1px] bg-[var(--ak-border)] mx-1 opacity-50" />
 
               <label className="exchange-select flex items-center gap-1 text-xs font-mono bg-transparent px-2 py-0.5 shrink-0 cursor-pointer border-0">
-                <span className="exchange-logo font-bold text-[var(--ak-signal-action)]">{exchange.slice(0, 1).toUpperCase()}</span>
+                <span className="exchange-logo font-bold text-[var(--c-fg-2)]">{exchange.slice(0, 1).toUpperCase()}</span>
                 <select
                   aria-label="Exchange"
                   value={exchange}
@@ -1646,8 +1643,8 @@ export function Terminal(): React.JSX.Element {
             {/* Wing 3: Session Status & Tactical Actions */}
             <div className="flex items-center gap-2 shrink-0">
               <div className="topbar-status flex items-center gap-1.5 px-2.5 h-7 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] whitespace-nowrap shrink-0 shadow-sm" aria-label={shell.executionAria(workspaceName)}>
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] shrink-0" />
-                <span className="text-[10px] font-mono text-[var(--ak-signal-action)] font-bold">{shell.paperOnly}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-success)] shrink-0" />
+                <span className="text-[10px] font-mono text-[var(--ak-text-secondary)] font-semibold tracking-wider">{shell.paperOnly}</span>
               </div>
 
               <div className="h-5 w-[1px] bg-[var(--ak-border)] mx-0.5 opacity-50" />
@@ -1700,7 +1697,6 @@ export function Terminal(): React.JSX.Element {
       )}
 
       <div className="market-heading relative px-4 py-2.5 flex flex-wrap items-center justify-between gap-4 shadow-xl" id="workspace-home">
-        <AkCorner position="tl" tone="info" />
         <div className="market-identity flex items-center gap-3 font-mono">
           <div className="flex flex-col">
             <select
@@ -1805,9 +1801,9 @@ export function Terminal(): React.JSX.Element {
                 <div className="chart-toolbar-left flex items-center gap-2">
                   <span className="font-bold">{workspaceName.toUpperCase()} · {symbol} · {timeframe}</span>
                   {result && (
-                    <AkTag variant="advanced" className="text-[10px] px-1.5 py-0">
+                    <span className="px-1.5 py-0.2 rounded-xs text-[10px] font-mono bg-[var(--c-surface-3)] text-[var(--c-fg-3)] border border-[var(--c-line-strong)]">
                       {copy.signals(result.trades.length)}
-                    </AkTag>
+                    </span>
                   )}
                 </div>
 

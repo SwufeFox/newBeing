@@ -1615,44 +1615,44 @@ export const BottomDock = memo(function BottomDock({
         }}>
           <TabsList className="dock-tabs flex items-center gap-1">
             {(workspace === "terminal" || workspace === "replay") && (
-              <TabsTrigger value="positions" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-bold uppercase tracking-wider">
-                <Wallet size={12} className="text-[var(--ak-signal-info)]" />
+              <TabsTrigger value="positions" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium tracking-normal">
+                <Wallet size={12} className="opacity-80" />
                 <span>{copy.tabPositions}</span>
               </TabsTrigger>
             )}
             {(workspace === "terminal" || workspace === "replay") && (
-              <TabsTrigger value="orders" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-bold uppercase tracking-wider">
-                <ListChecks size={12} className="text-[var(--ak-signal-action)]" />
+              <TabsTrigger value="orders" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium tracking-normal">
+                <ListChecks size={12} className="opacity-80" />
                 <span>{copy.tabOrders}</span>
               </TabsTrigger>
             )}
             {workspace === "research" && (
-              <TabsTrigger value="backtest" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-bold uppercase tracking-wider">
-                <FileText size={12} className="text-[var(--ak-signal-info)]" />
+              <TabsTrigger value="backtest" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium tracking-normal">
+                <FileText size={12} className="opacity-80" />
                 <span>{copy.tabResults}</span>
               </TabsTrigger>
             )}
             {workspace === "research" && (
-              <TabsTrigger value="sweep" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-bold uppercase tracking-wider">
-                <ScanSearch size={12} className="text-[var(--ak-signal-action)]" />
+              <TabsTrigger value="sweep" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium tracking-normal">
+                <ScanSearch size={12} className="opacity-80" />
                 <span>{copy.tabSweep}</span>
               </TabsTrigger>
             )}
             {workspace === "research" && (
-              <TabsTrigger value="evaluate" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-bold uppercase tracking-wider">
-                <FlaskConical size={12} className="text-[var(--ak-signal-success)]" />
+              <TabsTrigger value="evaluate" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium tracking-normal">
+                <FlaskConical size={12} className="opacity-80" />
                 <span>{copy.tabEvaluate}</span>
               </TabsTrigger>
             )}
             {workspace === "research" && (
-              <TabsTrigger value="history" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-bold uppercase tracking-wider">
-                <Clock3 size={12} className="text-[var(--ak-signal-info)]" />
+              <TabsTrigger value="history" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium tracking-normal">
+                <Clock3 size={12} className="opacity-80" />
                 <span>{copy.tabExperiments}</span>
               </TabsTrigger>
             )}
             {workspace === "research" && (
-              <TabsTrigger value="logs" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-bold uppercase tracking-wider">
-                <Boxes size={12} className="text-[var(--ak-text-secondary)]" />
+              <TabsTrigger value="logs" className="flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium tracking-normal">
+                <Boxes size={12} className="opacity-80" />
                 <span>{copy.tabExecution}</span>
               </TabsTrigger>
             )}

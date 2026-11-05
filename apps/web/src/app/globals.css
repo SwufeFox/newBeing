@@ -32,7 +32,7 @@
    wrong black". Point the ak tokens at the app ramp once, here, instead of
    overriding surface colours at forty call sites. Declared after the ak-ui import
    so it wins inside the same layer. */
-:root {
+::root {
   --ak-surface-canvas: var(--c-canvas);
   --ak-surface-sunken: var(--c-inset);
   --ak-surface-sunken-2: var(--c-surface-2);
@@ -41,6 +41,13 @@
   --ak-border: var(--c-line);
   --ak-border-subtle: var(--c-line-soft);
   --ak-border-strong: var(--c-line-strong);
+  --ak-signal-info: var(--c-accent);
+  --ak-signal-action: var(--c-warn);
+  --ak-signal-success: var(--c-up);
+  --ak-signal-danger: var(--c-down);
+  --ak-text-primary: var(--c-fg);
+  --ak-text-secondary: var(--c-fg-3);
+  --ak-text-disabled: var(--c-fg-4);
 }
 
 /* `.ak-tag` re-declares --ak-tag-surface inside its own rule, so a :root default
@@ -56,27 +63,26 @@
    ══════════════════════════════════════════════════════════════ */
 
 :root {
-  /* ---- palette (PRTS Design dark canon) ---- */
-  --c-canvas: #0f0f10;
-  --c-surface: #1a1b1c;
-  --c-surface-2: #232425;
-  --c-surface-3: #2d2e30;
-  --c-inset: #141516;
-  --c-line: #2f3133;
-  --c-line-soft: #262729;
-  --c-line-strong: #4a4c4f;
+  /* ---- palette (Calm Precision Financial Workstation) ---- */
+  --c-canvas: #090a0c;
+  --c-surface: #121417;
+  --c-surface-2: #171a1f;
+  --c-surface-3: #1f232a;
+  --c-inset: #0a0b0d;
+  --c-line: #1e2228;
+  --c-line-soft: #16181d;
+  --c-line-strong: #2c323b;
 
-  --c-fg: #f0f0f0;
-  --c-fg-2: #c9c9c9;
-  --c-fg-3: #8d8d8d;
-  --c-fg-4: #85868a; /* was #6f7071 (3.48:1 on the canvas) - lifted to 4.74:1 so the metadata it colors (quote time, statusbar, captions) stays legible at 10-11px. */
+  --c-fg: #e2e8f0;
+  --c-fg-2: #cbd5e1;
+  --c-fg-3: #94a3b8;
+  --c-fg-4: #64748b;
 
-  --c-accent: #18d1ff;
-  --c-accent-hover: #5ddcff;
-  --c-warn: #ffd802;
-  --c-up: #46c47c;
-  --c-down: #e33b3b;
-
+  --c-accent: #38bdf8;
+  --c-accent-hover: #7dd3fc;
+  --c-warn: #f59e0b;
+  --c-up: #10b981;
+  --c-down: #f43f5e;
   /* ---- type scale: SIX steps, nothing between ---- */
   --t-display: 44px;   /* the one loud number on screen */
   --t-h1: 20px;        /* plate title */
@@ -119,13 +125,13 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- dimensional elevation & tactile depth ---- */
-  --ak-shadow-deck: 0 6px 24px -2px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --ak-shadow-card: 0 3px 12px -1px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --ak-well-inset: inset 0 1px 3px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.04);
-  --ak-signal-glow: 0 0 14px -1px var(--ak-signal-info);
-  --ak-action-glow: 0 0 14px -1px var(--ak-signal-action);
-  --ak-success-glow: 0 0 14px -1px var(--ak-signal-success);
-  --ak-danger-glow: 0 0 14px -1px var(--ak-signal-danger);
+  --ak-shadow-deck: 0 4px 16px -2px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --ak-shadow-card: 0 2px 8px -1px rgba(0, 0, 0, 0.35);
+  --ak-well-inset: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ak-signal-glow: none;
+  --ak-action-glow: none;
+  --ak-success-glow: none;
+  --ak-danger-glow: none;
 
   color-scheme: dark;
 }
@@ -360,11 +366,11 @@ input[type="number"] {
   border: 1px solid transparent;
   background: transparent;
   color: var(--c-fg-3);
-  font-family: var(--f-display);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
+  font-family: var(--f-body);
+  font-size: var(--t-label);
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
   white-space: nowrap;
   cursor: pointer;
   transition: all 140ms var(--ease);
@@ -375,10 +381,10 @@ input[type="number"] {
   border-color: rgba(255, 255, 255, 0.1);
 }
 .workspace-tab.active {
-  background: rgba(255, 216, 2, 0.08) !important;
-  border-color: rgba(255, 216, 2, 0.45) !important;
-  color: var(--c-warn) !important;
-  box-shadow: inset 0 -2px 0 var(--c-warn), 0 0 16px rgba(255, 216, 2, 0.18);
+  background: var(--c-surface-2) !important;
+  border-color: var(--c-line-strong) !important;
+  color: var(--c-fg) !important;
+  box-shadow: inset 0 -2px 0 var(--c-accent) !important;
 }
 .workspace-tab:active:not(:disabled) { transform: scale(0.97); }
 .workspace-tab:disabled { color: var(--c-fg-4); cursor: not-allowed; }
@@ -501,10 +507,10 @@ input[type="number"] {
 .timeframe-selector button:hover:not(:disabled) { color: var(--c-fg); background: color-mix(in srgb, var(--mode) 14%, transparent); }
 .timeframe-selector button:active:not(:disabled) { transform: scale(0.95); }
 .timeframe-selector button.active {
-  color: var(--mode);
-  background: color-mix(in srgb, var(--mode) 18%, transparent);
-  box-shadow: inset 0 -2px 0 var(--mode);
-  font-weight: 700;
+  color: var(--c-fg);
+  background: var(--c-surface-3);
+  box-shadow: inset 0 -2px 0 var(--c-accent);
+  font-weight: 600;
 }
 .timeframe-selector button:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 
@@ -525,10 +531,12 @@ input[type="number"] {
   place-items: center;
   width: 16px;
   height: 16px;
-  background: #c99b25;
-  color: var(--c-canvas);
+  border-radius: 2px;
+  background: var(--c-surface-3);
+  border: 1px solid var(--c-line-strong);
+  color: var(--c-fg-2);
   font-size: var(--t-meta);
-  font-weight: 800;
+  font-weight: 700;
 }
 .exchange-select select {
   border: 0;
@@ -705,14 +713,10 @@ input[type="number"] {
   gap: var(--s-4);
   margin: var(--s-2) var(--s-3) 0;
   padding: 0 var(--s-3);
-  background: linear-gradient(180deg, rgba(28, 30, 32, 0.92) 0%, rgba(18, 19, 21, 0.96) 100%);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: var(--line) solid rgba(255, 255, 255, 0.1);
-  border-top: var(--line) solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 6px 24px -2px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: var(--c-surface);
+  border: var(--line) solid var(--c-line);
+  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.4);
 }
-
 .market-identity {
   display: flex;
   flex-direction: column;
@@ -1219,30 +1223,8 @@ input[type="number"] {
 }
 .chart-meta-left { display: flex; gap: var(--s-3); min-width: 0; overflow: hidden; white-space: nowrap; }
 .chart-stage { flex: 1 1 auto; min-height: 0; position: relative; }
-.chart-stage::before {
-  content: "";
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  width: 14px;
-  height: 14px;
-  border-top: 2px solid rgba(24, 209, 255, 0.45);
-  border-left: 2px solid rgba(24, 209, 255, 0.45);
-  pointer-events: none;
-  z-index: 5;
-}
-.chart-stage::after {
-  content: "";
-  position: absolute;
-  bottom: 24px;
-  right: 56px;
-  width: 14px;
-  height: 14px;
-  border-bottom: 2px solid rgba(24, 209, 255, 0.45);
-  border-right: 2px solid rgba(24, 209, 255, 0.45);
-  pointer-events: none;
-  z-index: 5;
-}
+.chart-stage::before { display: none; }
+.chart-stage::after { display: none; }
 .chart-canvas { position: absolute; inset: 0; }
 .chart-overlay, .chart-error {
   position: absolute;
@@ -1360,13 +1342,12 @@ input[type="number"] {
   border-left: 3px solid transparent;
   background: transparent;
   color: var(--c-fg-3);
-  font-family: var(--f-display);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--f-body);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
   text-align: left;
-  white-space: nowrap;
   cursor: pointer;
   transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease),
               border-color var(--dur) var(--ease);
@@ -1675,12 +1656,12 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .strategy-description strong {
   display: block;
   margin-bottom: var(--s-1);
-  color: var(--mode);
-  font-family: var(--f-display);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
+  color: var(--c-fg);
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .strategy-params { display: flex; flex-direction: column; }
@@ -2485,11 +2466,11 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
    ══════════════════════════════════════════════════════════════ */
 
 .nb-button {
-  font-family: var(--f-display);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border-radius: var(--r);
+  font-family: var(--f-body);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  border-radius: 2px;
   transition: filter var(--dur) var(--ease),
               transform var(--dur) var(--ease),
               box-shadow var(--dur) var(--ease),
@@ -2579,16 +2560,15 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   box-shadow: none;
 }
 .nb-button.ak-btn-variant-primary {
-  border: 0;
-  background: var(--c-accent);
-  color: var(--c-canvas);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3),
-              0 6px 18px color-mix(in srgb, var(--c-accent) 32%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 .nb-button.ak-btn-variant-primary:hover:not(:disabled) {
-  filter: brightness(1.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36),
-              0 8px 24px color-mix(in srgb, var(--c-accent) 44%, transparent);
+  background: #0369a1;
+  filter: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 .nb-button.ak-btn-variant-ghost {
   border: var(--line) solid var(--c-line);

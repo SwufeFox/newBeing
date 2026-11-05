@@ -2408,26 +2408,26 @@ export function Inspector({ workspace = "terminal", summary, summaryError, resul
       >
         <TabsList className="inspector-tab-list flex border-b border-[var(--ak-border-strong)] bg-[var(--ak-surface-sunken)]">
           {offered.includes("book") && (
-            <TabsTrigger value="book" aria-label={copy.ariaOrderBook} className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
-              <BookOpen size={13} className="mr-1 text-[var(--ak-signal-info)]" />
+            <TabsTrigger value="book" aria-label={copy.ariaOrderBook} className="flex-1 py-2 text-xs font-medium tracking-normal">
+              <BookOpen size={13} className="mr-1.5 opacity-80" />
               <span>{copy.tabBook}</span>
             </TabsTrigger>
           )}
           {offered.includes("trades") && (
-            <TabsTrigger value="trades" aria-label={copy.ariaRecentTrades} className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
-              <History size={13} className="mr-1 text-[var(--ak-signal-action)]" />
+            <TabsTrigger value="trades" aria-label={copy.ariaRecentTrades} className="flex-1 py-2 text-xs font-medium tracking-normal">
+              <History size={13} className="mr-1.5 opacity-80" />
               <span>{copy.tabTrades}</span>
             </TabsTrigger>
           )}
           {offered.includes("strategy") && (
-            <TabsTrigger value="strategy" aria-label={copy.ariaStrategyLab} className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
-              <Layers3 size={13} className="mr-1 text-[var(--ak-signal-info)]" />
+            <TabsTrigger value="strategy" aria-label={copy.ariaStrategyLab} className="flex-1 py-2 text-xs font-medium tracking-normal">
+              <Layers3 size={13} className="mr-1.5 opacity-80" />
               <span>{copy.tabStrategy}</span>
             </TabsTrigger>
           )}
           {offered.includes("context") && (
-            <TabsTrigger value="context" aria-label={copy.ariaAiContext} className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
-              <Braces size={13} className="mr-1 text-[var(--ak-signal-info)]" />
+            <TabsTrigger value="context" aria-label={copy.ariaAiContext} className="flex-1 py-2 text-xs font-medium tracking-normal">
+              <Braces size={13} className="mr-1.5 opacity-80" />
               <span>{copy.tabAi}</span>
             </TabsTrigger>
           )}
