@@ -1649,7 +1649,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                     disabled={busy || blocked || !account}
                     onClick={() => stepContracts(-1)}
                     aria-label={copy.decreaseContracts}
-                    className="px-2.5 py-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken-2)] active:scale-95 text-xs text-[var(--ak-text-primary)] font-mono select-none"
+                    className="min-h-[44px] min-w-[44px] px-2.5 py-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken-2)] active:scale-95 text-xs text-[var(--ak-text-primary)] font-mono select-none"
                   >
                     -
                   </button>
@@ -1658,7 +1658,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                     disabled={busy || blocked || !account}
                     onClick={() => stepContracts(1)}
                     aria-label={copy.increaseContracts}
-                    className="px-2.5 py-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken-2)] active:scale-95 text-xs text-[var(--ak-text-primary)] font-mono select-none"
+                    className="min-h-[44px] min-w-[44px] px-2.5 py-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken-2)] active:scale-95 text-xs text-[var(--ak-text-primary)] font-mono select-none"
                   >
                     +
                   </button>
@@ -1672,7 +1672,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                         type="button"
                         disabled={busy || blocked}
                         onClick={() => sizeDerivativesBudget(fraction)}
-                        className="flex-1 py-0.5 px-1 bg-[var(--ak-surface-sunken)] border border-[var(--c-line)] hover:border-[var(--c-accent)] active:scale-95 text-[10px] font-mono text-[var(--c-fg-2)] transition-transform"
+                        className="min-h-[44px] flex-1 py-0.5 px-1 bg-[var(--ak-surface-sunken)] border border-[var(--c-line)] hover:border-[var(--c-accent)] active:scale-95 text-[10px] font-mono text-[var(--c-fg-2)] transition-transform"
                       >
                         {fraction === 1 ? copy.max : `${fraction * 100}%`}
                       </button>
@@ -1694,7 +1694,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                         type="button"
                         disabled={busy || blocked}
                         onClick={() => setLeverage(String(lev))}
-                        className={`flex-1 py-0.5 text-[10px] font-mono border transition-transform active:scale-95 ${Number(leverage) === lev ? "border-[var(--c-accent)] text-[var(--c-accent)] bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)] font-bold" : "border-[var(--c-line)] text-[var(--c-fg-3)] hover:text-[var(--c-fg)]"}`}
+                        className={`min-h-[44px] flex-1 py-0.5 text-[10px] font-mono border transition-transform active:scale-95 ${Number(leverage) === lev ? "border-[var(--c-accent)] text-[var(--c-accent)] bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)] font-bold" : "border-[var(--c-line)] text-[var(--c-fg-3)] hover:text-[var(--c-fg)]"}`}
                       >
                         {lev}x
                       </button>
@@ -1716,7 +1716,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                           setMaximumPrice(String(quote.bid));
                         }
                       }}
-                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-up)] font-mono text-[10px] active:scale-95 transition-transform disabled:opacity-40"
+                      className="min-h-[44px] px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-up)] font-mono text-[10px] active:scale-95 transition-transform disabled:opacity-40"
                       title={copy.fillWithBid}
                     >
                       {copy.bidButton(derivativeNumber(quote.bid))}
@@ -1729,7 +1729,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                           setMaximumPrice(String(quote.mark));
                         }
                       }}
-                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-fg-2)] font-mono text-[10px] active:scale-95 transition-transform disabled:opacity-40"
+                      className="min-h-[44px] px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-fg-2)] font-mono text-[10px] active:scale-95 transition-transform disabled:opacity-40"
                       title={copy.fillWithMark}
                     >
                       {copy.markButton(derivativeNumber(quote.mark))}
@@ -1742,7 +1742,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                           setMaximumPrice(String(quote.ask));
                         }
                       }}
-                      className="px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-down)] font-mono text-[10px] active:scale-95 transition-transform disabled:opacity-40"
+                      className="min-h-[44px] px-1.5 py-0.5 border border-[var(--c-line)] hover:border-[var(--c-accent)] text-[var(--c-down)] font-mono text-[10px] active:scale-95 transition-transform disabled:opacity-40"
                       title={copy.fillWithAsk}
                     >
                       {copy.askButton(derivativeNumber(quote.ask))}

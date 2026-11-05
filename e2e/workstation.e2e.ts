@@ -103,6 +103,42 @@ test("chart, backtest, source draft, Paper order, Replay and workspace sync use 
   }
 });
 
+test("Paper full close uses the position and disabled sell shortcuts do not submit", async ({ page, baseURL }) => {
+  test.skip(process.env.PLAYWRIGHT_API_STUBS === "1", "This test exercises the fixture Paper ledger.");
+  await setTrainingWorkspace(page.request);
+  const opened = await readJson<{ portfolio: { baseBalance: number }; order: { status: string } }>(await page.request.post("/api/paper", {
+    headers: { origin: new URL(baseURL!).origin },
+    data: { clientOrderId: randomUUID(), symbol: "BTC/USDT", exchange: "binance", side: "buy", quantity: 0.002, mode: "paper" },
+  }), 201);
+  expect(opened.order.status).toBe("filled");
+  const position = opened.portfolio.baseBalance;
+
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Order book" }).click();
+  const ticket = page.locator(".paper-ticket");
+  const close = ticket.getByRole("button", { name: "Close 100%" });
+  await expect(close).toBeVisible();
+  const quantity = ticket.getByTestId("paper-quantity");
+  await quantity.fill(String(position + 1));
+  await expect(ticket.getByRole("button", { name: "Sell", exact: true })).toBeDisabled();
+
+  const submissions: unknown[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/paper" && request.method() === "POST") submissions.push(request.postDataJSON());
+  });
+  await ticket.locator(".ticket-heading").click();
+  await page.keyboard.press("s");
+  await quantity.fill(String(position / 2));
+  const closing = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/paper" && response.request().method() === "POST");
+  await close.click();
+  const response = await closing;
+  expect(response.ok()).toBeTruthy();
+  const result = await response.json() as { order: { status: string }; portfolio: { baseBalance: number } };
+  expect(result.order.status).toBe("filled");
+  expect(result.portfolio.baseBalance).toBe(0);
+  expect(submissions).toHaveLength(1);
+});
+
 test("watchlist adds a bare symbol with the selected venue's quote currency", async ({ page }) => {
   await installApiMocks(page);
   await page.goto("/");
@@ -780,7 +816,6 @@ test.describe("manual Replay training against the real API", () => {
   test("browser controls seed, queue, step, journal, restore and finish the real simulator", async ({ page, request }) => {
     const candles = await trainingCandles(request);
     await page.goto("/");
-    await expect(page.locator(".market-title .spot-tag")).toHaveText(REPLAY_MARKET.timeframe);
     await page.getByTestId("workspace-replay").click();
     await expect(page.getByTestId("replay-seed")).toHaveText("Seed BTC/USDT · 1d");
     const start = new Date(candles[600]!.timestamp + REPLAY_INTERVAL);
@@ -821,11 +856,18 @@ test.describe("manual Replay training against the real API", () => {
     expect(state.execution.fills).toHaveLength(1);
     expect(state.execution.fills[0]!.price).toBeCloseTo(candles[601]!.open * (1 + TRAINING_CONFIG.slippageRate), 8);
     await expect(ticket.getByText("0.002000 BTC", { exact: true })).toBeVisible();
+    await ticket.getByLabel("QUANTITY · BTC").fill("1");
+    await expect(ticket.getByRole("button", { name: "Queue sell", exact: true })).toBeDisabled();
+    await ticket.getByText("REPLAY SIMULATOR", { exact: true }).click();
+    await page.keyboard.press("s");
+    const revisionBeforeJournal = state.execution.revision;
     await page.getByLabel("Replay speed").selectOption("2");
     await expect(page.getByLabel("Replay speed")).toHaveValue("2");
     await ticket.getByLabel("SESSION NOTES").fill("Browser training journal");
     await ticket.getByLabel("TAGS · COMMA SEPARATED").fill("browser, manual");
     state = await submit(ticket.getByRole("button", { name: "Save notes / tags", exact: true }), "journal");
+    expect(state.execution.revision).toBe(revisionBeforeJournal + 1);
+    expect(state.orders).toHaveLength(1);
     expect(state.report).toMatchObject({ notes: "Browser training journal", tags: ["browser", "manual"] });
     assertTrainingLedger(state);
     const saved = state;

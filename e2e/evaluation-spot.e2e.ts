@@ -342,7 +342,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
         await ticket.getByRole("button", { name: "Refresh shared account", exact: true }).click();
         const staleResponse = await stale.response();
         expect((await readJson<{ account: SpotAccount }>(staleResponse)).account.id).toBe(first.account.id);
-        await page.getByLabel("Exchange", { exact: true }).selectOption("kraken");
+        await page.getByRole("banner").getByLabel("Exchange", { exact: true }).selectOption("kraken");
         const nextResponse = await next.response();
         const current = await readJson<{ account: SpotAccount | null }>(nextResponse);
         await expect(ticket).toContainText("Shared spot · kraken · USD");

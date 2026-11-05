@@ -19,14 +19,10 @@
    ============================================================ */
 
 @import "./fonts.css";
-/* ak-ui ships unlayered rules that pin every button to height:50px /
-   min-width:120px / font-size:1rem. Unlayered CSS beats *all* layered CSS
-   regardless of specificity, so with Tailwind 4 (which emits its utilities into
-   @layer utilities) every `h-7 text-xs` on a button was silently a no-op and the
-   controls overrode the dense workstation grid. Declaring a named layer before
-   Tailwind puts ak-ui underneath the utilities, where the existing call sites'
-   intent starts working again. */
-@layer ak-ui, theme, base, components, utilities;
+/* Place Tailwind's reset below ak-ui, so it cannot erase field borders and
+   backgrounds. Keep ak-ui below utilities so compact workstation controls
+   can still override the library's default sizes. */
+@layer theme, base, ak-ui, components, utilities;
 @import "@swufefox/ak-ui-react/style.css" layer(ak-ui);
 @import "tailwindcss";
 
@@ -2082,8 +2078,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .dock-toolbar {
   display: flex;
   align-items: stretch;
-  flex: 0 0 var(--head-h);
-  height: var(--head-h);
+  flex: 0 0 auto;
+  height: auto;
   min-height: var(--head-h);
   padding: 0 var(--s-3) 0 0;
   background: var(--c-surface-2);
@@ -2098,16 +2094,17 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .dock-tabs {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   flex: 1 1 auto;
   min-width: 0;
-  height: 100%;
+  height: auto;
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .dock-tabs .tab-trigger {
   justify-content: center;
-  height: 100%;
-  min-height: 0;
+  height: auto;
+  min-height: var(--head-h);
   padding: 0 var(--s-3);
   border-left: 0;
   border-top: 0;
@@ -2764,6 +2761,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
      scrolls. */
   .chart-column > .chart-host { min-height: 300px; }
   .dock-slot { min-height: 220px; }
+  /* Wrapped Research tabs need room above the results on a phone. */
+  .mode-research .dock-slot { min-height: 360px; }
   .run-status { display: none; }
   .statusbar > div:last-child { display: none; }
 }
@@ -2828,17 +2827,20 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   align-items: stretch;
   flex: 1 1 auto;
   min-width: 0;
-  height: 100%;
+  height: auto;
   gap: 0;
 }
 .dock-toolbar [role="tablist"] > [role="tab"] {
   display: flex;
-  flex: 0 1 auto;
+  flex: 1 0 120px;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  min-height: 0;
-  min-width: 0;
+  height: auto;
+  min-height: var(--head-h);
+  min-width: max-content;
+}
+@media (max-width: 920px), (hover: none), (pointer: coarse) {
+  .dock-toolbar [role="tablist"] > [role="tab"] { min-height: 44px; }
 }
 
 .inspector-tab-list[role="tablist"] {
@@ -3585,6 +3587,18 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
    the row it sits in. */
 .ticket-actions { min-height: 38px; }
 
+@media (max-width: 920px), (hover: none), (pointer: coarse) {
+  .paper-ticket .ticket-close-full,
+  .paper-ticket .ticket-sizing-toggle,
+  .paper-ticket .ticket-percent,
+  .paper-ticket .ticket-actions button { min-width: 44px; min-height: 44px; }
+  .paper-ticket .ticket-stepper { height: 46px; }
+  .paper-ticket .ticket-stepper button { min-width: 44px; }
+  .replay-ticket .replay-order-grid { grid-template-columns: minmax(0, 1fr); }
+  .replay-ticket .ticket-field .ak-select,
+  .replay-ticket .ticket-field > .ak-input { min-height: 44px; height: 44px; }
+}
+
 /* ?? three cosmetic defects caught in the final screenshot ???????????
 
    1. The instrument cell is display:flex with align-items:baseline, but the
@@ -3926,6 +3940,10 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .derivatives-ticket .field .ak-input { width: 100%; }
 .derivatives-ticket .ak-select,
 .derivatives-ticket .ak-input { min-height: 30px; font-size: var(--t-label); }
+@media (max-width: 920px), (hover: none), (pointer: coarse) {
+  .derivatives-panel .ak-input,
+  .derivatives-panel .ak-select { min-height: 44px; height: 44px; }
+}
 .derivatives-ticket-note {
   border-left: var(--bar) solid var(--c-line-strong);
   padding: var(--s-1) var(--s-2);

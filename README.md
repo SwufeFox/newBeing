@@ -31,11 +31,11 @@ The local execution policy, funding coverage, expiry handling and research bound
 
 ## Workspace controls
 
-- **Markets:** Enter a base symbol to use the selected venue’s default quote, or enter an explicit `BASE/QUOTE` pair.
+- **Markets:** Enter a base symbol to use the selected venue’s default quote, or enter an explicit `BASE/QUOTE` pair. In the legacy pair wallet, **Close 100%** sells the full current position; the `B` and `S` shortcuts follow the corresponding ticket buttons’ availability.
 - **Derivatives:** Paper actions stay paused until a filtered instrument is selected and a fresh quote is available.
 - **Replay:** Use the single speed selector or press Space to play/pause, Right Arrow or N to step, and comma/period or `<`/`>` to change speed. Controls reflow on narrow screens.
 - **History:** A row in the research rail loads that saved run into the chart and the Results panel. The list is suppressed while a frozen Replay owns the workspace, because saved results can encode future bars.
-- **Layout:** Panel widths and the bottom dock height are reset from **Workstation settings**, together with the language and colour preferences.
+- **Layout:** Panel widths and the bottom dock height are reset from **Workstation settings**, together with the language and colour preferences. Research dock tabs wrap on narrow layouts so their labels remain readable.
 
 ## Settings, language and accessibility
 

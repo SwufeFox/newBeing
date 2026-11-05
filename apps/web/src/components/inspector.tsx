@@ -832,6 +832,8 @@ function PaperTicket({
   const [notice, setNotice] = useState<string | null>(null);
   const mode = useWorkspaceStore((state) => state.mode);
   const number = Number(quantity);
+  const canBuy = mode === "paper" && !busy && Number.isFinite(number) && number > 0;
+  const canSell = canBuy && portfolio !== null && number <= portfolio.baseBalance;
   const referencePrice = prefilledPrice ?? summary?.last ?? null;
   const quote = symbol.split("/")[1] ?? "USDT";
   const base = symbol.split("/")[0] ?? "BTC";
@@ -882,7 +884,7 @@ function PaperTicket({
     }
   };
 
-  const submit = async (side: "buy" | "sell"): Promise<void> => {
+  const submit = async (side: "buy" | "sell", orderQuantity = number): Promise<void> => {
     const text = translate(INSPECTOR_COPY);
     setBusy(true);
     setError(null);
@@ -892,7 +894,7 @@ function PaperTicket({
       const response = await fetch("/api/paper", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientOrderId, symbol, side, quantity: number, mode: "paper", exchange }),
+        body: JSON.stringify({ clientOrderId, symbol, side, quantity: orderQuantity, mode: "paper", exchange }),
       });
       const payload: unknown = await response.json();
       if (!response.ok && response.status !== 202) {
@@ -922,12 +924,12 @@ function PaperTicket({
 
   useEffect(() => {
     const handleBuy = () => {
-      if (mode === "paper" && !busy && Number(quantity) > 0) {
+      if (canBuy) {
         void submitRef.current("buy");
       }
     };
     const handleSell = () => {
-      if (mode === "paper" && !busy && portfolio && portfolio.baseBalance > 0) {
+      if (canSell) {
         void submitRef.current("sell");
       }
     };
@@ -937,7 +939,7 @@ function PaperTicket({
       window.removeEventListener("newbeing:hotkey-buy", handleBuy);
       window.removeEventListener("newbeing:hotkey-sell", handleSell);
     };
-  }, [mode, busy, quantity, portfolio]);
+  }, [canBuy, canSell]);
 
   // Quick percentage calculators for supreme tactile feel
   const applyPercent = (pct: number, side: "buy" | "sell"): void => {
@@ -1001,9 +1003,9 @@ function PaperTicket({
                 disabled={busy}
                 onClick={() => {
                   setQuantity(activePortfolio.baseBalance.toString());
-                  void submit("sell");
+                  void submit("sell", activePortfolio.baseBalance);
                 }}
-                className="text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
+                className="ticket-close-full text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
                 title={copy.closeFullHint}
               >
                 {copy.closeFull}
@@ -1064,7 +1066,7 @@ function PaperTicket({
             type="button"
             aria-label={copy.toggleSizingSide}
             onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
-            className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
+            className="ticket-sizing-toggle text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
             title={copy.sizingHint}
           >
             {sizingSide === "buy" ? copy.sizingBuy : copy.sizingSell}
@@ -1076,7 +1078,7 @@ function PaperTicket({
               key={pct}
               type="button"
               onClick={() => applyPercent(pct, sizingSide)}
-              className="tactile-chip text-[10px] py-1 text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] cursor-pointer font-mono font-bold text-center select-none"
+              className="ticket-percent tactile-chip text-[10px] py-1 text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] cursor-pointer font-mono font-bold text-center select-none"
               title={copy.setPercent(String(pct * 100), sizingSide)}
             >
               {pct === 1 ? copy.max : `${pct * 100}%`}
@@ -1128,7 +1130,7 @@ function PaperTicket({
           data-testid="paper-buy"
           variant="primary"
           size="sm"
-          disabled={busy || !Number.isFinite(number) || number <= 0 || mode !== "paper"}
+          disabled={!canBuy}
           onClick={() => void submit("buy")}
           icon={<TrendingUp size={13} />}
           style={{ background: "var(--c-up)", color: "#000" }}
@@ -1139,7 +1141,7 @@ function PaperTicket({
         <Button
           variant="danger"
           size="sm"
-          disabled={busy || !Number.isFinite(number) || number <= 0 || !activePortfolio || number > activePortfolio.baseBalance || mode !== "paper"}
+          disabled={!canSell}
           onClick={() => void submit("sell")}
           icon={<TrendingDown size={13} />}
           style={{ background: "var(--c-down)", color: "#000" }}
@@ -1218,6 +1220,13 @@ function ReplayTicket({
   const [tags, setTags] = useState(execution?.tags.join(", ") ?? "");
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [ticketNotice, setTicketNotice] = useState<string | null>(null);
+  const size = Number(quantity);
+  const current = session?.bars.at(-1);
+  const triggerPrice = Number(trigger);
+  const canBuy = !!session && session.status === "active" && !!portfolio && !!current && !busy &&
+    Number.isFinite(size) && size > 0 &&
+    (orderType === "market" || (Number.isFinite(triggerPrice) && triggerPrice > 0));
+  const canSell = canBuy && !!portfolio && size <= portfolio.baseBalance;
 
   const submit = (side: "buy" | "sell"): void => {
     const text = translate(INSPECTOR_COPY);
@@ -1249,12 +1258,12 @@ function ReplayTicket({
 
   useEffect(() => {
     const handleBuy = () => {
-      if (session?.status === "active" && !busy && Number(quantity) > 0) {
+      if (canBuy) {
         submitRef.current("buy");
       }
     };
     const handleSell = () => {
-      if (session?.status === "active" && !busy && portfolio && portfolio.baseBalance > 0) {
+      if (canSell) {
         submitRef.current("sell");
       }
     };
@@ -1264,10 +1273,7 @@ function ReplayTicket({
       window.removeEventListener("newbeing:hotkey-buy", handleBuy);
       window.removeEventListener("newbeing:hotkey-sell", handleSell);
     };
-  }, [session, busy, quantity, portfolio, orderType, trigger, stopLoss, takeProfit]);
-
-  const size = Number(quantity);
-  const current = session?.bars.at(-1);
+  }, [canBuy, canSell]);
   const unrealized = portfolio && current && portfolio.averageEntryPrice !== null
     ? portfolio.baseBalance * (current.close - portfolio.averageEntryPrice)
     : 0;
@@ -1372,7 +1378,7 @@ function ReplayTicket({
                     window.setTimeout(() => setTicketNotice(null), 3000);
                   });
                 }}
-                className="text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
+                className="ticket-close-full text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
                 title={copy.queueCloseHint}
               >
                 {copy.closeFull}
@@ -1403,7 +1409,7 @@ function ReplayTicket({
         <strong className="text-xs text-[var(--ak-text-primary)] font-bold tabular-nums hover:underline">{price(current.close)} {quote}</strong>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="replay-order-grid grid grid-cols-2 gap-2">
         <label className="ticket-field flex flex-col gap-1">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">{copy.orderType}</span>
           <AkSelect
@@ -1430,7 +1436,7 @@ function ReplayTicket({
               type="button"
               aria-label={copy.toggleReplaySizingSide}
               onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
-              className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
+              className="ticket-sizing-toggle text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
               title={copy.sizingHint}
             >
               {sizingSide === "buy" ? copy.sizingBuy : copy.sizingSell}
@@ -1442,7 +1448,7 @@ function ReplayTicket({
                 key={pct}
                 type="button"
                 onClick={() => applyPercent(pct, sizingSide)}
-                className="text-[10px] py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] active:scale-95 transition-all cursor-pointer font-mono font-bold text-center"
+                className="ticket-percent text-[10px] py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] active:scale-95 transition-all cursor-pointer font-mono font-bold text-center"
                 title={copy.setPercent(String(pct * 100), sizingSide)}
               >
                 {pct === 1 ? copy.max : `${pct * 100}%`}
@@ -1531,13 +1537,7 @@ function ReplayTicket({
         <Button
           variant="primary"
           size="sm"
-          disabled={
-            busy ||
-            session.status !== "active" ||
-            !Number.isFinite(size) ||
-            size <= 0 ||
-            (orderType !== "market" && (!Number.isFinite(Number(trigger)) || Number(trigger) <= 0))
-          }
+          disabled={!canBuy}
           onClick={() => submit("buy")}
           onMouseEnter={() => setSizingSide("buy")}
           icon={<TrendingUp size={13} />}
@@ -1548,14 +1548,7 @@ function ReplayTicket({
         <Button
           variant="danger"
           size="sm"
-          disabled={
-            busy ||
-            session.status !== "active" ||
-            !Number.isFinite(size) ||
-            size <= 0 ||
-            size > portfolio.baseBalance ||
-            (orderType !== "market" && (!Number.isFinite(Number(trigger)) || Number(trigger) <= 0))
-          }
+          disabled={!canSell}
           onClick={() => submit("sell")}
           onMouseEnter={() => setSizingSide("sell")}
           icon={<TrendingDown size={13} />}

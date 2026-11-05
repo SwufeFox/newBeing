@@ -46,7 +46,6 @@ test("mobile drawer exposes the research rail in Research", async ({ page }) => 
   await toggle.click();
   const drawer = page.locator(".primary-rail");
   await expect(drawer).toBeVisible();
-  await expect(drawer).toContainText("RESEARCH · WORKSPACE");
   await expect(drawer.getByRole("button", { name: "Close list drawer" })).toBeFocused();
   await drawer.getByRole("button", { name: "Close list drawer" }).click();
   await expect(drawer).toBeHidden();

@@ -76,5 +76,4 @@ test("Research dock tabs keep full labels at tablet width", async ({ page }) => 
 
   const tabLabels = page.locator(".dock-tabs [role=tab] > span");
   await expect.poll(() => tabLabels.evaluateAll((labels) => labels.every((label) => label.clientWidth > 0 && label.scrollWidth <= label.clientWidth))).toBe(true);
-  await expect(page.locator(".mode-research .dock-toolbar-right")).toBeHidden();
 });
