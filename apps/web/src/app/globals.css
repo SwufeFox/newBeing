@@ -3512,6 +3512,21 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   flex: 0 0 auto;
   min-height: 0;
 }
+/* The ticket's primary action stays reachable while its own fields scroll:
+   on a 900px-tall window the ticket is taller than the column it sits in, and
+   Buy/Sell used to sit below the fold with nothing indicating they existed.
+   Scoped to the bounded desktop column — on a phone the ticket simply flows
+   down the page and a sticky bar would fight the fixed mode nav. */
+@media (min-width: 921px) and (hover: hover) and (pointer: fine) {
+  .inspector-panel .ticket-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    padding-bottom: var(--s-1);
+    background: var(--c-canvas);
+  }
+}
+
 /* The tab rail stretches with the frame but never past it, and it scrolls
    its own overflow so a long tab name cannot widen the column. */
 .inspector-tab-list {
