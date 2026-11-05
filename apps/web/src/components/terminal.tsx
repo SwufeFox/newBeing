@@ -308,14 +308,6 @@ interface PanelCopy {
   historySuppressed: string;
   noRuns: string;
   strategies: string;
-  session: string;
-  state: string;
-  barsRevealed: string;
-  speed: string;
-  window: string;
-  playing: string;
-  paused: string;
-  idle: string;
   buildStrategy: string;
   buildStrategyHint: (symbol: string, timeframe: string) => string;
   backtestErrorTitle: string;
@@ -365,14 +357,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     historySuppressed: "History suppressed during Replay.",
     noRuns: "No saved runs yet.",
     strategies: "STRATEGIES",
-    session: "SIMULATION SESSION",
-    state: "STATE",
-    barsRevealed: "BARS REVEALED",
-    speed: "SPEED",
-    window: "WINDOW",
-    playing: "PLAYING",
-    paused: "PAUSED",
-    idle: "IDLE",
     buildStrategy: "Build strategy",
     buildStrategyHint: (symbol, timeframe) => `Continue to Research with ${symbol} on ${timeframe}`,
     backtestErrorTitle: "Backtest Simulation Error",
@@ -418,14 +402,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     historySuppressed: "回放期间不显示历史。",
     noRuns: "暂无保存的运行。",
     strategies: "策略",
-    session: "模拟会话",
-    state: "状态",
-    barsRevealed: "已揭示 K 线",
-    speed: "速度",
-    window: "区间",
-    playing: "播放中",
-    paused: "已暂停",
-    idle: "空闲",
     buildStrategy: "构建策略",
     buildStrategyHint: (symbol, timeframe) => `以 ${symbol} 的 ${timeframe} 周期进入研究`,
     backtestErrorTitle: "回测模拟失败",
@@ -1013,44 +989,6 @@ function RailStrategyRosterContent(): React.JSX.Element {
 }
 
 const RailStrategyRoster = memo(RailStrategyRosterContent);
-
-function RailReplayState({ session, playing, speed }: { session: ReplaySession | null; playing: boolean; speed: number }): React.JSX.Element {
-  const copy = useCopy(PANEL_COPY);
-  const bars = session?.bars ?? [];
-  const first = bars[0];
-  const last = bars.at(-1);
-  const range = first && last
-    ? `${new Date(first.timestamp).toISOString().slice(5, 10)} → ${new Date(last.timestamp).toISOString().slice(5, 10)}`
-    : null;
-
-  return (
-    <div className="rail-block font-mono text-xs">
-      <span className="rail-block-head text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)] block">
-        {copy.session}
-      </span>
-      <div className="rail-facts compact space-y-1 mt-1 p-2 bg-[var(--ak-surface-sunken)] text-[11px]">
-        <div className="flex justify-between">
-          <span className="text-[var(--ak-text-secondary)]">{copy.state}</span>
-          <strong className={playing ? "text-[var(--ak-signal-success)] font-bold" : ""}>{session ? (playing ? copy.playing : copy.paused) : copy.idle}</strong>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-[var(--ak-text-secondary)]">{copy.barsRevealed}</span>
-          <strong>{bars.length || "—"}</strong>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-[var(--ak-text-secondary)]">{copy.speed}</span>
-          <strong>{speed}×</strong>
-        </div>
-        {range && (
-          <div className="flex justify-between">
-            <span className="text-[var(--ak-text-secondary)]">{copy.window}</span>
-            <strong className="rail-range text-[10px]">{range}</strong>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export function Terminal(): React.JSX.Element {
   const router = useRouter();
@@ -1842,11 +1780,6 @@ export function Terminal(): React.JSX.Element {
             )}
             <RailStrategyRoster />
             <RailRunHistory />
-          </div>
-        )}
-        {workspace === "replay" && sidebarOpen && (
-          <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label={copy.activeWorkspace}>
-            <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />
           </div>
         )}
 
