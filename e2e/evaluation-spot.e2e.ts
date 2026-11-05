@@ -428,6 +428,8 @@ test.describe("evaluation and shared spot browser regressions", () => {
     await panel.getByRole("button", { name: "Copy Tactical Briefing" }).click();
     const replayBriefing = await page.evaluate(() => navigator.clipboard.readText());
     expect(replayBriefing).toContain("Backtest results are hidden during Replay.");
+    expect(replayBriefing).toContain("Market quote: unavailable during Replay.");
+    expect(replayBriefing).not.toContain("Latest Price");
     expect(replayBriefing).not.toContain(result.resultId);
     expect(replayBriefing).not.toContain(result.datasetId);
 

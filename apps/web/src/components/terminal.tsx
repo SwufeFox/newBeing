@@ -1877,6 +1877,7 @@ export function Terminal(): React.JSX.Element {
               <Inspector
                 workspace={workspace}
                 summary={workspace === "replay" ? null : summary}
+                summaryError={workspace === "replay" ? null : summaryError}
                 result={workspace === "replay" ? null : result}
                 running={running}
                 replayMode={workspace === "replay"}

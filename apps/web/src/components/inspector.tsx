@@ -63,6 +63,10 @@ interface InspectorCopy {
   aiModeRaw: string;
   activeAsset: string;
   activeStrategy: string;
+  quoteTime: string;
+  quoteTimeUnavailable: string;
+  quoteStale: string;
+  quoteUnavailable: string;
   backtestStatus: string;
   noBacktestPrompt: string;
   replayBacktestHidden: string;
@@ -229,6 +233,10 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     aiModeRaw: "Raw Schema",
     activeAsset: "ACTIVE ASSET",
     activeStrategy: "ACTIVE STRATEGY",
+    quoteTime: "Quote time (UTC)",
+    quoteTimeUnavailable: "unavailable",
+    quoteStale: "STALE · LAST UPDATE FAILED",
+    quoteUnavailable: "QUOTE UNAVAILABLE · UPDATE FAILED",
     backtestStatus: "SELECTED BACKTEST",
     noBacktestPrompt: "No backtest loaded. Run or select a backtest to see its results.",
     replayBacktestHidden: "Backtest results are hidden during Replay.",
@@ -390,6 +398,10 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     aiModeRaw: "原始上下文",
     activeAsset: "当前标的",
     activeStrategy: "当前策略",
+    quoteTime: "行情时间（UTC）",
+    quoteTimeUnavailable: "不可用",
+    quoteStale: "行情过期 · 更新失败",
+    quoteUnavailable: "行情不可用 · 更新失败",
     backtestStatus: "已选回测",
     noBacktestPrompt: "暂无回测数据。运行或选择回测后可查看结果。",
     replayBacktestHidden: "回放期间隐藏回测结果。",
@@ -521,6 +533,7 @@ function price(value: number | null | undefined): string {
 interface InspectorProps {
   workspace?: "terminal" | "research" | "replay";
   summary: MarketSummary | null;
+  summaryError: string | null;
   result: BacktestResult | null;
   running: boolean;
   replayMode: boolean;
@@ -824,7 +837,7 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
   );
 }
 
-function WorkspaceContext({ summary, result, replayMode }: { summary: MarketSummary | null; result: BacktestResult | null; replayMode: boolean }): React.JSX.Element {
+function WorkspaceContext({ summary, summaryError, result, replayMode }: { summary: MarketSummary | null; summaryError: string | null; result: BacktestResult | null; replayMode: boolean }): React.JSX.Element {
   const copy = useCopy(INSPECTOR_COPY);
   const [subTab, setSubTab] = useState<"briefing" | "prompts" | "factor" | "raw">("briefing");
   const [promptType, setPromptType] = useState<"hypothesis" | "factor" | "audit" | "risk">("hypothesis");
@@ -846,6 +859,9 @@ function WorkspaceContext({ summary, result, replayMode }: { summary: MarketSumm
   const backtest = !replayMode && state.activeWorkspace !== "replay" && result?.resultId === state.activeBacktestId ? result : null;
   const strategyParameters = useWorkspaceStore((s) => s.strategyParameters);
   const backtestConfig = useWorkspaceStore((s) => s.backtestConfig);
+  const timestamp = summary?.timestamp;
+  const quoteDate = typeof timestamp === "number" && Number.isFinite(timestamp) ? new Date(timestamp) : null;
+  const quoteTime = quoteDate && Number.isFinite(quoteDate.getTime()) ? quoteDate.toISOString() : null;
 
   const handleCopy = async (text: string, kind: string): Promise<void> => {
     try {
@@ -901,7 +917,10 @@ function WorkspaceContext({ summary, result, replayMode }: { summary: MarketSumm
       `# PRTS Tactical Briefing: ${state.symbol} (${exchangeLabel(state.exchange)})`,
       `- Timeframe: ${state.timeframe}`,
       `- Active Workspace: ${state.activeWorkspace.toUpperCase()}`,
-      `- Current Price: ${summary?.last != null ? price(summary.last) : "N/A"} (${summary?.changePct24h != null ? `${summary.changePct24h >= 0 ? "+" : ""}${summary.changePct24h.toFixed(2)}%` : "N/A"})`,
+      ...(replayMode ? ["- Market quote: unavailable during Replay."] : summary ? [
+        `- Latest Price${summaryError ? " (STALE; last refresh failed)" : ""}: ${summary.last != null ? price(summary.last) : "N/A"} (${summary.changePct24h != null ? `${summary.changePct24h >= 0 ? "+" : ""}${summary.changePct24h.toFixed(2)}%` : "N/A"})`,
+        `- Quote time (UTC): ${quoteTime ?? "unavailable"}`,
+      ] : [`- Market quote: unavailable${summaryError ? " (last refresh failed)" : ""}.`]),
       `- Active Strategy: ${state.selectedStrategyId}`,
       `- Parameters: ${JSON.stringify(strategyParameters)}`,
     ];
@@ -911,7 +930,7 @@ function WorkspaceContext({ summary, result, replayMode }: { summary: MarketSumm
       lines.push("", "Backtest results are hidden during Replay.");
     }
     return lines.join("\n");
-  }, [state, summary, strategyParameters, backtestEvidence, replayMode]);
+  }, [state, summary, summaryError, quoteTime, strategyParameters, backtestEvidence, replayMode]);
 
   const activePromptText = useMemo(() => {
     const sym = state.symbol;
@@ -1064,6 +1083,15 @@ function WorkspaceContext({ summary, result, replayMode }: { summary: MarketSumm
                 )}
               </div>
             </div>
+            {!replayMode && summary && (
+              <div role="status" className="text-[10px] text-[var(--ak-text-secondary)] break-words">
+                {summaryError && <div className="text-[var(--ak-signal-action)]">{copy.quoteStale}</div>}
+                <div>{copy.quoteTime}: {quoteTime ?? copy.quoteTimeUnavailable}</div>
+              </div>
+            )}
+            {!replayMode && !summary && summaryError && (
+              <div role="status" className="text-[10px] text-[var(--ak-signal-action)]">{copy.quoteUnavailable}</div>
+            )}
           </div>
 
           <div className="p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1">
@@ -2143,7 +2171,7 @@ function ReplayTicket({
   );
 }
 
-export function Inspector({ workspace = "terminal", summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayExecution, replayReport: serverReplayReport = null, onReplayCommand, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
+export function Inspector({ workspace = "terminal", summary, summaryError, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayExecution, replayReport: serverReplayReport = null, onReplayCommand, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
   const copy = useCopy(INSPECTOR_COPY);
   const [paperMode, setPaperMode] = useState<"legacy" | "shared-spot">("legacy");
   const [symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
@@ -2212,7 +2240,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
           {visitedTabs.includes("book") && <TabsContent value="book" forceMount><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "book"} onPickPrice={handlePickPrice} /></TabsContent>}
           {visitedTabs.includes("trades") && <TabsContent value="trades" forceMount><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "trades"} onPickPrice={handlePickPrice} /></TabsContent>}
           {visitedTabs.includes("strategy") && <TabsContent value="strategy" forceMount><StrategyLab onRun={onRun} running={running} /></TabsContent>}
-          {visitedTabs.includes("context") && <TabsContent value="context" forceMount><WorkspaceContext summary={summary} result={result} replayMode={replayMode} /></TabsContent>}
+          {visitedTabs.includes("context") && <TabsContent value="context" forceMount><WorkspaceContext summary={summary} summaryError={summaryError} result={result} replayMode={replayMode} /></TabsContent>}
         </div>
       </Tabs>
 
