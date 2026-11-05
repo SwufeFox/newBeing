@@ -28,6 +28,8 @@ import { WATCHLIST_DRAG_TYPE } from "@/components/watchlist";
 import { WorkspaceSync } from "@/components/workspace-sync";
 import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
+import { SettingsDialog } from "@/components/settings-dialog";
+import { useCopy, type CopyTable } from "@/lib/i18n";
 import { applyReplaySelection, captureReplaySelection, captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { EXCHANGE_IDS, EXCHANGE_LABELS } from "@/lib/exchanges";
 import { replayIdentity, useWorkspaceStore, type DockTab, type InspectorTab } from "@/store/workspace";
@@ -52,6 +54,246 @@ import { AkBrackets, AkCorner, AkTag, AkStatus, AkDisplay, AkBilingual, AkNum, A
 
 const TIMEFRAMES: readonly Timeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
 const EMPTY_REPLAY_BARS: readonly Candle[] = [];
+
+/**
+ * Shell copy. English is byte-identical to the pre-i18n strings so tests,
+ * screenshots and muscle memory keep working; Chinese is a real translation of
+ * the same navigation, status and command chrome.
+ */
+interface ShellCopy {
+  markets: string;
+  research: string;
+  replay: string;
+  derivatives: string;
+  terminalName: string;
+  researchName: string;
+  replayName: string;
+  paperOnly: string;
+  navLabel: string;
+  workflowLabel: string;
+  workspaceShortcut: (label: string, num: string) => string;
+  switchShortcut: (label: string, num: string) => string;
+  derivativesAria: string;
+  derivativesTitle: string;
+  derivativesLinkAria: string;
+  derivativesLinkTitle: string;
+  executionAria: (name: string) => string;
+  loading: string;
+  marketAria: (name: string) => string;
+  settings: string;
+  shortcuts: string;
+  shortcutsAria: string;
+  resetLayout: string;
+  collapseSidebar: string;
+  expandSidebar: string;
+  collapseSidebarAria: string;
+  expandSidebarAria: string;
+  openDrawer: string;
+  closeDrawer: string;
+  localWorkspace: string;
+  replayEngine: string;
+  adapter: string;
+  liveDisabled: string;
+  sqlite: string;
+  hotkeys: string;
+  openHotkeys: string;
+}
+
+const SHELL_COPY: CopyTable<ShellCopy> = {
+  en: {
+    markets: "Markets",
+    research: "Research",
+    replay: "Replay",
+    derivatives: "Derivatives",
+    terminalName: "Terminal",
+    researchName: "Research",
+    replayName: "Replay",
+    paperOnly: "PAPER ONLY",
+    navLabel: "Workspace navigation",
+    workflowLabel: "Research workflow",
+    workspaceShortcut: (label, num) => `${label} workspace, shortcut ${num}`,
+    switchShortcut: (label, num) => `Switch to ${label} with ${num}`,
+    derivativesAria: "Derivatives market mode, shortcut 4",
+    derivativesTitle: "Switch to Derivatives with 4",
+    derivativesLinkAria: "Derivatives market mode",
+    derivativesLinkTitle: "Open Derivatives",
+    executionAria: (name) => `Execution mode: paper-only. Live trading disabled. Active workspace: ${name}.`,
+    loading: "Loading local workspace…",
+    marketAria: (name) => `${name} market workspace`,
+    settings: "Workstation settings",
+    shortcuts: "Terminal shortcuts [?]",
+    shortcutsAria: "Terminal shortcuts",
+    resetLayout: "Reset layout",
+    collapseSidebar: "Collapse sidebar [Ctrl+B or \\]",
+    expandSidebar: "Expand sidebar [Ctrl+B or \\]",
+    collapseSidebarAria: "Collapse sidebar",
+    expandSidebarAria: "Expand sidebar",
+    openDrawer: "Open watchlist drawer",
+    closeDrawer: "Close list drawer",
+    localWorkspace: "LOCAL WORKSPACE",
+    replayEngine: "REPLAY LOCAL ENGINE",
+    adapter: "CCXT MARKET ADAPTER",
+    liveDisabled: "LIVE TRADING DISABLED",
+    sqlite: "SQLITE LOCAL PERSISTENCE",
+    hotkeys: "HOTKEYS [?]",
+    openHotkeys: "Open Hotkeys Guide",
+  },
+  zh: {
+    markets: "行情",
+    research: "研究",
+    replay: "回放",
+    derivatives: "衍生品",
+    terminalName: "行情终端",
+    researchName: "研究",
+    replayName: "回放",
+    paperOnly: "仅模拟盘",
+    navLabel: "工作区导航",
+    workflowLabel: "研究工作流",
+    workspaceShortcut: (label, num) => `${label}工作区，快捷键 ${num}`,
+    switchShortcut: (label, num) => `按 ${num} 切换到${label}`,
+    derivativesAria: "衍生品市场模式，快捷键 4",
+    derivativesTitle: "按 4 切换到衍生品",
+    derivativesLinkAria: "衍生品市场模式",
+    derivativesLinkTitle: "打开衍生品",
+    executionAria: (name) => `执行模式：仅模拟盘。实盘交易已禁用。当前工作区：${name}。`,
+    loading: "正在加载本地工作区…",
+    marketAria: (name) => `${name}行情工作区`,
+    settings: "工作台设置",
+    shortcuts: "终端快捷键 [?]",
+    shortcutsAria: "终端快捷键",
+    resetLayout: "重置布局",
+    collapseSidebar: "收起侧栏 [Ctrl+B 或 \\]",
+    expandSidebar: "展开侧栏 [Ctrl+B 或 \\]",
+    collapseSidebarAria: "收起侧栏",
+    expandSidebarAria: "展开侧栏",
+    openDrawer: "打开自选列表抽屉",
+    closeDrawer: "关闭列表抽屉",
+    localWorkspace: "本地工作区",
+    replayEngine: "回放本地引擎",
+    adapter: "CCXT 行情适配器",
+    liveDisabled: "实盘交易已禁用",
+    sqlite: "SQLITE 本地持久化",
+    hotkeys: "快捷键 [?]",
+    openHotkeys: "打开快捷键说明",
+  },
+};
+
+interface HotkeyRow {
+  label: string;
+  keys: string;
+  /** Rendered as a coloured instruction instead of a key cap. */
+  tone?: "danger" | "info";
+}
+
+interface HotkeysCopy {
+  eyebrow: string;
+  title: string;
+  footer: string;
+  close: string;
+  sections: readonly { title: string; rows: readonly HotkeyRow[] }[];
+}
+
+/* Key caps stay literal in both languages; only the instructions translate. */
+const HOTKEYS_COPY: CopyTable<HotkeysCopy> = {
+  en: {
+    eyebrow: "SYSTEM // PRTS NAVIGATION",
+    title: "TERMINAL COMMAND HOTKEYS",
+    footer: "Tactile quick-flow activated · Press Esc or click outside to return",
+    close: "CLOSE [ESC]",
+    sections: [
+      {
+        title: "NAVIGATION",
+        rows: [
+          { label: "Markets / Research / Replay / Deriv", keys: "1 / 2 / 3 / 4" },
+          { label: "Cycle Bottom Dock", keys: "D / Shift+D" },
+          { label: "Cycle Inspector", keys: "I / Shift+I" },
+          { label: "Run Backtest (Research)", keys: "B or ⌘↵" },
+        ],
+      },
+      {
+        title: "MARKET & FEEDS",
+        rows: [
+          { label: "Search Pair", keys: "/ or ⌘K" },
+          { label: "Cycle Watchlist", keys: "[ / ]" },
+          { label: "Cycle Timeframe", keys: "T / Shift+T" },
+        ],
+      },
+      {
+        title: "REPLAY CONTROLS",
+        rows: [
+          { label: "Play / Pause", keys: "Space" },
+          { label: "Step Next Bar", keys: "→ or N" },
+          { label: "Adjust Speed", keys: "< / >" },
+        ],
+      },
+      {
+        title: "MANUAL TRADING & TICKETS",
+        rows: [
+          { label: "Quick Buy / Sell", keys: "B / S" },
+          { label: "Sizing Chips / Stepper", keys: "Chips · - / +" },
+          { label: "One-Click Flatten", keys: "Close 100% button", tone: "danger" },
+        ],
+      },
+      {
+        title: "WORKSPACE & VIEW",
+        rows: [
+          { label: "Toggle Sidebar", keys: "\\ or ⌘B" },
+          { label: "Order Book Price Fill", keys: "Click depth row", tone: "info" },
+          { label: "Command Help", keys: "?" },
+        ],
+      },
+    ],
+  },
+  zh: {
+    eyebrow: "系统 // PRTS 导航",
+    title: "终端快捷键",
+    footer: "触控快速流已启用 · 按 Esc 或点击空白处返回",
+    close: "关闭 [ESC]",
+    sections: [
+      {
+        title: "导航",
+        rows: [
+          { label: "行情 / 研究 / 回放 / 衍生品", keys: "1 / 2 / 3 / 4" },
+          { label: "切换底部面板", keys: "D / Shift+D" },
+          { label: "切换检查器", keys: "I / Shift+I" },
+          { label: "运行回测（研究）", keys: "B 或 ⌘↵" },
+        ],
+      },
+      {
+        title: "行情与数据源",
+        rows: [
+          { label: "搜索交易对", keys: "/ 或 ⌘K" },
+          { label: "切换自选列表", keys: "[ / ]" },
+          { label: "切换周期", keys: "T / Shift+T" },
+        ],
+      },
+      {
+        title: "回放控制",
+        rows: [
+          { label: "播放 / 暂停", keys: "空格" },
+          { label: "单步推进", keys: "→ 或 N" },
+          { label: "调整速度", keys: "< / >" },
+        ],
+      },
+      {
+        title: "手动交易与订单",
+        rows: [
+          { label: "快速买入 / 卖出", keys: "B / S" },
+          { label: "仓位比例 / 步进", keys: "比例键 · - / +" },
+          { label: "一键平仓", keys: "“Close 100%”按钮", tone: "danger" },
+        ],
+      },
+      {
+        title: "工作区与视图",
+        rows: [
+          { label: "收起 / 展开侧栏", keys: "\\ 或 ⌘B" },
+          { label: "盘口价格填入", keys: "点击深度行", tone: "info" },
+          { label: "命令帮助", keys: "?" },
+        ],
+      },
+    ],
+  },
+};
 
 // This cache also survives component remounts when sessionStorage is unavailable.
 const replayOrderRequests = new Map<string, string | null>();
@@ -649,6 +891,9 @@ export function Terminal(): React.JSX.Element {
   const replaySyncError = useWorkspaceStore((state) => state.replaySyncError);
   const retryReplaySync = useWorkspaceStore((state) => state.retryReplaySync);
   const workspaceReady = useWorkspaceStore((state) => state.workspaceReady);
+  const shell = useCopy(SHELL_COPY);
+  const hotkeys = useCopy(HOTKEYS_COPY);
+  const [showSettings, setShowSettings] = useState(false);
   const exchange = useWorkspaceStore((state) => state.exchange);
   const [workspace, setWorkspace, symbol, timeframe, layout, setLayout, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
     state.activeWorkspace, state.setWorkspace, state.symbol, state.timeframe, state.layout, state.setLayout,
@@ -737,6 +982,9 @@ export function Terminal(): React.JSX.Element {
     if (!workspaceReady) return;
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (isTypingActive(event)) return;
+      /* A modal owns the keyboard: its own Esc handling and focus trap must not
+         race the workspace shortcuts. */
+      if (document.querySelector("dialog[open]")) return;
 
       if (event.key === "1") {
         setPage("terminal");
@@ -1164,7 +1412,7 @@ export function Terminal(): React.JSX.Element {
   const resizeInspector = (delta: number): void => setLayout({ ...layout, inspectorWidth: Math.max(240, Math.min(480, layout.inspectorWidth - delta)) });
   const resizeDock = (delta: number): void => setLayout({ ...layout, bottomHeight: Math.max(150, Math.min(480, layout.bottomHeight + delta)) });
 
-  const workspaceName = useMemo(() => ({ terminal: "Terminal", research: "Research", replay: "Replay" }[workspace]), [workspace]);
+  const workspaceName = useMemo(() => ({ terminal: shell.terminalName, research: shell.researchName, replay: shell.replayName }[workspace]), [shell, workspace]);
   const replayLocked = workspace === "replay";
   const replayBars = workspace === "replay" ? replaySession?.bars ?? EMPTY_REPLAY_BARS : null;
   const replayPrice = replaySession?.bars.at(-1)?.close ?? null;
@@ -1205,7 +1453,7 @@ export function Terminal(): React.JSX.Element {
     <div className={`application-shell mode-${workspace}`} data-ak-ui="system">
       <WorkspaceSync />
       {!workspaceReady ? (
-        <div role="status" className="h-screen w-screen flex flex-col items-center justify-center bg-[var(--ak-surface-canvas)] font-mono text-xs text-[var(--ak-text-secondary)]">Loading local workspace…</div>
+        <div role="status" className="h-screen w-screen flex flex-col items-center justify-center bg-[var(--ak-surface-canvas)] font-mono text-xs text-[var(--ak-text-secondary)]">{shell.loading}</div>
       ) : (
         <>
           <header className="topbar flex items-center justify-between gap-3 px-3 z-20">
@@ -1225,17 +1473,17 @@ export function Terminal(): React.JSX.Element {
 
               <div className="h-5 w-[1px] bg-[var(--ak-border)] mx-0.5 opacity-50" />
 
-              <nav className="nav-cockpit flex items-center gap-1 shrink-0" aria-label="Workspace navigation">
-                <div className="workspace-flow-sequence" role="group" aria-label="Research workflow">
-                  {([ ["terminal", "Markets", "1"], ["research", "Research", "2"], ["replay", "Replay", "3"] ] as const).map(([item, label, num], index) => (
+              <nav className="nav-cockpit flex items-center gap-1 shrink-0" aria-label={shell.navLabel}>
+                <div className="workspace-flow-sequence" role="group" aria-label={shell.workflowLabel}>
+                  {([ ["terminal", shell.markets, "1"], ["research", shell.research, "2"], ["replay", shell.replay, "3"] ] as const).map(([item, label, num], index) => (
                     <Fragment key={item}>
                       <button
                         data-testid={`workspace-${item}`}
                         aria-current={workspace === item ? "page" : undefined}
-                        aria-label={`${label} workspace, shortcut ${num}`}
+                        aria-label={shell.workspaceShortcut(label, num)}
                         className={`workspace-tab relative px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase transition-all ${workspace === item ? "active text-[var(--ak-signal-action)] bg-[var(--ak-surface-raised)] border-b-2 border-[var(--ak-signal-action)]" : "text-[var(--ak-text-secondary)] hover:text-white"}`}
                         onClick={() => setPage(item)}
-                        title={`Switch to ${label} with ${num}`}
+                        title={shell.switchShortcut(label, num)}
                       >
                         {workspace === item && <AkCorner position="tl" tone="yellow" />}
                         {label}
@@ -1245,8 +1493,8 @@ export function Terminal(): React.JSX.Element {
                   ))}
                 </div>
                 <span className="workspace-nav-separator" aria-hidden="true" />
-                <Link href="/derivatives" className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0" aria-label="Derivatives market mode, shortcut 4" title="Switch to Derivatives with 4">
-                  Derivatives
+                <Link href="/derivatives" className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0" aria-label={shell.derivativesAria} title={shell.derivativesTitle}>
+                  {shell.derivatives}
                 </Link>
               </nav>
             </div>
@@ -1291,9 +1539,9 @@ export function Terminal(): React.JSX.Element {
 
             {/* Wing 3: Session Status & Tactical Actions */}
             <div className="flex items-center gap-2 shrink-0">
-              <div className="topbar-status flex items-center gap-1.5 px-2.5 h-7 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] whitespace-nowrap shrink-0 shadow-sm" aria-label={`Execution mode: paper-only. Live trading disabled. Active workspace: ${workspaceName}.`}>
+              <div className="topbar-status flex items-center gap-1.5 px-2.5 h-7 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] whitespace-nowrap shrink-0 shadow-sm" aria-label={shell.executionAria(workspaceName)}>
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)] shrink-0" />
-                <span className="text-[10px] font-mono text-[var(--ak-signal-action)] font-bold">PAPER ONLY</span>
+                <span className="text-[10px] font-mono text-[var(--ak-signal-action)] font-bold">{shell.paperOnly}</span>
               </div>
 
               <div className="h-5 w-[1px] bg-[var(--ak-border)] mx-0.5 opacity-50" />
@@ -1304,21 +1552,24 @@ export function Terminal(): React.JSX.Element {
                     variant="ghost"
                     size="icon"
                     className="mobile-rail-toggle"
-                    title={mobileRailOpen ? "Close list drawer" : "Open watchlist drawer"}
-                    aria-label={mobileRailOpen ? "Close list drawer" : "Open watchlist drawer"}
+                    title={mobileRailOpen ? shell.closeDrawer : shell.openDrawer}
+                    aria-label={mobileRailOpen ? shell.closeDrawer : shell.openDrawer}
                     aria-expanded={mobileRailOpen}
                     onClick={() => setMobileRailOpen((prev) => !prev)}
                   >
                     {mobileRailOpen ? <PanelLeftClose size={13} /> : <PanelLeft size={13} />}
                   </Button>
                 )}
-                <Button variant="ghost" size="icon" className="sidebar-toggle" title={sidebarOpen ? "Collapse sidebar [Ctrl+B or \\]" : "Expand sidebar [Ctrl+B or \\]"} aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"} onClick={() => setSidebarOpen((prev) => !prev)}>
+                <Button variant="ghost" size="icon" className="sidebar-toggle" title={sidebarOpen ? shell.collapseSidebar : shell.expandSidebar} aria-label={sidebarOpen ? shell.collapseSidebarAria : shell.expandSidebarAria} onClick={() => setSidebarOpen((prev) => !prev)}>
                   {sidebarOpen ? <PanelLeftClose size={13} /> : <PanelLeft size={13} />}
                 </Button>
-                <Button variant="ghost" size="icon" title="Terminal shortcuts [?]" aria-label="Terminal shortcuts" onClick={() => setShowHotkeys((prev) => !prev)}>
+                <Button variant="ghost" size="icon" title={shell.settings} aria-label={shell.settings} aria-haspopup="dialog" onClick={() => setShowSettings(true)}>
+                  <Sliders size={13} />
+                </Button>
+                <Button variant="ghost" size="icon" title={shell.shortcuts} aria-label={shell.shortcutsAria} onClick={() => setShowHotkeys((prev) => !prev)}>
                   <HelpCircle size={13} />
                 </Button>
-                <Button variant="ghost" size="icon" title="Reset layout" aria-label="Reset layout" onClick={() => setLayout({ watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 })}>
+                <Button variant="ghost" size="icon" title={shell.resetLayout} aria-label={shell.resetLayout} onClick={() => setLayout({ watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 })}>
                   <LayoutDashboard size={13} />
                 </Button>
               </div>
@@ -1452,7 +1703,7 @@ export function Terminal(): React.JSX.Element {
           </div>
         )}
 
-        <section className="market-canvas" aria-label={`${workspaceName} market workspace`}>
+        <section className="market-canvas" aria-label={shell.marketAria(workspaceName)}>
           <div className="workspace-grid" style={{ gridTemplateColumns: gridColumns, gridTemplateRows: `minmax(0, 1fr) 5px min(${dockHeight}px, max(150px, calc(100% - 265px)))` }}>
             {workspace !== "replay" && (showsWatchlist || watchlistVisited || mobileWatchlistOpen) && (
               <div className={`left-rail${mobileWatchlistOpen ? " is-mobile-open" : ""}`} style={{ gridColumn: col.rail, gridRow: "1 / 4" }} hidden={!showsWatchlist && !mobileWatchlistOpen}>
@@ -1588,8 +1839,8 @@ export function Terminal(): React.JSX.Element {
         </section>
       </main>
 
-      <nav className="mobile-mode-nav flex justify-around p-2 bg-[var(--ak-surface-canvas)] border-t border-[var(--ak-border-strong)]" aria-label="Workspace navigation">
-        {([["terminal", "Markets"], ["research", "Research"], ["replay", "Replay"]] as const).map(([item, label]) => (
+      <nav className="mobile-mode-nav flex justify-around p-2 bg-[var(--ak-surface-canvas)] border-t border-[var(--ak-border-strong)]" aria-label={shell.navLabel}>
+        {([[ "terminal", shell.markets ], [ "research", shell.research ], [ "replay", shell.replay ]] as const).map(([item, label]) => (
           <button
             key={item}
             type="button"
@@ -1600,134 +1851,68 @@ export function Terminal(): React.JSX.Element {
             {label}
           </button>
         ))}
-        <Link href="/derivatives" aria-label="Derivatives market mode" title="Open Derivatives" className="mobile-mode-link">
-          Derivatives
+        <Link href="/derivatives" aria-label={shell.derivativesLinkAria} title={shell.derivativesLinkTitle} className="mobile-mode-link">
+          {shell.derivatives}
         </Link>
       </nav>
 
       <footer className="statusbar flex items-center justify-between px-3 py-1 bg-[var(--ak-surface-canvas)] border-t border-[var(--ak-border-strong)] text-[10px] font-mono text-[var(--ak-text-secondary)]">
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-success)]" />
-          <span>LOCAL WORKSPACE</span>
+          <span>{shell.localWorkspace}</span>
           <span>·</span>
           <span>{symbol} · {timeframe}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span>{workspace === "replay" ? "REPLAY LOCAL ENGINE" : "CCXT MARKET ADAPTER"}</span>
+          <span>{workspace === "replay" ? shell.replayEngine : shell.adapter}</span>
           <span>·</span>
-          <span>LIVE TRADING DISABLED</span>
+          <span>{shell.liveDisabled}</span>
           <span>·</span>
-          <span>SQLITE LOCAL PERSISTENCE</span>
+          <span>{shell.sqlite}</span>
           <span>·</span>
-          <button type="button" onClick={() => setShowHotkeys(true)} className="text-[var(--ak-signal-info)] hover:underline cursor-pointer" title="Open Hotkeys Guide">HOTKEYS [?]</button>
+          <button type="button" onClick={() => setShowHotkeys(true)} className="text-[var(--ak-signal-info)] hover:underline cursor-pointer" title={shell.openHotkeys}>{shell.hotkeys}</button>
         </div>
       </footer>
+
+      <SettingsDialog open={showSettings} onOpenChange={setShowSettings} />
 
       <AkDialog
         open={showHotkeys}
         onOpenChange={setShowHotkeys}
-        eyebrow="SYSTEM // PRTS NAVIGATION"
-        title="TERMINAL COMMAND HOTKEYS"
+        eyebrow={hotkeys.eyebrow}
+        title={hotkeys.title}
         size="lg"
         tokens={{ "--ak-dialog-w": "42rem" }}
         className="font-mono text-xs"
         footer={
           <div className="flex items-center justify-between w-full text-[10px] text-[var(--ak-text-secondary)] font-mono">
-            <span>Tactile quick-flow activated · Press Esc or click outside to return</span>
+            <span>{hotkeys.footer}</span>
             <button
               type="button"
               onClick={() => setShowHotkeys(false)}
               className="px-2.5 py-1 text-xs font-bold font-mono bg-[var(--ak-surface-sunken-2)] hover:bg-[var(--ak-surface-raised)] border border-[var(--ak-border)] text-[var(--ak-text-primary)] cursor-pointer"
             >
-              CLOSE [ESC]
+              {hotkeys.close}
             </button>
           </div>
         }
       >
         <div className="grid grid-cols-2 gap-3 text-xs pt-1">
-          <div className="space-y-1.5">
-            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">NAVIGATION</span>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Markets / Research / Replay / Deriv</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">1 / 2 / 3 / 4</kbd>
+          {hotkeys.sections.map((section) => (
+            <div key={section.title} className="space-y-1.5">
+              <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">{section.title}</span>
+              {section.rows.map((row) => (
+                <div key={row.label} className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
+                  <span className="text-[var(--ak-text-secondary)]">{row.label}</span>
+                  {row.tone ? (
+                    <span className={`text-[10px] font-bold ${row.tone === "danger" ? "text-[var(--ak-signal-danger)]" : "text-[var(--ak-signal-info)]"}`}>{row.keys}</span>
+                  ) : (
+                    <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">{row.keys}</kbd>
+                  )}
+                </div>
+              ))}
             </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Cycle Bottom Dock</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">D / Shift+D</kbd>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Cycle Inspector</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">I / Shift+I</kbd>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Run Backtest (Research)</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">B or ⌘↵</kbd>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">MARKET &amp; FEEDS</span>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Search Pair</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">/ or ⌘K</kbd>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Cycle Watchlist</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">[ / ]</kbd>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Cycle Timeframe</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">T / Shift+T</kbd>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">REPLAY CONTROLS</span>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Play / Pause</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Space</kbd>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Step Next Bar</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">→ or N</kbd>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Adjust Speed</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">&lt; / &gt;</kbd>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">MANUAL TRADING &amp; TICKETS</span>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Quick Buy / Sell</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">B / S</kbd>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Sizing Chips / Stepper</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">Chips · - / +</kbd>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">One-Click Flatten</span>
-              <span className="text-[10px] text-[var(--ak-signal-danger)] font-bold">Close 100% button</span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">WORKSPACE &amp; VIEW</span>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Toggle Sidebar</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">\ or ⌘B</kbd>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Order Book Price Fill</span>
-              <span className="text-[10px] text-[var(--ak-signal-info)] font-bold">Click depth row</span>
-            </div>
-            <div className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-              <span className="text-[var(--ak-text-secondary)]">Command Help</span>
-              <kbd className="px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-primary)] font-bold">?</kbd>
-            </div>
-          </div>
+          ))}
         </div>
       </AkDialog>
         </>

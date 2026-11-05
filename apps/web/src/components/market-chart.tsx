@@ -23,6 +23,8 @@ import { useShallow } from "zustand/react/shallow";
 import type { BacktestResult, Candle } from "@newbeing/core";
 import { findCandleGaps, reconnectDelayMs, timeframeMilliseconds } from "@newbeing/market-data/utils";
 import { AkSpinner } from "@swufefox/ak-ui-react";
+import { chartPalette, type ChartPalette } from "@/lib/chart-palette";
+import { usePreferences } from "@/lib/preferences";
 
 type StreamState = "connecting" | "live" | "reconnecting" | "unavailable" | "polling";
 
@@ -146,6 +148,17 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
   const [symbol, timeframe, exchange] = useWorkspaceStore(useShallow((state) => [state.symbol, state.timeframe, state.exchange]));
   const dataKey = `${exchange}|${symbol}|${timeframe}`;
 
+  /* Canvas series read plain colour strings, so the ramp lives in a ref that
+     the long-lived chart callbacks can read without taking a dependency on the
+     preference — a colour change must repaint, never reconnect the feed. */
+  const palette = chartPalette(usePreferences().colorVision);
+  const paletteRef = useRef<ChartPalette>(palette);
+  /* Declared before the chart-creating effect so the first commit already reads
+     the right ramp; a render must never mutate a ref. */
+  useEffect(() => {
+    paletteRef.current = palette;
+  }, [palette]);
+
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [errorState, setErrorState] = useState<{ key: string; message: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -205,7 +218,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
         volumeSeriesRef.current.setData(bars.map((bar) => ({
           time: asUTCTime(bar.timestamp),
           value: bar.volume,
-          color: bar.close >= bar.open ? "rgba(31, 177, 128, 0.32)" : "rgba(234, 82, 94, 0.32)",
+          color: bar.close >= bar.open ? paletteRef.current.upVolume : paletteRef.current.downVolume,
         })));
       } else {
         volumeSeriesRef.current.setData([]);
@@ -216,6 +229,19 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
   useEffect(() => {
     updateIndicators();
   }, [updateIndicators]);
+
+  /* A colour-vision change repaints the existing series in place: the candle
+     options and the volume histogram must follow the token layer, while the
+     feed, the loaded bars and the visible range stay untouched. */
+  useEffect(() => {
+    candleSeriesRef.current?.applyOptions({
+      upColor: palette.up,
+      downColor: palette.down,
+      wickUpColor: palette.up,
+      wickDownColor: palette.down,
+    });
+    updateIndicators();
+  }, [palette, updateIndicators]);
 
   const loadedKeyRef = useRef<string | null>(null);
 
@@ -321,11 +347,11 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     });
 
     const candles = chart.addSeries(CandlestickSeries, {
-      upColor: "#1fb180",
-      downColor: "#ea525e",
+      upColor: paletteRef.current.up,
+      downColor: paletteRef.current.down,
       borderVisible: false,
-      wickUpColor: "#1fb180",
-      wickDownColor: "#ea525e",
+      wickUpColor: paletteRef.current.up,
+      wickDownColor: paletteRef.current.down,
       priceLineVisible: true,
       lastValueVisible: true,
     });
@@ -585,7 +611,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
           volumeSeriesRef.current?.update({
             time: asUTCTime(parsed.candle.timestamp),
             value: parsed.candle.volume,
-            color: parsed.candle.close >= parsed.candle.open ? "rgba(31, 177, 128, 0.32)" : "rgba(234, 82, 94, 0.32)",
+            color: parsed.candle.close >= parsed.candle.open ? paletteRef.current.upVolume : paletteRef.current.downVolume,
           });
         }
         if (parsed.closed) {
@@ -631,14 +657,14 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       {
         time: asUTCTime(trade.entryTime),
         position: trade.side === "long" ? "belowBar" as const : "aboveBar" as const,
-        color: trade.side === "long" ? "#1fb180" : "#ea525e",
+        color: trade.side === "long" ? paletteRef.current.up : paletteRef.current.down,
         shape: trade.side === "long" ? "arrowUp" as const : "arrowDown" as const,
         text: `IN ${trade.side.toUpperCase()}`,
       },
       {
         time: asUTCTime(trade.exitTime),
         position: trade.side === "long" ? "aboveBar" as const : "belowBar" as const,
-        color: trade.netPnl >= 0 ? "#1fb180" : "#ea525e",
+        color: trade.netPnl >= 0 ? paletteRef.current.up : paletteRef.current.down,
         shape: trade.side === "long" ? "arrowDown" as const : "arrowUp" as const,
         text: trade.exitReason === "end-of-data" ? "OUT" : trade.exitReason.replaceAll("-", " ").toUpperCase(),
       },

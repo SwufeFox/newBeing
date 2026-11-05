@@ -245,15 +245,30 @@ input[type="number"] {
 }
 
 .application-shell > * { position: relative; z-index: 1; }
-/* Overlays inside the shell must escape normal flow and cover the full viewport */
-.application-shell > .hotkeys-modal {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 999 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+
+/* ak-ui dialogs are `position: fixed; inset: 0; margin: auto` inside its own
+   cascade layer, and its `__header` / `__body` / `__footer` are only stacked by
+   padding. Two unlayered rules outrank that: `.application-shell > *` repaints
+   every direct child as `position: relative`, and Tailwind's preflight zeroes
+   every margin. Together they pinned each dialog to the shell's top-left corner,
+   half off-screen, with its footer pushed below the fold.
+   The dialog becomes a fixed-position scroll surface whose header and footer
+   stay pinned, so a long settings list never hides the close button. The
+   previous `.hotkeys-modal` workaround was never applied to any element and is
+   gone with it. */
+.ak-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
 }
+.ak-dialog > .ak-dialog__header,
+.ak-dialog > .ak-dialog__footer {
+  position: sticky;
+  z-index: 1;
+  background: var(--ak-dialog-bg, #171a1d);
+}
+.ak-dialog > .ak-dialog__header { top: 0; }
+.ak-dialog > .ak-dialog__footer { bottom: 0; }
 /* The command bar must outrank the workspace, because its search popover is
    anchored inside it. Without this the header's own overlay is painted under
    the market plate and cannot receive clicks. */
@@ -4185,4 +4200,128 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
     cursor: pointer;
   }
   .mobile-rail-close:hover { color: var(--mode); border-color: color-mix(in srgb, var(--mode) 55%, var(--c-line)); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   COLOUR-VISION ADAPTATION
+   ------------------------------------------------------------------
+   Red/green is the one pair that collapses for the most common colour-vision
+   deficiencies. The deuteranopia option remaps the *direction* tokens to
+   blue/orange at the token layer, so candles, depth bars, PnL text, status
+   pills and quote sides all move together instead of drifting apart.
+   Meaning never rests on colour alone: direction keeps its arrow, sign and
+   label, and the option itself is announced through aria-pressed.
+   ══════════════════════════════════════════════════════════════ */
+:root[data-cv="deuteranopia"] {
+  --c-up: #3f8cff;
+  --c-down: #ff9f45;
+  --ak-signal-success: #3f8cff;
+  --ak-signal-danger: #ff9f45;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SETTINGS DIALOG
+   ══════════════════════════════════════════════════════════════ */
+.settings-section { display: flex; flex-direction: column; gap: var(--s-2); min-width: 0; }
+.settings-section-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin: 0;
+  padding-bottom: var(--s-1);
+  border-bottom: var(--line) solid var(--ak-border-subtle);
+  color: var(--ak-signal-info);
+  font-family: var(--f-display);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+.settings-section-meta {
+  color: var(--c-fg-4);
+  font-family: var(--f-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.settings-option-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); }
+.settings-option {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: var(--s-2);
+  border: var(--line) solid var(--ak-border);
+  border-left: var(--bar) solid transparent;
+  background: var(--ak-surface-sunken);
+  color: var(--ak-text-primary);
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.settings-option-stacked { flex-direction: column; align-items: stretch; gap: var(--s-1); }
+.settings-option-head { display: flex; align-items: center; gap: var(--s-2); }
+.settings-option:hover { border-color: var(--c-line-strong); background: var(--ak-surface-raised); }
+.settings-option[aria-pressed="true"] {
+  border-color: var(--ak-border-strong);
+  border-left-color: var(--ak-signal-action);
+  background: color-mix(in srgb, var(--ak-signal-action) 10%, var(--ak-surface-sunken));
+}
+.settings-option:focus-visible { outline: var(--ring) solid var(--ak-signal-info); outline-offset: 2px; }
+.settings-option-mark { color: var(--ak-signal-action); font-size: 10px; line-height: 1; }
+.settings-swatch { display: flex; gap: var(--s-2); font-family: var(--f-mono); font-size: var(--t-meta); font-weight: 700; }
+.settings-option-hint { color: var(--c-fg-4); font-size: 10px; font-weight: 400; }
+.settings-note { margin: 0; color: var(--c-fg-3); font-size: var(--t-meta); line-height: 1.5; }
+.settings-note-error { color: var(--ak-signal-danger); }
+.settings-connector-list { display: flex; flex-direction: column; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.settings-connector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-2);
+  border: var(--line) solid var(--ak-border-subtle);
+  background: var(--ak-surface-sunken);
+}
+.settings-connector-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.settings-connector-name { font-weight: 700; color: var(--ak-text-primary); }
+.settings-connector-id { margin-left: auto; color: var(--c-fg-4); font-size: 10px; }
+.settings-capabilities { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); font-size: 10px; }
+.settings-capability-label { margin-right: var(--s-1); color: var(--c-fg-4); letter-spacing: var(--track-caps); text-transform: uppercase; }
+.settings-capability { padding: 1px 4px; border: var(--line) solid var(--ak-border); color: var(--ak-text-primary); }
+.settings-capability.is-emulated { color: var(--ak-signal-action); border-style: dashed; }
+.settings-capability.is-off { color: var(--c-fg-4); border-color: var(--ak-border-subtle); }
+.settings-connector-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.settings-inline-button {
+  min-height: 28px;
+  padding: 0 var(--s-2);
+  border: var(--line) solid var(--ak-border);
+  background: var(--ak-surface-raised);
+  color: var(--ak-text-primary);
+  font-family: var(--f-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.settings-inline-button:hover:not(:disabled) { color: var(--ak-signal-action); border-color: var(--ak-signal-action); }
+.settings-inline-button:disabled { color: var(--c-fg-4); cursor: not-allowed; }
+.settings-inline-button:focus-visible { outline: var(--ring) solid var(--ak-signal-info); outline-offset: 2px; }
+.settings-probe-result { font-size: 10px; color: var(--c-fg-4); word-break: break-word; }
+.settings-probe-result.is-ok { color: var(--ak-signal-info); }
+.settings-probe-result.is-error { color: var(--ak-signal-danger); }
+.settings-api-list { margin: 0; padding-left: var(--s-4); color: var(--c-fg-3); font-size: var(--t-meta); line-height: 1.6; }
+.settings-api-list li + li { margin-top: var(--s-1); }
+
+@media (hover: none), (pointer: coarse) {
+  .settings-inline-button { min-height: 44px; }
+}
+@media (max-width: 560px) {
+  .settings-option-row { grid-template-columns: minmax(0, 1fr); }
 }

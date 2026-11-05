@@ -25,7 +25,22 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>): React.JSX.Element {
   return (
-    <html lang="en" data-theme="dark" className={notoSans.variable}>
+    /* `suppressHydrationWarning` is required, not a silencer for a real bug: the
+       inline script below writes the device's stored colour-vision mode and
+       language onto <html> before hydration, so the root element is *meant* to
+       differ from the server HTML. Every other node must still match. */
+    <html lang="en" data-theme="dark" className={notoSans.variable} suppressHydrationWarning>
+      <head>
+        {/* Colour-vision mode and language are paint-time decisions: read them
+            before the first frame so a deuteranopia reader never sees the
+            red/green ramp flash past, and so the loading state is announced in
+            the language the interface is about to use. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "try{var p=JSON.parse(localStorage.getItem('newbeing:ui-preferences:v1')||'{}');if(p){if(p.colorVision==='deuteranopia'){document.documentElement.dataset.cv='deuteranopia'}if(p.locale==='zh'){document.documentElement.lang='zh-CN'}}}catch(e){}",
+          }}
+        />
+      </head>
       <body>{children}</body>
     </html>
   );

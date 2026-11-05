@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { queueWorkspaceNavigation } from "@/components/workspace-sync";
 import { useWorkspaceStore } from "@/store/workspace";
 import { derivativeNumber, derivativeDate, derivativeBlockReason, derivativePositionIsExpired, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale } from "@/lib/derivatives-ui";
+import { chartPalette, type ChartPalette } from "@/lib/chart-palette";
+import { usePreferences } from "@/lib/preferences";
 
 const KINDS = [["perpetual", "Perpetuals"], ["future", "Futures"], ["option", "Options"]] as const;
 
@@ -170,6 +172,16 @@ const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): R
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const fittedRef = useRef(false);
+  /* Same contract as the spot chart: the ramp is read from a ref so a
+     colour-vision change repaints this chart without rebuilding it. */
+  const palette = chartPalette(usePreferences().colorVision);
+  const paletteRef = useRef<ChartPalette>(palette);
+  /* Declared before the chart-creating effect so the first commit already reads
+     the right ramp. Assigning in an effect (not during render) keeps React's
+     ref rules satisfied — a render must not mutate a ref. */
+  useEffect(() => {
+    paletteRef.current = palette;
+  }, [palette]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -192,12 +204,12 @@ const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): R
       timeScale: { borderColor: "rgba(139,148,158,0.18)", timeVisible: true, secondsVisible: false },
     });
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#1fb180",
-      downColor: "#ea525e",
-      borderUpColor: "#1fb180",
-      borderDownColor: "#ea525e",
-      wickUpColor: "#1fb180",
-      wickDownColor: "#ea525e",
+      upColor: paletteRef.current.up,
+      downColor: paletteRef.current.down,
+      borderUpColor: paletteRef.current.up,
+      borderDownColor: paletteRef.current.down,
+      wickUpColor: paletteRef.current.up,
+      wickDownColor: paletteRef.current.down,
     });
     chartRef.current = chart;
     fittedRef.current = false;
@@ -214,6 +226,17 @@ const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): R
       seriesRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    seriesRef.current?.applyOptions({
+      upColor: palette.up,
+      downColor: palette.down,
+      borderUpColor: palette.up,
+      borderDownColor: palette.down,
+      wickUpColor: palette.up,
+      wickDownColor: palette.down,
+    });
+  }, [palette]);
 
   useEffect(() => {
     const uniqueBars = new Map<number, Candle>();

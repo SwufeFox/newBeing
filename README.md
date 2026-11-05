@@ -35,6 +35,15 @@ The local execution policy, funding coverage, expiry handling and research bound
 - **Derivatives:** Paper actions stay paused until a filtered instrument is selected and a fresh quote is available.
 - **Replay:** Use the single speed selector or press Space to play/pause, Right Arrow or N to step, and comma/period or `<`/`>` to change speed. Controls reflow on narrow screens.
 
+## Settings, language and accessibility
+
+The gear in the top bar opens **Workstation settings**. Preferences are stored per device in `localStorage` (`newbeing:ui-preferences:v1`) and are intentionally not part of the SQLite workspace: they describe this display, not the research workspace.
+
+- **Language:** English or 简体中文. The arm's-length copy covers the workstation shell, the settings dialog and the command-hotkey guide; instrument symbols, strategy identifiers, saved result text and market data keep their source language. The `<html lang>` attribute follows the choice.
+- **Colour vision:** *Standard* keeps green/red; *Deuteranopia* maps the direction ramp to blue/orange. The switch repaints the semantic direction tokens (`--c-up` / `--c-down`, and the chart series) rather than tinting individual widgets, so candles, depth bars, PnL text, quote sides and status pills move together. Direction never rests on colour alone: arrows, `+/−` signs and labels carry it as well. The stored mode is applied before first paint, so the red/green ramp never flashes for a reader who selected the alternative.
+- **Market data connectors:** each supported venue is listed with its advertised capabilities and timeframes. `USE` changes the active venue (the symbol is re-denominated for that venue's quote currency); `PROBE` asks that venue for live public instrument metadata and prints the native instrument id, price/quantity precision and minimum cost. A tilde (`~OHLCV`) marks a capability the venue only emulates.
+- **Local API boundary:** the panel states the actual contract. Market data is public exchange REST/WebSocket traffic with no key; AI access is your MCP client over local stdio (`pnpm mcp`) with the model provider key held by that client; execution is Paper only. newBeing stores no provider key and opens no MCP listener.
+
 ## Checks
 
 ```sh
