@@ -1631,13 +1631,19 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
   const copy = useCopy(INSPECTOR_COPY);
   const [paperMode, setPaperMode] = useState<"legacy" | "shared-spot">("legacy");
   const [symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
-  const [pickedPrice, setPickedPrice] = useState<number | null>(null);
-  const [priceNotice, setPriceNotice] = useState<string | null>(null);
+  /* A depth price belongs to one instrument. Keying it by instrument makes a
+     stale pick unusable after a symbol swap instead of needing to be cleared —
+     a BTC depth price once sized an ETH order an order of magnitude off. */
+  const instrumentKey = `${exchange}|${symbol}`;
+  const [picked, setPicked] = useState<{ key: string; price: number } | null>(null);
+  const [pickedNotice, setPickedNotice] = useState<{ key: string; text: string } | null>(null);
+  const pickedPrice = picked?.key === instrumentKey ? picked.price : null;
+  const priceNotice = pickedNotice?.key === instrumentKey ? pickedNotice.text : null;
 
   const handlePickPrice = (p: number) => {
-    setPickedPrice(p);
-    setPriceNotice(translate(INSPECTOR_COPY).priceAppliedToTicket(price(p)));
-    window.setTimeout(() => setPriceNotice(null), 2500);
+    setPicked({ key: instrumentKey, price: p });
+    setPickedNotice({ key: instrumentKey, text: translate(INSPECTOR_COPY).priceAppliedToTicket(price(p)) });
+    window.setTimeout(() => setPickedNotice(null), 2500);
   };
 
   const tabsForWorkspace =
@@ -1738,7 +1744,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
               {paperMode === "shared-spot" ? (
                 <SharedSpotTicket key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} referencePrice={pickedPrice ?? summary?.ask ?? summary?.last ?? null} />
               ) : (
-                <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} prefilledPrice={pickedPrice} onClearPrefilledPrice={() => setPickedPrice(null)} />
+                <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} prefilledPrice={pickedPrice} onClearPrefilledPrice={() => setPicked(null)} />
               )}
             </div>
 
