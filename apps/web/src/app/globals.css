@@ -728,16 +728,6 @@ input[type="number"] {
   border-right: var(--line) solid rgba(255, 255, 255, 0.08);
 }
 
-.market-eyebrow {
-  color: var(--c-accent);
-  font-family: var(--f-display);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-  line-height: 1;
-}
-
 .market-title {
   display: flex;
   align-items: baseline;
@@ -2764,7 +2754,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 /* Narrow and coarse-pointer layouts use native 44px controls; fine-pointer
    desktop keeps the toolbar selectors. */
 @media (max-width: 920px), (hover: none), (pointer: coarse) {
-  .market-identity .market-eyebrow { display: none; }
   .market-identity .mobile-exchange-select { display: inline-block; }
   .market-title > .mobile-timeframe-select { display: inline-block; }
   .instrument-pod .exchange-select,
@@ -2819,6 +2808,11 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .drag-horizontal, .drag-vertical { display: none; }
   .left-rail { display: none; }
   .chart-column { min-height: 400px; }
+  /* The Replay seed form sits above the chart inside the same column. Without a
+     floor the form takes the whole column and the chart collapses to a sliver
+     with its empty-state text clipped; the column grows instead and the canvas
+     scrolls. */
+  .chart-column > .chart-host { min-height: 300px; }
   .dock-slot { min-height: 220px; }
   .run-status { display: none; }
   .statusbar > div:last-child { display: none; }

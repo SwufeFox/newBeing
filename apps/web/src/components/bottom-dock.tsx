@@ -167,8 +167,6 @@ interface DockCopy {
   tabEvaluate: string;
   tabExperiments: string;
   tabExecution: string;
-  modeReplay: string;
-  modePaper: string;
   ordersUnavailable: string;
   loadingOrders: string;
   loadingOrdersHint: string;
@@ -330,8 +328,6 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     tabEvaluate: "Evaluate",
     tabExperiments: "Experiments",
     tabExecution: "Execution",
-    modeReplay: "REPLAY · ISOLATED SIMULATION",
-    modePaper: "LOCAL SQLITE · PAPER TRADING",
     ordersUnavailable: "Orders unavailable",
     loadingOrders: "Loading Paper orders…",
     loadingOrdersHint: "The local account snapshot is being read.",
@@ -489,8 +485,6 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     tabEvaluate: "验证",
     tabExperiments: "实验",
     tabExecution: "执行",
-    modeReplay: "回放 · 隔离模拟",
-    modePaper: "本地 SQLITE · 模拟盘",
     ordersUnavailable: "委托不可用",
     loadingOrders: "正在加载模拟盘委托…",
     loadingOrdersHint: "正在读取本地账户快照。",
@@ -1598,12 +1592,6 @@ export const BottomDock = memo(function BottomDock({
             )}
           </TabsList>
         </Tabs>
-        <div className="dock-toolbar-right flex items-center gap-2 text-[10px] font-mono text-[var(--ak-text-secondary)]">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)]" />
-          <span className="uppercase tracking-wider font-bold">
-            {replayMode ? copy.modeReplay : copy.modePaper}
-          </span>
-        </div>
       </div>
 
       <div className="dock-content flex-1 overflow-auto min-h-0">

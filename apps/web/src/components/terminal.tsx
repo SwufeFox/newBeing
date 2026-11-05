@@ -300,7 +300,6 @@ interface PanelCopy {
   high24h: string;
   low24h: string;
   vol24h: string;
-  historicalOnly: string;
   stale: string;
   tickerOffline: string;
   retry: string;
@@ -326,7 +325,6 @@ interface PanelCopy {
   replaySync: string;
   replaySyncing: string;
   returnToMarkets: string;
-  feedCursor: (time: string) => string;
   feedUpdated: (time: string) => string;
   feedAwaiting: string;
   feedReplayData: string;
@@ -337,7 +335,6 @@ interface PanelCopy {
   activeWorkspace: string;
   railClose: string;
   signals: (count: number) => string;
-  marketEyebrow: (venue: string) => string;
   openRun: (strategy: string) => string;
   runLoading: string;
   runLoadFailed: string;
@@ -360,7 +357,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     high24h: "24H HIGH",
     low24h: "24H LOW",
     vol24h: "24H VOL",
-    historicalOnly: "HISTORICAL ONLY",
     stale: "STALE",
     tickerOffline: "TICKER OFFLINE",
     retry: "Retry",
@@ -386,7 +382,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     replaySync: "REPLAY SYNC",
     replaySyncing: "Synchronizing replay session with server…",
     returnToMarkets: "Return to Markets",
-    feedCursor: (time) => `Cursor: ${time}`,
     feedUpdated: (time) => `Updated: ${time}`,
     feedAwaiting: "Awaiting feed",
     feedReplayData: "REPLAY DATA",
@@ -397,7 +392,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     activeWorkspace: "Active workspace",
     railClose: "Close",
     signals: (count) => `${count} SIGNALS`,
-    marketEyebrow: (venue) => `${venue} · SPOT TRADING`,
     openRun: (strategy) => `Open saved run · ${strategy}`,
     runLoading: "Loading saved run…",
     runLoadFailed: "Could not load this run.",
@@ -416,7 +410,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     high24h: "24 小时最高",
     low24h: "24 小时最低",
     vol24h: "24 小时成交额",
-    historicalOnly: "仅历史",
     stale: "已过期",
     tickerOffline: "行情离线",
     retry: "重试",
@@ -442,7 +435,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     replaySync: "回放同步",
     replaySyncing: "正在与服务端同步回放会话…",
     returnToMarkets: "返回行情",
-    feedCursor: (time) => `光标：${time}`,
     feedUpdated: (time) => `更新于 ${time}`,
     feedAwaiting: "等待行情",
     feedReplayData: "回放数据",
@@ -453,7 +445,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     activeWorkspace: "当前工作区",
     railClose: "关闭",
     signals: (count) => `${count} 个信号`,
-    marketEyebrow: (venue) => `${venue} · 现货交易`,
     openRun: (strategy) => `打开已保存的回测 · ${strategy}`,
     runLoading: "正在读取已保存的回测…",
     runLoadFailed: "无法读取该回测。",
@@ -507,19 +498,6 @@ function clearReplayOrderRequest(key: string, requestId: string): void {
     }
   }
 }
-
-const RAIL_NOTES: CopyTable<Record<WorkspaceState["activeWorkspace"], string>> = {
-  en: {
-    terminal: "Live quotes, depth stream, and paper execution ticket.",
-    research: "Parameter optimization and deterministic backtesting.",
-    replay: "Time-travel simulation with future bars strictly hidden.",
-  },
-  zh: {
-    terminal: "实时报价、盘口推送与模拟盘下单区。",
-    research: "参数寻优与确定性历史回测。",
-    replay: "严格隐藏未来 K 线的历史推演。",
-  },
-};
 
 function readItems<T>(payload: unknown): T[] {
   if (typeof payload !== "object" || payload === null || !("items" in payload) || !Array.isArray(payload.items)) return [];
@@ -855,9 +833,7 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
       )}
 
       <div className="summary-source ml-auto text-[10px]">
-        {replayMode ? (
-          <AkTag variant="advanced" className="text-[9px]">{copy.historicalOnly}</AkTag>
-        ) : error ? (
+        {!replayMode && error ? (
           <div className="flex items-center gap-1.5 text-[var(--ak-signal-danger)]">
             <span>{summary ? copy.stale : copy.tickerOffline}</span>
             <button className="summary-retry underline cursor-pointer" type="button" onClick={onRetry}>{copy.retry}</button>
@@ -1085,7 +1061,6 @@ export function Terminal(): React.JSX.Element {
   const shell = useCopy(SHELL_COPY);
   const hotkeys = useCopy(HOTKEYS_COPY);
   const copy = useCopy(PANEL_COPY);
-  const railNotes = useCopy(RAIL_NOTES);
   const [showSettings, setShowSettings] = useState(false);
   const exchange = useWorkspaceStore((state) => state.exchange);
   const [workspace, setWorkspace, symbol, timeframe, layout, setLayout, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
@@ -1790,10 +1765,6 @@ export function Terminal(): React.JSX.Element {
         <AkCorner position="tl" tone="info" />
         <div className="market-identity flex items-center gap-3 font-mono">
           <div className="flex flex-col">
-            <span className="market-eyebrow text-[9px] text-[var(--ak-signal-info)] uppercase tracking-widest font-bold flex items-center gap-1.5">
-              <span className="opacity-70 font-mono">{"//"}</span>
-              {copy.marketEyebrow(EXCHANGE_LABELS[exchange])}
-            </span>
             <select
               aria-label="Exchange"
               className="nb-select mobile-exchange-select"
@@ -1837,13 +1808,15 @@ export function Terminal(): React.JSX.Element {
         />
 
         <div className="market-heading-right flex items-center gap-3 text-xs font-mono text-[var(--ak-text-secondary)]">
-          <span className="exchange-time text-[10px]">
-            {workspace === "replay" && replaySession?.bars.at(-1)
-              ? copy.feedCursor(new Date(replaySession.cursor).toLocaleTimeString())
-              : summary?.timestamp
+          {/* Replay already prints the cursor in the price slot; a second
+              "awaiting feed" timestamp would describe a feed that is not coming. */}
+          {workspace !== "replay" && (
+            <span className="exchange-time text-[10px]">
+              {summary?.timestamp
                 ? copy.feedUpdated(new Date(summary.timestamp).toLocaleTimeString())
                 : copy.feedAwaiting}
-          </span>
+            </span>
+          )}
           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[10px] font-bold">
             <span className="relative flex h-2 w-2">
               {!summaryError && workspace !== "replay" && (
@@ -1867,28 +1840,12 @@ export function Terminal(): React.JSX.Element {
                 <PanelLeftClose size={13} /> {copy.railClose}
               </button>
             )}
-            <div className="rail-status research p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1">
-              <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
-                {shell.researchName.toUpperCase()}
-              </span>
-              <span className="rail-status-note text-[10px] text-[var(--ak-text-secondary)] block leading-tight">
-                {railNotes.research}
-              </span>
-            </div>
             <RailStrategyRoster />
             <RailRunHistory />
           </div>
         )}
         {workspace === "replay" && sidebarOpen && (
           <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label={copy.activeWorkspace}>
-            <div className="rail-status replay p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1">
-              <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
-                {shell.replayName.toUpperCase()}
-              </span>
-              <span className="rail-status-note text-[10px] text-[var(--ak-text-secondary)] block leading-tight">
-                {railNotes.replay}
-              </span>
-            </div>
             <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />
           </div>
         )}
@@ -1971,7 +1928,7 @@ export function Terminal(): React.JSX.Element {
               {/* The chart's own shell fills via `flex: 1 1 auto`, so this wrapper
                   has to be a flex column — a plain block parent leaves it sized to
                   its content and the candles collapse into a sliver. */}
-              <div className="flex-1 min-h-0 relative flex flex-col">
+              <div className="chart-host flex-1 min-h-0 relative flex flex-col">
                 <MarketChart
                   key={`${exchange}|${symbol}|${timeframe}|${workspace === "replay" ? "replay" : "live"}`}
                   backtest={workspace === "replay" ? null : result}

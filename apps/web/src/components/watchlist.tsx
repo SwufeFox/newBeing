@@ -47,8 +47,6 @@ interface WatchlistCopy {
   staleError: (error: string) => string;
   retrying: string;
   retry: string;
-  feedLive: string;
-  dragHint: string;
   invalidPair: string;
   alreadyListed: (symbol: string) => string;
   quotesUnavailable: (exchange: string) => string;
@@ -73,8 +71,6 @@ const WATCHLIST_COPY: CopyTable<WatchlistCopy> = {
     staleError: (error) => `${error} Showing last successful quotes as stale · retrying automatically.`,
     retrying: "Retrying…",
     retry: "Retry",
-    feedLive: "FEED LIVE",
-    dragHint: "DRAG ⁞⁞ TO REORDER",
     invalidPair: "Use a pair like SOL/USD or SOL/USDT.",
     alreadyListed: (symbol) => `${symbol} is already in the list.`,
     quotesUnavailable: (exchange) => `${exchange} watchlist quotes are unavailable.`,
@@ -97,8 +93,6 @@ const WATCHLIST_COPY: CopyTable<WatchlistCopy> = {
     staleError: (error) => `${error} 当前显示上次成功的报价，已标记为过期 · 正在自动重试。`,
     retrying: "重试中…",
     retry: "重试",
-    feedLive: "行情在线",
-    dragHint: "拖动 ⁞⁞ 排序",
     invalidPair: "请使用 SOL/USD 或 SOL/USDT 这样的交易对。",
     alreadyListed: (symbol) => `${symbol} 已在自选列表中。`,
     quotesUnavailable: (exchange) => `${exchange} 自选报价不可用。`,
@@ -429,14 +423,6 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
             <button className="watchlist-retry" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? <LoaderCircle className="spin" size={11} /> : null}{refreshing ? copy.retrying : copy.retry}</button>
           </div>
         )}
-      </div>
-
-      <div className="watchlist-footer mt-auto pt-2 px-2 pb-1 border-t border-[var(--ak-border-subtle)] flex items-center justify-between text-[9px] font-mono text-[var(--ak-text-secondary)]">
-        <span className="flex items-center gap-1.5 text-[var(--ak-signal-success)] font-bold">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-success)] animate-pulse motion-reduce:animate-none inline-block" />
-          {copy.feedLive}
-        </span>
-        <span className="opacity-60 text-[8px] uppercase tracking-wider">{copy.dragHint}</span>
       </div>
     </section>
   );
