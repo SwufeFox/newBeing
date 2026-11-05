@@ -45,6 +45,7 @@ const SETTINGS_COPY = {
     apiAi: "AI access: your MCP client runs `pnpm mcp` over local stdio. Model provider keys belong to that client; newBeing stores none and opens no MCP listener.",
     apiPaper: "Execution: Paper only. There is no live order route and no exchange credential handling.",
     currentVenue: "Current venue",
+    resetLayout: "RESET LAYOUT",
   },
   zh: {
     eyebrow: "系统 // PRTS 配置",
@@ -81,6 +82,7 @@ const SETTINGS_COPY = {
     apiAi: "AI 接入：由你的 MCP 客户端通过本地 stdio 运行 `pnpm mcp`。模型服务密钥属于该客户端；newBeing 不保存密钥，也不开放 MCP 监听端口。",
     apiPaper: "执行：仅模拟盘。不存在实盘下单通道，也不处理交易所凭证。",
     currentVenue: "当前交易所",
+    resetLayout: "重置布局",
   },
 };
 
@@ -155,6 +157,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const exchange = useWorkspaceStore((state) => state.exchange);
   const symbol = useWorkspaceStore((state) => state.symbol);
   const setExchange = useWorkspaceStore((state) => state.setExchange);
+  const setLayout = useWorkspaceStore((state) => state.setLayout);
   /* A frozen Replay owns the venue and symbol; the server rejects a workspace
      rebind and the UI must not offer it. */
   const replayLocked = useWorkspaceStore((state) => state.activeWorkspace === "replay");
@@ -181,6 +184,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     })();
     return () => { alive = false; };
   }, [open, copy.connectorsUnavailable]);
+
+  const resetLayout = useCallback((): void => {
+    setLayout({ watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 });
+  }, [setLayout]);
 
   const probe = useCallback(async (id: ExchangeId): Promise<void> => {
     const requestSymbol = symbolForExchange(symbol, id);
@@ -250,9 +257,14 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       className="font-mono text-xs"
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2 w-full text-[10px] text-[var(--ak-text-secondary)] font-mono">
-          <button type="button" className="settings-inline-button" onClick={() => setPreferences(DEFAULT_PREFERENCES)}>
-            {copy.reset}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="settings-inline-button" onClick={resetLayout}>
+              {copy.resetLayout}
+            </button>
+            <button type="button" className="settings-inline-button" onClick={() => setPreferences(DEFAULT_PREFERENCES)}>
+              {copy.reset}
+            </button>
+          </div>
           <button type="button" className="settings-inline-button" onClick={() => onOpenChange(false)}>
             {copy.close}
           </button>

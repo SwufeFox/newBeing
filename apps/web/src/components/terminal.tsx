@@ -7,7 +7,6 @@ import {
   Activity,
   ChevronDown,
   HelpCircle,
-  LayoutDashboard,
   LoaderCircle,
   PanelLeft,
   PanelLeftClose,
@@ -30,7 +29,8 @@ import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { useCopy, type CopyTable } from "@/lib/i18n";
-import { PARAMETER_LABELS, STRATEGY_NAMES } from "@/lib/strategy-labels";
+import { STRATEGY_NAMES } from "@/lib/strategy-labels";
+
 import { applyReplaySelection, captureReplaySelection, captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { EXCHANGE_IDS, EXCHANGE_LABELS } from "@/lib/exchanges";
 import { replayIdentity, useWorkspaceStore, type DockTab, type InspectorTab } from "@/store/workspace";
@@ -84,7 +84,6 @@ interface ShellCopy {
   settings: string;
   shortcuts: string;
   shortcutsAria: string;
-  resetLayout: string;
   collapseSidebar: string;
   expandSidebar: string;
   collapseSidebarAria: string;
@@ -94,8 +93,6 @@ interface ShellCopy {
   localWorkspace: string;
   replayEngine: string;
   adapter: string;
-  liveDisabled: string;
-  sqlite: string;
   hotkeys: string;
   openHotkeys: string;
 }
@@ -124,7 +121,6 @@ const SHELL_COPY: CopyTable<ShellCopy> = {
     settings: "Workstation settings",
     shortcuts: "Terminal shortcuts [?]",
     shortcutsAria: "Terminal shortcuts",
-    resetLayout: "Reset layout",
     collapseSidebar: "Collapse sidebar [Ctrl+B or \\]",
     expandSidebar: "Expand sidebar [Ctrl+B or \\]",
     collapseSidebarAria: "Collapse sidebar",
@@ -134,8 +130,6 @@ const SHELL_COPY: CopyTable<ShellCopy> = {
     localWorkspace: "LOCAL WORKSPACE",
     replayEngine: "REPLAY LOCAL ENGINE",
     adapter: "CCXT MARKET ADAPTER",
-    liveDisabled: "LIVE TRADING DISABLED",
-    sqlite: "SQLITE LOCAL PERSISTENCE",
     hotkeys: "HOTKEYS [?]",
     openHotkeys: "Open Hotkeys Guide",
   },
@@ -162,7 +156,6 @@ const SHELL_COPY: CopyTable<ShellCopy> = {
     settings: "工作台设置",
     shortcuts: "终端快捷键 [?]",
     shortcutsAria: "终端快捷键",
-    resetLayout: "重置布局",
     collapseSidebar: "收起侧栏 [Ctrl+B 或 \\]",
     expandSidebar: "展开侧栏 [Ctrl+B 或 \\]",
     collapseSidebarAria: "收起侧栏",
@@ -172,8 +165,6 @@ const SHELL_COPY: CopyTable<ShellCopy> = {
     localWorkspace: "本地工作区",
     replayEngine: "回放本地引擎",
     adapter: "CCXT 行情适配器",
-    liveDisabled: "实盘交易已禁用",
-    sqlite: "SQLITE 本地持久化",
     hotkeys: "快捷键 [?]",
     openHotkeys: "打开快捷键说明",
   },
@@ -318,9 +309,6 @@ interface PanelCopy {
   historySuppressed: string;
   noRuns: string;
   strategies: string;
-  liveParameters: string;
-  on: string;
-  off: string;
   session: string;
   state: string;
   barsRevealed: string;
@@ -335,7 +323,6 @@ interface PanelCopy {
   backtestFailed: string;
   executing: string;
   fetching: (venue: string) => string;
-  liveFeed: (venue: string) => string;
   replaySync: string;
   replaySyncing: string;
   returnToMarkets: string;
@@ -351,6 +338,10 @@ interface PanelCopy {
   railClose: string;
   signals: (count: number) => string;
   marketEyebrow: (venue: string) => string;
+  openRun: (strategy: string) => string;
+  runLoading: string;
+  runLoadFailed: string;
+  runUnreadable: string;
 }
 
 /* Panel copy for the market shell. Market identifiers, venue names, timeframes
@@ -378,9 +369,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     historySuppressed: "History suppressed during Replay.",
     noRuns: "No saved runs yet.",
     strategies: "STRATEGIES",
-    liveParameters: "LIVE PARAMETERS",
-    on: "ON",
-    off: "OFF",
     session: "SIMULATION SESSION",
     state: "STATE",
     barsRevealed: "BARS REVEALED",
@@ -395,7 +383,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     backtestFailed: "Backtest failed.",
     executing: "Executing",
     fetching: (venue) => `Fetching ${venue} bars & executing event loop…`,
-    liveFeed: (venue) => `Live quotes and candle feeds are loaded from ${venue} public market endpoints.`,
     replaySync: "REPLAY SYNC",
     replaySyncing: "Synchronizing replay session with server…",
     returnToMarkets: "Return to Markets",
@@ -411,6 +398,10 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     railClose: "Close",
     signals: (count) => `${count} SIGNALS`,
     marketEyebrow: (venue) => `${venue} · SPOT TRADING`,
+    openRun: (strategy) => `Open saved run · ${strategy}`,
+    runLoading: "Loading saved run…",
+    runLoadFailed: "Could not load this run.",
+    runUnreadable: "That run did not return a usable result.",
   },
   zh: {
     searchPlaceholder: "搜索标的 [/]",
@@ -434,9 +425,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     historySuppressed: "回放期间不显示历史。",
     noRuns: "暂无保存的运行。",
     strategies: "策略",
-    liveParameters: "当前参数",
-    on: "开",
-    off: "关",
     session: "模拟会话",
     state: "状态",
     barsRevealed: "已揭示 K 线",
@@ -451,7 +439,6 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     backtestFailed: "回测失败。",
     executing: "执行中",
     fetching: (venue) => `正在获取 ${venue} K 线并执行事件循环…`,
-    liveFeed: (venue) => `实时报价与 K 线来自 ${venue} 公开行情接口。`,
     replaySync: "回放同步",
     replaySyncing: "正在与服务端同步回放会话…",
     returnToMarkets: "返回行情",
@@ -467,6 +454,10 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     railClose: "关闭",
     signals: (count) => `${count} 个信号`,
     marketEyebrow: (venue) => `${venue} · 现货交易`,
+    openRun: (strategy) => `打开已保存的回测 · ${strategy}`,
+    runLoading: "正在读取已保存的回测…",
+    runLoadFailed: "无法读取该回测。",
+    runUnreadable: "返回的回测数据不可用。",
   },
 };
 
@@ -914,11 +905,12 @@ function DragHandle({ direction, onDelta, style }: { direction: "horizontal" | "
 
 function RailRunHistoryContent(): React.JSX.Element {
   const copy = useCopy(PANEL_COPY);
-  const [activeBacktestId, selectedStrategyId, setDockTab] = useWorkspaceStore(useShallow((state) => [
-    state.activeBacktestId, state.selectedStrategyId, state.setDockTab,
+  const [activeBacktestId, selectedStrategyId, setDockTab, setBacktest] = useWorkspaceStore(useShallow((state) => [
+    state.activeBacktestId, state.selectedStrategyId, state.setDockTab, state.setBacktest,
   ]));
   const [items, setItems] = useState<Array<{ resultId: string; strategyId?: string; createdAt?: string; metrics?: { totalReturn?: number; tradeCount?: number } }>>([]);
   const [state, setState] = useState<"loading" | "ready" | "blocked" | "error">("loading");
+  const [opening, setOpening] = useState<{ resultId: string; state: "loading" | "error"; message?: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -935,6 +927,32 @@ function RailRunHistoryContent(): React.JSX.Element {
     return () => { alive = false; };
   }, [activeBacktestId]);
 
+  /* A history row opens that run. Before this the row only switched the dock
+     tab, so clicking a saved backtest left the previous result on screen —
+     the list promised navigation it did not perform. */
+  const openRun = async (resultId: string): Promise<void> => {
+    setOpening({ resultId, state: "loading" });
+    try {
+      const response = await fetch(`/api/backtests/${encodeURIComponent(resultId)}`, { cache: "no-store" });
+      const payload: unknown = await response.json();
+      if (!response.ok) {
+        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
+          ? payload.error
+          : copy.runLoadFailed;
+        throw new Error(message);
+      }
+      if (typeof payload !== "object" || payload === null || !("resultId" in payload) || payload.resultId !== resultId
+        || !("trades" in payload) || !Array.isArray(payload.trades) || !("metrics" in payload) || typeof payload.metrics !== "object") {
+        throw new Error(copy.runUnreadable);
+      }
+      setBacktest(payload as BacktestResult);
+      setDockTab("backtest");
+      setOpening(null);
+    } catch (error) {
+      setOpening({ resultId, state: "error", message: error instanceof Error ? error.message : copy.runLoadFailed });
+    }
+  };
+
   return (
     <div className="rail-block font-mono text-xs">
       <span className="rail-block-head flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)]">
@@ -948,8 +966,11 @@ function RailRunHistoryContent(): React.JSX.Element {
           <button
             key={run.resultId || `run-${idx}`}
             type="button"
+            aria-busy={opening?.resultId === run.resultId && opening.state === "loading"}
+            aria-label={copy.openRun(run.strategyId ?? selectedStrategyId)}
+            title={copy.openRun(run.strategyId ?? selectedStrategyId)}
             className={`rail-item w-full flex items-center justify-between p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${activeBacktestId === run.resultId ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-info)]" : ""}`}
-            onClick={() => setDockTab("backtest")}
+            onClick={() => void openRun(run.resultId)}
           >
             <span className="rail-item-main truncate font-bold">{(run.strategyId ?? selectedStrategyId).replace(/-/g, " ")}</span>
             <span className="rail-item-meta flex items-center gap-1 text-[10px]">
@@ -963,6 +984,8 @@ function RailRunHistoryContent(): React.JSX.Element {
           </button>
         ))}
       </div>
+      {opening?.state === "loading" && <span role="status" className="rail-hint text-[10px] text-[var(--ak-signal-info)] p-1">{copy.runLoading}</span>}
+      {opening?.state === "error" && <span role="alert" className="rail-hint text-[10px] text-[var(--ak-signal-danger)] p-1 break-words">{opening.message}</span>}
     </div>
   );
 }
@@ -971,10 +994,9 @@ const RailRunHistory = memo(RailRunHistoryContent);
 
 function RailStrategyRosterContent(): React.JSX.Element {
   const copy = useCopy(PANEL_COPY);
-  const parameterLabels = useCopy(PARAMETER_LABELS);
   const strategyNames = useCopy(STRATEGY_NAMES);
-  const [selectedStrategyId, parameters, setStrategy, setInspectorTab] = useWorkspaceStore(useShallow((state) => [
-    state.selectedStrategyId, state.strategyParameters, state.setStrategy, state.setInspectorTab,
+  const [selectedStrategyId, setStrategy, setInspectorTab] = useWorkspaceStore(useShallow((state) => [
+    state.selectedStrategyId, state.setStrategy, state.setInspectorTab,
   ]));
   const [items, setItems] = useState<Array<{ id: string; name?: string; description?: string }>>([]);
 
@@ -992,45 +1014,25 @@ function RailStrategyRosterContent(): React.JSX.Element {
     return () => { alive = false; };
   }, []);
 
-  const params = Object.entries(parameters ?? {});
-
   return (
-    <>
-      <div className="rail-block font-mono text-xs">
-        <span className="rail-block-head flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)]">
-          <span>{copy.strategies}</span> <b>{items.length || "—"}</b>
-        </span>
-        <div className="rail-list space-y-1 mt-1 max-h-40 overflow-auto">
-          {items.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={`rail-item w-full p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${selectedStrategyId === s.id ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-action)] font-bold" : ""}`}
-              onClick={() => { setStrategy(s.id, {}); setInspectorTab("strategy"); }}
-            >
-              <div className="rail-item-main truncate">{strategyNames[s.id] ?? s.name ?? s.id}</div>
-              <div className="rail-item-sub text-[9px] text-[var(--ak-text-secondary)] opacity-70 truncate">{s.id}</div>
-            </button>
-          ))}
-        </div>
+    <div className="rail-block font-mono text-xs">
+      <span className="rail-block-head flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)]">
+        <span>{copy.strategies}</span> <b>{items.length || "—"}</b>
+      </span>
+      <div className="rail-list space-y-1 mt-1 max-h-40 overflow-auto">
+        {items.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className={`rail-item w-full p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${selectedStrategyId === s.id ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-action)] font-bold" : ""}`}
+            onClick={() => { setStrategy(s.id, {}); setInspectorTab("strategy"); }}
+          >
+            <div className="rail-item-main truncate">{strategyNames[s.id] ?? s.name ?? s.id}</div>
+            <div className="rail-item-sub text-[9px] text-[var(--ak-text-secondary)] opacity-70 truncate">{s.id}</div>
+          </button>
+        ))}
       </div>
-
-      {params.length > 0 && (
-        <div className="rail-block font-mono text-xs">
-          <span className="rail-block-head text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)] block">
-            {copy.liveParameters}
-          </span>
-          <div className="rail-facts compact grid grid-cols-2 gap-1 mt-1 p-1 bg-[var(--ak-surface-sunken)] text-[10px]">
-            {params.map(([key, value]) => (
-              <span key={key} className="flex flex-col">
-                <em className="not-italic text-[var(--ak-text-secondary)] opacity-70 truncate">{parameterLabels[key] ?? key}</em>
-                <strong className="text-[var(--ak-text-primary)] font-bold">{typeof value === "boolean" ? (value ? copy.on : copy.off) : String(value)}</strong>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 }
 
@@ -1760,9 +1762,6 @@ export function Terminal(): React.JSX.Element {
                 <Button variant="ghost" size="icon" title={shell.shortcuts} aria-label={shell.shortcutsAria} onClick={() => setShowHotkeys((prev) => !prev)}>
                   <HelpCircle size={13} />
                 </Button>
-                <Button variant="ghost" size="icon" title={shell.resetLayout} aria-label={shell.resetLayout} onClick={() => setLayout({ watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 })}>
-                  <LayoutDashboard size={13} />
-                </Button>
               </div>
             </div>
           </header>
@@ -1946,12 +1945,6 @@ export function Terminal(): React.JSX.Element {
                 </div>
               )}
 
-              {exchange !== "binance" && (
-                <div className="global-alert p-1.5 bg-[var(--ak-surface-sunken)] text-[10px] font-mono text-[var(--ak-text-secondary)] border-b border-[var(--ak-border-subtle)]" role="status">
-                  {copy.liveFeed(EXCHANGE_LABELS[exchange])}
-                </div>
-              )}
-
               {workspace === "replay" && (
                 <ReplayControls
                   symbol={symbol}
@@ -2056,10 +2049,6 @@ export function Terminal(): React.JSX.Element {
         </div>
         <div className="flex items-center gap-2">
           <span>{workspace === "replay" ? shell.replayEngine : shell.adapter}</span>
-          <span>·</span>
-          <span>{shell.liveDisabled}</span>
-          <span>·</span>
-          <span>{shell.sqlite}</span>
           <span>·</span>
           <button type="button" onClick={() => setShowHotkeys(true)} className="text-[var(--ak-signal-info)] hover:underline cursor-pointer" title={shell.openHotkeys}>{shell.hotkeys}</button>
         </div>

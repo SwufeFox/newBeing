@@ -2374,7 +2374,7 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
    18. REPLAY / BACKTEST
    ══════════════════════════════════════════════════════════════ */
 
-.global-alert, .replay-notice {
+.replay-notice {
   display: flex;
   align-items: center;
   gap: var(--s-2);
@@ -2385,7 +2385,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   font-size: var(--t-meta);
   line-height: 1.5;
 }
-.global-alert { margin: var(--s-2) var(--s-3) 0; }
 
 .replay-controls {
   display: flex;

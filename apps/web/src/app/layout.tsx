@@ -32,9 +32,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" data-theme="dark" className={notoSans.variable} suppressHydrationWarning>
       <head>
         {/* Colour-vision mode and language are paint-time decisions: read them
-            before the first frame so a deuteranopia reader never sees the
-            red/green ramp flash past, and so the loading state is announced in
-            the language the interface is about to use. */}
+            during head parsing so a deuteranopia reader never sees the red/green
+            ramp flash past, and so the loading state is announced in the
+            language the interface is about to use.
+            `next/script` with `beforeInteractive` is injected after hydration in
+            the App Router (measured), which is too late to prevent that first
+            frame, so this stays a raw inline script. React logs a development-
+            only warning about script tags in a component tree; production builds
+            are silent and the SSR HTML executes it during parsing. */}
         <script
           dangerouslySetInnerHTML={{
             __html: "try{var p=JSON.parse(localStorage.getItem('newbeing:ui-preferences:v1')||'{}');if(p){if(p.colorVision==='deuteranopia'){document.documentElement.dataset.cv='deuteranopia'}if(p.locale==='zh'){document.documentElement.lang='zh-CN'}}}catch(e){}",

@@ -34,6 +34,8 @@ The local execution policy, funding coverage, expiry handling and research bound
 - **Markets:** Enter a base symbol to use the selected venue’s default quote, or enter an explicit `BASE/QUOTE` pair.
 - **Derivatives:** Paper actions stay paused until a filtered instrument is selected and a fresh quote is available.
 - **Replay:** Use the single speed selector or press Space to play/pause, Right Arrow or N to step, and comma/period or `<`/`>` to change speed. Controls reflow on narrow screens.
+- **History:** A row in the research rail loads that saved run into the chart and the Results panel. The list is suppressed while a frozen Replay owns the workspace, because saved results can encode future bars.
+- **Layout:** Panel widths and the bottom dock height are reset from **Workstation settings**, together with the language and colour preferences.
 
 ## Settings, language and accessibility
 
