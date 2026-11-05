@@ -2128,22 +2128,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.dock-mode-dot { width: 6px; height: 6px; background: var(--mode); }
-/* the account label is metadata, not a tab: pin it right, one line */
-.dock-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  flex: 0 0 auto;
-  padding-left: var(--s-3);
-  color: var(--c-fg-4);
-  font-family: var(--f-display);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
 .dock-content {
   flex: 1 1 auto;
   min-height: 0;
@@ -2302,35 +2286,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 
 .primary-rail { display: flex; flex-direction: column; min-width: 0; }
 
-
-.rail-status {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
-  padding: var(--s-2) var(--s-3) var(--s-3);
-  border-bottom: var(--line) solid var(--c-line);
-}
-.rail-status-head {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  color: var(--c-fg);
-  font-family: var(--f-display);
-  font-size: var(--t-h2);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.rail-status-head i {
-  width: 6px; height: 6px;
-  background: var(--mode);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mode) 16%, transparent);
-}
-.rail-status-note {
-  color: var(--c-fg-3);
-  font-size: var(--t-meta);
-  line-height: 1.6;
-}
 
 .rail-facts { display: flex; flex-direction: column; }
 .rail-facts > span {
@@ -2745,11 +2700,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .market-heading { gap: var(--s-4); padding: 0 var(--s-3); }
   .summary-strip { gap: var(--s-4); }
   .topbar { gap: var(--s-2); padding: 0 var(--s-3); }
-}
-
-@media (min-width: 761px) and (max-width: 1180px) {
-  .mode-research .dock-toolbar-right { display: none; }
-  .dock-tabs .tab-trigger { padding-inline: var(--s-1); }
 }
 /* Narrow and coarse-pointer layouts use native 44px controls; fine-pointer
    desktop keeps the toolbar selectors. */
@@ -3407,7 +3357,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 
 /* Rail content must not be able to argue with the measure. */
 .primary-rail > * { min-width: 0; }
-.rail-status-note, .rail-facts strong, .rail-list strong { min-width: 0; }
+.rail-facts strong, .rail-list strong { min-width: 0; }
+
 
 /* ══════════════════════════════════════════════════════════════════
    LAYOUT STABILITY

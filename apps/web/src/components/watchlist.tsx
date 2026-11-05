@@ -372,6 +372,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
                 className="watch-row-main group"
                 onClick={() => setSymbol(symbol)}
                 title={copy.select(symbol)}
+                aria-label={copy.select(symbol)}
                 disabled={disabled}
               >
                 <span className="watch-symbol">
