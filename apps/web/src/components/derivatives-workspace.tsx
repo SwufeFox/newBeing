@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { AkBrackets, AkInput, AkPopover, AkSelect, AkTag } from "@swufefox/ak-ui-react";
+import { Activity } from "lucide-react";
+import { AkInput, AkPopover, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import type { Candle } from "@newbeing/core";
 import { CandlestickSeries, ColorType, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { DerivativeInstrument, DerivativeKind, DerivativeQuote } from "@newbeing/market-data/derivatives";
@@ -1286,52 +1287,55 @@ export function DerivativesWorkspace(): React.JSX.Element {
 
   return <div className="derivatives-shell font-mono">
     <header className="derivatives-topbar">
-      <Link href="/" className="derivatives-brand">
-        <AkBrackets className="flex items-center gap-1 font-bold text-xs tracking-wider">
-          <span className="text-[var(--ak-text-primary)]">newBeing</span>
-          <span className="text-[var(--ak-signal-info)] text-[10px]">PRTS</span>
-        </AkBrackets>
+      <Link href="/" className="derivatives-brand flex items-center gap-2">
+        <div className="brand-mark p-1 rounded-xs bg-[var(--c-surface-3)] border border-[var(--ak-border-strong)] text-[var(--c-accent)] flex items-center justify-center">
+          <Activity size={14} strokeWidth={2.4} />
+        </div>
+        <div className="font-bold text-xs tracking-wide flex items-center gap-1.5 font-mono">
+          <span className="text-[var(--ak-text-primary)] font-semibold">newBeing</span>
+          <span className="text-[var(--c-fg-4)] text-[9px] px-1 py-0.2 bg-[var(--c-surface-2)] border border-[var(--c-line)] rounded-xs">PRTS</span>
+        </div>
       </Link>
       <h1 className="meta">{copy.title}</h1>
       <div className="topbar-divider h-5 w-[1px] bg-[var(--ak-border)] mx-1" />
       <nav className="workspace-nav flex items-center gap-1 shrink-0" aria-label={copy.navLabel}>
-        <div className="workspace-flow-sequence" role="group" aria-label={copy.workflowLabel}>
+        <div className="workspace-flow-sequence flex items-center gap-1" role="group" aria-label={copy.workflowLabel}>
           <Link
             href="/"
             onClick={() => queueWorkspaceNavigation("terminal")}
-            className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
+            className="workspace-tab px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
             aria-label={copy.workspaceShortcut(copy.markets, "1")}
             title={copy.switchShortcut(copy.markets, "1")}
           >{copy.markets}</Link>
-          <span className="workflow-step-separator" aria-hidden="true">›</span>
           <Link
             href="/"
             onClick={() => queueWorkspaceNavigation("research")}
-            className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
+            className="workspace-tab px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
             aria-label={copy.workspaceShortcut(copy.research, "2")}
             title={copy.switchShortcut(copy.research, "2")}
           >{copy.research}</Link>
-          <span className="workflow-step-separator" aria-hidden="true">›</span>
           <Link
             href="/"
             onClick={() => queueWorkspaceNavigation("replay")}
-            className="workspace-tab px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
+            className="workspace-tab px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
             aria-label={copy.workspaceShortcut(copy.replay, "3")}
             title={copy.switchShortcut(copy.replay, "3")}
           >{copy.replay}</Link>
+          <span
+            className="workspace-tab active px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-primary)] bg-[var(--c-surface-2)] border-b-2 border-[var(--c-accent)] shadow-xs transition-all shrink-0 cursor-default"
+            aria-current="page"
+            aria-label={copy.currentWorkspaceAria}
+            title={copy.currentWorkspaceTitle}
+          >
+            {copy.derivatives}
+          </span>
         </div>
-        <span className="workspace-nav-separator" aria-hidden="true" />
-        <span
-          className="workspace-tab active px-2.5 py-1 text-xs font-mono font-bold tracking-wider uppercase text-[var(--ak-signal-action)] bg-[var(--ak-surface-raised)] transition-all shrink-0 cursor-default"
-          aria-current="page"
-          aria-label={copy.currentWorkspaceAria}
-          title={copy.currentWorkspaceTitle}
-        >
-          {copy.derivatives}
-        </span>
       </nav>
       <div className="flex-1" />
-      <AkTag variant="advanced" className="px-2.5 text-[10px]">{copy.paperLiveOff}</AkTag>
+      <div className="topbar-status flex items-center gap-1.5 px-2.5 h-7 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] rounded-xs whitespace-nowrap shrink-0 shadow-sm">
+        <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-success)] shrink-0" />
+        <span className="text-[10px] font-mono text-[var(--ak-text-secondary)] font-semibold tracking-wider">{copy.paperLiveOff}</span>
+      </div>
       <EngineModel />
     </header>
 
@@ -1339,11 +1343,11 @@ export function DerivativesWorkspace(): React.JSX.Element {
     <div className="derivatives-plate">
       <div className="derivatives-identity">
         <span className="eyebrow">
-          {instrument ? `${instrument.venue === "okx" ? "OKX" : "Deribit"} · ${copy.kindEyebrow[kind]}` : copy.selectContract}
+          {instrument ? `${instrument.venue === "okx" ? "OKX" : "Deribit"} · ${copy.kindEyebrow[kind]}` : selectedId ? `${selectedId.split(":")[0]?.toUpperCase() ?? ""} · ${copy.kindEyebrow[kind]}` : copy.selectContract}
         </span>
         <span className="title">
-          <span className="truncate" title={instrument?.nativeId}>{instrument ? instrument.nativeId : <span className="text-[var(--c-fg-3)]">—</span>}</span>
-          {instrument && <small>{instrument.settle}</small>}
+          <span className="truncate" title={instrument?.nativeId ?? selectedId ?? undefined}>{instrument ? instrument.nativeId : selectedId ? (selectedId.split(":")[2] ?? selectedId) : <span className="text-[var(--c-fg-4)]">—</span>}</span>
+          {instrument ? <small>{instrument.settle}</small> : selectedId ? <small className="opacity-70">{selectedId.split(":")[2]?.split("-")[1] ?? ""}</small> : null}
         </span>
       </div>
       {instrument && quote && <>
@@ -1364,7 +1368,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
       </>}
       <div className="flex-1" />
       <div className="flex items-center gap-3">
-        <AkTag variant={quote?.source === "fixture" ? "danger" : "default"}>
+        <AkTag variant={quote?.source === "fixture" ? "danger" : quote ? "default" : "neutral"}>
           {quote?.source === "fixture" ? copy.fixture : quote ? copy.publicRealtime : copy.noQuote}
         </AkTag>
         {!blocked && <Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>{copy.refresh}</Button>}
@@ -1377,7 +1381,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
     </div>}
 
     {/* kind switch: the workspace-tab grammar from the main terminal nav */}
-    <div role="tablist" aria-label={copy.marketsAria} className="flex items-center gap-2 px-4 py-2">
+    <div role="tablist" aria-label={copy.marketsAria} className="flex items-center gap-1 px-4 py-2 bg-[var(--ak-surface-sunken)] border-b border-[var(--c-line)]">
       {KINDS.map((value) => (
         <button
           key={value}
@@ -1386,7 +1390,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
           id={'derivatives-' + value}
           aria-selected={kind === value}
           aria-controls="derivatives-panel"
-          className={'workspace-tab relative px-3 py-1 text-xs font-mono font-bold tracking-wider uppercase border border-transparent ' + (kind === value ? "active text-[var(--c-accent)] bg-[var(--c-surface-3)] border-[var(--c-accent)]" : "text-[var(--c-fg-2)] hover:text-white")}
+          className={'px-3 py-1 text-xs font-medium rounded-xs transition-all cursor-pointer ' + (kind === value ? "bg-[var(--c-surface-3)] text-[var(--c-fg)] font-semibold border-b-2 border-[var(--c-accent)] shadow-xs" : "text-[var(--c-fg-3)] hover:text-white hover:bg-[var(--c-surface-2)]")}
           disabled={busy || blocked}
           onClick={() => changeKind(value)}
         >
@@ -1394,7 +1398,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
         </button>
       ))}
       <div className="flex-1" />
-      <span className="meta">{kind === "option" ? copy.longOptionsOnly : copy.linearContractsLine(marketVenues || copy.noVenues)}</span>
+      <span className="text-[11px] text-[var(--c-fg-4)] font-mono">{kind === "option" ? copy.longOptionsOnly : copy.linearContractsLine(marketVenues || copy.noVenues)}</span>
     </div>
     <div id="derivatives-panel" role="tabpanel" aria-labelledby={'derivatives-' + kind} className="flex flex-col flex-1">
     <main className="derivatives-layout" style={{ ["--mode" as string]: kind === "option" ? "var(--c-up)" : "var(--c-accent)" }}>
@@ -1467,7 +1471,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
         <section className="derivatives-panel" aria-label={copy.marketDataAria}>
           <div className="derivatives-panel-head">
             <span>{copy.contractDetails}</span>
-            <span className="num normal-case tracking-normal">{instrument ? instrument.id : focusedLocalOnly ? focusedLocalOnly.instrumentId : "—"}</span>
+            {(instrument?.id || focusedLocalOnly?.instrumentId) && <span className="num normal-case tracking-normal font-mono text-[10px] text-[var(--c-fg-4)]">{instrument ? instrument.id : focusedLocalOnly?.instrumentId}</span>}
           </div>
           {marketError && !focusedLocalOnly && <div role="alert" className="m-3 space-y-2 text-[var(--c-down)] text-[11px]"><p>{marketError}</p><Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>{copy.retryQuote}</Button></div>}
           {focusedLocalOnly && (
@@ -1518,8 +1522,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
         </section>
 
         <section className="derivatives-panel" aria-label={copy.candlesAria}>
-          <div className="derivatives-panel-head"><span>{copy.priceHistory}</span><span className="num">{bars.length || "—"}</span></div>
-          <div className="derivatives-panel-body">
+          <div className="derivatives-panel-head"><span>{copy.priceHistory}</span>{bars.length > 0 && <span className="num font-mono text-[10px] text-[var(--c-fg-4)]">{bars.length}</span>}</div>
+          <div className={`derivatives-panel-body ${!bars.length ? "min-h-[240px] flex flex-col items-center justify-center text-center" : ""}`}>
             {blocked ? <p className="text-[var(--c-fg-4)] text-[11px]">{copy.liveHistoryHidden}</p>
               : focusedLocalOnly ? <p className="text-[var(--c-fg-4)] text-[11px]">{copy.liveHistoryUnavailable}</p>
               : kind === "option" ? <p className="text-[var(--c-fg-4)] text-[11px]">{copy.optionCandlesUnsupported}</p>
@@ -1586,7 +1590,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
 
       {/* ticket: the spot inspector's paper ticket grammar */}
       <section className="derivatives-panel" aria-label={copy.ticketAria}>
-        <div className="derivatives-panel-head"><span>{copy.paperTicket}</span><span className="num normal-case tracking-normal">{instrument ? `${instrument.venue}/${instrument.settle}` : "—"}</span></div>
+        <div className="derivatives-panel-head"><span>{copy.paperTicket}</span>{instrument && <span className="num normal-case tracking-normal font-mono text-[10px] text-[var(--c-fg-4)]">{instrument.venue.toUpperCase()}/{instrument.settle}</span>}</div>
         <div className="derivatives-panel-body derivatives-ticket">
           {instrument && quote && <p className="derivatives-ticket-note">{copy.separateAccount}</p>}
           {blocked ? <p role="status" className="derivatives-ticket-note">{copy.entryHidden}</p>

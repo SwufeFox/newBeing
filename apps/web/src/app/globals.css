@@ -3766,7 +3766,15 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   border-bottom: var(--line) solid var(--c-line);
 }
 
-.derivatives-topbar h1 { margin: 0; font-size: var(--t-meta); }
+.derivatives-topbar h1 {
+  margin: 0;
+  font-family: var(--f-body);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-fg-3);
+  letter-spacing: normal;
+  text-transform: none;
+}
 .derivatives-brand {
   display: inline-flex;
   align-items: center;
@@ -3824,12 +3832,12 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   min-height: 34px;
   padding: 0 var(--s-3);
   border-bottom: var(--line) solid var(--c-line);
-  font-family: var(--f-display);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-  color: var(--c-fg-2);
+  font-family: var(--f-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--c-fg);
 }
 .derivatives-panel-head .num { color: var(--c-fg-4); }
 
@@ -3837,7 +3845,17 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .derivatives-panel-body > * + * { margin-top: var(--s-3); }
 
 /* the rail search follows the terminal's 28px control line, not ak-ui's 42px marketing scale */
-.derivatives-panel .ak-input { min-height: 28px; height: 28px; font-size: var(--t-label); }
+.derivatives-panel .ak-input {
+  min-height: 28px;
+  height: 28px;
+  font-size: var(--t-label);
+  border-left-width: 1px !important;
+  border-left-color: var(--c-line) !important;
+}
+.derivatives-panel .ak-input:focus-within {
+  border-left-color: var(--c-accent) !important;
+  border-color: var(--c-accent) !important;
+}
 
 /* instrument list rows borrow the watch-row left-bar selection */
 .derivatives-list { flex: 1 1 0%; min-height: 200px; max-height: calc(100vh - 240px); overflow-y: auto; }
@@ -3881,10 +3899,31 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .derivatives-plate .ak-tag, .derivatives-topbar .ak-tag { white-space: nowrap; flex: 0 0 auto; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 /* market plate reads: bid/ask carry the plate, context strips stay quiet */
 .derivatives-identity { display: flex; flex-direction: column; gap: var(--s-1); flex: 0 0 auto; max-width: 260px; padding-right: var(--s-4); border-right: var(--line) solid var(--c-line); }
-.derivatives-identity .eyebrow { color: var(--c-fg-4); font-family: var(--f-display); font-size: var(--t-meta); font-weight: 700; letter-spacing: var(--track-caps); text-transform: uppercase; }
-.derivatives-identity .title { display: flex; align-items: baseline; gap: var(--s-2); font-family: var(--f-display); font-size: var(--t-h1); font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
-.derivatives-identity .title small { color: var(--c-fg-3); font-size: var(--t-label); font-weight: 700; padding-left: var(--s-2); border-left: var(--line) solid var(--c-line-strong); }
-.derivatives-identity .title small { color: var(--c-fg-3); font-size: var(--t-label); font-weight: 700; }
+.derivatives-identity .eyebrow {
+  color: var(--c-fg-4);
+  font-family: var(--f-body);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.derivatives-identity .title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-family: var(--f-mono);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+.derivatives-identity .title small {
+  color: var(--c-fg-4);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  padding-left: var(--s-2);
+  border-left: var(--line) solid var(--c-line-strong);
+}
 
 .derivatives-quote { display: flex; align-items: baseline; gap: var(--s-4); min-width: 0; }
 .derivatives-quote .side { display: flex; flex-direction: column; gap: 2px; }
@@ -3925,14 +3964,26 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .derivatives-panel .ak-select { min-height: 44px; height: 44px; }
 }
 .derivatives-ticket-note {
-  border-left: var(--bar) solid var(--c-line-strong);
-  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--c-line);
+  border-left: 2px solid var(--c-line-strong);
+  padding: var(--s-2) var(--s-3);
   color: var(--c-fg-3);
-  font-size: var(--t-meta);
+  font-size: 11px;
   line-height: 1.55;
+  border-radius: 2px;
 }
-.derivatives-ticket-note.alert { border-left-color: var(--c-warn); background: color-mix(in srgb, var(--c-warn) 10%, transparent); color: var(--c-fg-2); }
-.derivatives-ticket-note.good { border-left-color: var(--c-up); background: color-mix(in srgb, var(--c-up) 10%, transparent); color: var(--c-fg-2); }
+.derivatives-ticket-note.alert {
+  border-color: rgba(245, 158, 11, 0.25);
+  border-left: 2px solid var(--c-warn);
+  background: rgba(245, 158, 11, 0.05);
+  color: var(--c-fg-2);
+}
+.derivatives-ticket-note.good {
+  border-color: rgba(16, 185, 129, 0.25);
+  border-left: 2px solid var(--c-up);
+  background: rgba(16, 185, 129, 0.05);
+  color: var(--c-fg-2);
+}
 
 /* dense tables inside the account panel use the sweep-table grammar */
 .derivatives-table { width: 100%; border-collapse: collapse; font-size: var(--t-meta); }
