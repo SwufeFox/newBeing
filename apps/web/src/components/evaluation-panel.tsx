@@ -6,6 +6,8 @@ import { STRATEGIES, type ExchangeId, type StrategyParameters, type Timeframe } 
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { buildEvaluationCandidates } from "@/lib/evaluation-candidates";
+import { useCopy, type CopyTable } from "@/lib/i18n";
+import { PARAMETER_LABELS } from "@/lib/strategy-labels";
 import { AkInput, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
@@ -72,6 +74,233 @@ interface EvaluationDatasetMetadata {
   timeframe: Timeframe;
 }
 
+interface EvaluationCopy {
+  /* Errors the panel renders as text. */
+  historyRefreshFailed: string;
+  historyLoadFailed: string;
+  openFailed: string;
+  datasetUnreadable: string;
+  datasetMalformed: string;
+  evaluationFailed: string;
+  evaluationMalformed: string;
+  /* Strategy parameter names rendered by the scan parameter selector. */
+  parameters: Record<string, string>;
+  /* Dataset and split configuration. */
+  datasetLabel: string;
+  useActiveBacktestTitle: string;
+  useActiveBacktest: string;
+  ready: string;
+  needBacktest: string;
+  datasetAria: string;
+  datasetPlaceholder: string;
+  quickPick: string;
+  activeChip: (id: string) => string;
+  activeDatasetTitle: (id: string) => string;
+  datasetPickTitle: (symbol: string | undefined, timeframe: string, datasetId: string) => string;
+  holdoutStartsAt: string;
+  splitRange: (bars: number, last: number) => string;
+  splitAria: string;
+  checkingLength: string;
+  verifyFailed: string;
+  retry: string;
+  splitTooShort: string;
+  splitRangeHint: (last: number) => string;
+  midpoint: (index: number) => string;
+  /* Parameter scan form. */
+  parameterLabel: string;
+  parameterAria: string;
+  from: string;
+  to: string;
+  step: string;
+  evaluating: string;
+  runEvaluation: string;
+  note: string;
+  nothingTitle: string;
+  nothingBody: string;
+  /* History. */
+  historyLabel: string;
+  recentEvaluations: string;
+  historyLoading: string;
+  noHistory: string;
+  historyHoldout: (value: string) => string;
+  /* Caveats. */
+  datasetCaveat: string;
+  spotCaveat: string;
+  /* Report. */
+  statusHistorical: string;
+  statusStale: string;
+  statusSaved: string;
+  statusPending: string;
+  savedRequest: (strategyId: string, parameter: string) => string;
+  scanUndetermined: string;
+  selectedOnTrain: string;
+  applyToStrategy: string;
+  appliedToStrategy: string;
+  trainReturnColumn: string;
+  holdoutReturn: string;
+  holdoutFinalEquity: string;
+  trainTag: string;
+  holdoutTag: string;
+  span: (bars: number, start: string, end: string) => string;
+  parametersUndetermined: string;
+  maxDdColumn: string;
+  sharpeColumn: string;
+  tradesColumn: string;
+  selectedColumn: string;
+  pickedTag: string;
+  savedIds: (reportId: string, trainingDataset: string, holdoutDataset: string, holdoutResult: string, parentDataset: string) => string;
+  reportFooter: (strategyId: string, rule: string) => string;
+  emptyTitle: string;
+  emptyBody: string;
+}
+
+const EVALUATION_COPY: CopyTable<EvaluationCopy> = {
+  en: {
+    historyRefreshFailed: "Could not refresh evaluation history.",
+    historyLoadFailed: "Could not load evaluation history.",
+    openFailed: "Could not open saved evaluation.",
+    datasetUnreadable: "Dataset snapshot could not be read.",
+    datasetMalformed: "Dataset snapshot metadata was malformed.",
+    evaluationFailed: "Evaluation failed.",
+    evaluationMalformed: "Evaluation response was malformed.",
+    parameters: { ...PARAMETER_LABELS.en },
+    datasetLabel: "DATASET (IMMUTABLE SNAPSHOT)",
+    useActiveBacktestTitle: "Use dataset from active backtest",
+    useActiveBacktest: "Use Active Backtest",
+    ready: "READY",
+    needBacktest: "NEED BACKTEST",
+    datasetAria: "Evaluation dataset id",
+    datasetPlaceholder: "sha256:… — run a backtest first",
+    quickPick: "QUICK PICK:",
+    activeChip: (id) => `Active (${id}…)`,
+    activeDatasetTitle: (id) => `Active backtest dataset: ${id}`,
+    datasetPickTitle: (symbol, timeframe, datasetId) => `${symbol ?? "Backtest"} ${timeframe} · ${datasetId}`,
+    holdoutStartsAt: "HOLDOUT STARTS AT",
+    splitRange: (bars, last) => `${bars} bars · 2–${last}`,
+    splitAria: "Holdout split index",
+    checkingLength: "Checking snapshot length…",
+    verifyFailed: "Could not verify snapshot length.",
+    retry: "Retry",
+    splitTooShort: "At least 4 bars are needed.",
+    splitRangeHint: (last) => `Use a whole number from 2 to ${last}.`,
+    midpoint: (index) => `Midpoint ${index}`,
+    parameterLabel: "PARAMETER",
+    parameterAria: "Evaluation parameter",
+    from: "FROM",
+    to: "TO",
+    step: "STEP",
+    evaluating: "Evaluating",
+    runEvaluation: "Run evaluation",
+    note: "Candidates rank on training only; the selected candidate runs once on holdout. Both segments cold-start with fresh cash.",
+    nothingTitle: "Nothing to evaluate",
+    nothingBody: "This strategy has no numeric parameter to vary. Saved evaluations remain available below.",
+    historyLabel: "Saved evaluations",
+    recentEvaluations: "Recent evaluations",
+    historyLoading: "Loading saved evaluations…",
+    noHistory: "No saved evaluations yet.",
+    historyHoldout: (value) => `holdout ${value}`,
+    datasetCaveat: "A canonical dataset id is required. Results saved before snapshots existed cannot be evaluated — rerun the backtest to create one.",
+    spotCaveat: "Evaluation runs on the spot model with shorts disabled. Switch the backtest account mode to spot in the strategy panel.",
+    statusHistorical: "Historical saved evaluation · opened from history.",
+    statusStale: "Previous evaluation — inputs have changed. Run again for the current inputs.",
+    statusSaved: "Saved evaluation for these inputs.",
+    statusPending: " New evaluation pending; showing the saved report.",
+    savedRequest: (strategyId, parameter) => `Saved evaluation request · ${strategyId} · ${parameter}`,
+    scanUndetermined: "Scan parameter undetermined",
+    selectedOnTrain: "SELECTED ON TRAIN",
+    applyToStrategy: "Apply to strategy",
+    appliedToStrategy: "Applied to strategy",
+    trainReturnColumn: "TRAIN RETURN",
+    holdoutReturn: "HOLDOUT RETURN",
+    holdoutFinalEquity: "HOLDOUT FINAL EQUITY",
+    trainTag: "TRAIN",
+    holdoutTag: "HOLDOUT",
+    span: (bars, start, end) => `${bars} bars · ${start} → ${end}`,
+    parametersUndetermined: "Parameters (scan parameter undetermined)",
+    maxDdColumn: "MAX DD",
+    sharpeColumn: "SHARPE",
+    tradesColumn: "TRADES",
+    selectedColumn: "SELECTED",
+    pickedTag: "PICKED",
+    savedIds: (reportId, trainingDataset, holdoutDataset, holdoutResult, parentDataset) => `Saved · report ${reportId} · train dataset ${trainingDataset}… · holdout dataset ${holdoutDataset}… · holdout result ${holdoutResult} · parent ${parentDataset}…`,
+    reportFooter: (strategyId, rule) => `strategy ${strategyId} · selection rule ${rule}`,
+    emptyTitle: "Pick parameters on train, then look once at holdout",
+    emptyBody: "Sweeping the whole window and quoting the best number is how a strategy looks great and fails live. This splits the saved snapshot by time, ranks candidates on the earlier part only, and reports the winner's result on bars it never saw.",
+  },
+  zh: {
+    historyRefreshFailed: "无法刷新验证历史。",
+    historyLoadFailed: "无法加载验证历史。",
+    openFailed: "无法打开已保存的验证。",
+    datasetUnreadable: "无法读取数据集快照。",
+    datasetMalformed: "数据集快照元数据格式错误。",
+    evaluationFailed: "验证失败。",
+    evaluationMalformed: "验证响应格式错误。",
+    parameters: { ...PARAMETER_LABELS.zh },
+    datasetLabel: "数据集（不可变快照）",
+    useActiveBacktestTitle: "使用当前回测的数据集",
+    useActiveBacktest: "使用当前回测",
+    ready: "就绪",
+    needBacktest: "需先回测",
+    datasetAria: "验证数据集 ID",
+    datasetPlaceholder: "sha256:… — 请先运行回测",
+    quickPick: "快速选择：",
+    activeChip: (id) => `当前 (${id}…)`,
+    activeDatasetTitle: (id) => `当前回测数据集：${id}`,
+    datasetPickTitle: (symbol, timeframe, datasetId) => `${symbol ?? "回测"} ${timeframe} · ${datasetId}`,
+    holdoutStartsAt: "留出集起始位置",
+    splitRange: (bars, last) => `${bars} 根 K 线 · 2–${last}`,
+    splitAria: "留出集切分位置",
+    checkingLength: "正在检查快照长度…",
+    verifyFailed: "无法校验快照长度。",
+    retry: "重试",
+    splitTooShort: "至少需要 4 根 K 线。",
+    splitRangeHint: (last) => `请输入 2 到 ${last} 之间的整数。`,
+    midpoint: (index) => `中点 ${index}`,
+    parameterLabel: "参数",
+    parameterAria: "验证参数",
+    from: "起始",
+    to: "结束",
+    step: "步长",
+    evaluating: "验证中",
+    runEvaluation: "开始验证",
+    note: "候选仅在训练段上排序；被选中的候选只在留出集上运行一次。两段都使用全新资金冷启动。",
+    nothingTitle: "无可验证参数",
+    nothingBody: "该策略没有可变的数值参数。已保存的验证仍可在下方查看。",
+    historyLabel: "已保存的验证",
+    recentEvaluations: "最近验证",
+    historyLoading: "正在加载已保存的验证…",
+    noHistory: "暂无已保存的验证。",
+    historyHoldout: (value) => `留出集 ${value}`,
+    datasetCaveat: "需要规范的数据集 ID。快照机制之前保存的结果无法验证——请重新运行回测以生成快照。",
+    spotCaveat: "验证只在模拟盘模型、禁止做空的条件下运行。请在策略面板把回测账户模式切换为模拟盘。",
+    statusHistorical: "历史已保存验证 · 来自历史记录。",
+    statusStale: "此为旧验证——输入已改变。请按当前输入重新运行。",
+    statusSaved: "当前输入对应的已保存验证。",
+    statusPending: " 新的验证进行中；此处显示已保存的报告。",
+    savedRequest: (strategyId, parameter) => `已保存的验证请求 · ${strategyId} · ${parameter}`,
+    scanUndetermined: "无法确定扫描参数",
+    selectedOnTrain: "训练段选中",
+    applyToStrategy: "应用到策略",
+    appliedToStrategy: "已应用到策略",
+    trainReturnColumn: "训练收益",
+    holdoutReturn: "留出集收益",
+    holdoutFinalEquity: "留出集最终权益",
+    trainTag: "训练",
+    holdoutTag: "留出集",
+    span: (bars, start, end) => `${bars} 根 K 线 · ${start} → ${end}`,
+    parametersUndetermined: "参数（无法确定扫描参数）",
+    maxDdColumn: "最大回撤",
+    sharpeColumn: "夏普比率",
+    tradesColumn: "交易数",
+    selectedColumn: "选中",
+    pickedTag: "已选",
+    savedIds: (reportId, trainingDataset, holdoutDataset, holdoutResult, parentDataset) => `已保存 · 报告 ${reportId} · 训练数据集 ${trainingDataset}… · 留出集数据集 ${holdoutDataset}… · 留出集结果 ${holdoutResult} · 父数据集 ${parentDataset}…`,
+    reportFooter: (strategyId, rule) => `策略 ${strategyId} · 选择规则 ${rule}`,
+    emptyTitle: "先在训练段选参数，再看一次留出集",
+    emptyBody: "扫遍整段区间再报出最好的数字，正是策略看起来出色、实盘却崩掉的原因。这里把已保存的快照按时间切分，只在前一段上给候选排序，再报告胜出者在其从未见过的 K 线上的结果。",
+  },
+};
+
 function numericKeys(parameters: StrategyParameters): string[] {
   return Object.entries(parameters)
     .filter(([, value]) => typeof value === "number")
@@ -97,8 +326,14 @@ function reportParameter(request: string, training: EvaluationCandidate[]): stri
   return training.every((candidate) => Object.hasOwn(candidate.parameters, key) && typeof candidate.parameters[key] === "number") ? key : null;
 }
 
-function formatParameters(parameters: StrategyParameters): string {
-  return Object.entries(parameters).map(([key, value]) => `${label(key)} = ${String(value)}`).join(", ");
+function formatParameters(parameters: StrategyParameters, copy: EvaluationCopy): string {
+  return Object.entries(parameters).map(([key, value]) => `${parameterName(key, copy)} = ${String(value)}`).join(", ");
+}
+
+/** Parameter names come from strategy ids; the table carries the names the
+ *  scan selector shows and falls back to the derived name for the rest. */
+function parameterName(key: string, copy: EvaluationCopy): string {
+  return copy.parameters[key] ?? label(key);
 }
 
 function pct(value: number): string {
@@ -107,6 +342,7 @@ function pct(value: number): string {
 }
 
 export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: string; timeframe: Timeframe; exchange: ExchangeId }): React.JSX.Element {
+  const copy = useCopy(EVALUATION_COPY);
   /* useShallow is required: a selector returning a fresh array is a new
      reference on every render, and React treats that as an uncached snapshot. */
   const [strategyId, parameters, config, result] = useWorkspaceStore(useShallow((state) => [state.selectedStrategyId, state.strategyParameters, state.backtestConfig, state.backtest]));
@@ -146,14 +382,14 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const loadHistory = async (requestId: number, refresh = false): Promise<void> => {
     try {
       const response = await fetch("/api/evaluations?limit=20", { cache: "no-store" });
-      if (!response.ok) throw new Error(refresh ? "Could not refresh evaluation history." : "Could not load evaluation history.");
+      if (!response.ok) throw new Error(refresh ? copy.historyRefreshFailed : copy.historyLoadFailed);
       const rows = await response.json() as EvaluationHistoryItem[];
       if (!historyLive.current || requestId !== historyRequest.current) return;
       setHistory(rows);
       setHistoryError(null);
     } catch (reason) {
       if (!historyLive.current || requestId !== historyRequest.current) return;
-      setHistoryError(reason instanceof Error ? reason.message : "Could not load evaluation history.");
+      setHistoryError(reason instanceof Error ? reason.message : copy.historyLoadFailed);
     } finally {
       if (historyLive.current && requestId === historyRequest.current) setHistoryLoading(false);
     }
@@ -200,6 +436,9 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       historyLive.current = false;
       historyRequest.current += 1;
     };
+    /* Mount-only on purpose: the two loaders are recreated every render, so
+       depending on their identity would refetch the saved list continuously. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useLayoutEffect(() => () => {
     historyOpenRequest.current?.abort();
@@ -214,14 +453,14 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
     historyOpenRequest.current = controller;
     try {
       const response = await fetch(`/api/evaluations/${encodeURIComponent(id)}`, { cache: "no-store", signal: controller.signal });
-      if (!response.ok) throw new Error("Could not open saved evaluation.");
+      if (!response.ok) throw new Error(copy.openFailed);
       const saved = await response.json() as EvaluationResponse & { request: string; reportId: string; createdAt: string };
       if (controller.signal.aborted || historyOpenRequest.current !== controller) return;
       setSavedReport({ response: saved, context, parameter: reportParameter(saved.request, saved.training), strategyId: saved.strategyId, request: saved.request });
       setHistorical(true);
       setHistoryError(null);
     } catch (reason) {
-      if (!controller.signal.aborted && historyOpenRequest.current === controller) setHistoryError(reason instanceof Error ? reason.message : "Could not open saved evaluation.");
+      if (!controller.signal.aborted && historyOpenRequest.current === controller) setHistoryError(reason instanceof Error ? reason.message : copy.openFailed);
     } finally {
       if (historyOpenRequest.current === controller) historyOpenRequest.current = null;
     }
@@ -251,7 +490,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
         const payload: unknown = await response.json();
         if (!response.ok) {
           const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
-            ? payload.error : "Dataset snapshot could not be read.";
+            ? payload.error : copy.datasetUnreadable;
           throw new Error(message);
         }
         if (typeof payload !== "object" || payload === null || !("datasetId" in payload) || payload.datasetId !== requestedDatasetId
@@ -259,7 +498,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
           || !("exchange" in payload) || typeof payload.exchange !== "string"
           || !("symbol" in payload) || typeof payload.symbol !== "string"
           || !("timeframe" in payload) || typeof payload.timeframe !== "string") {
-          throw new Error("Dataset snapshot metadata was malformed.");
+          throw new Error(copy.datasetMalformed);
         }
         if (!controller.signal.aborted) {
           setDatasetMetadata(payload as EvaluationDatasetMetadata);
@@ -268,11 +507,11 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
-          setDatasetMetadataFailure({ datasetId: requestedDatasetId, message: reason instanceof Error ? reason.message : "Dataset snapshot could not be read." });
+          setDatasetMetadataFailure({ datasetId: requestedDatasetId, message: reason instanceof Error ? reason.message : copy.datasetUnreadable });
         }
       });
     return () => controller.abort();
-  }, [datasetId, datasetMetadataRetry]);
+  }, [datasetId, datasetMetadataRetry, copy.datasetMalformed, copy.datasetUnreadable]);
 
   const context = JSON.stringify({ datasetId, strategyId, parameters, config, symbol, timeframe, exchange, activeKey, from, to, step, splitIndex });
   const running = pending?.context === context && !pending.controller.signal.aborted;
@@ -324,11 +563,11 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       const payload: unknown = await response.json();
       if (controller.signal.aborted || activeRequest.current !== controller) return;
       if (!response.ok) {
-        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Evaluation failed.";
+        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : copy.evaluationFailed;
         throw new Error(message);
       }
       if (typeof payload !== "object" || payload === null || !("training" in payload) || !Array.isArray(payload.training) || !("holdout" in payload)) {
-        throw new Error("Evaluation response was malformed.");
+        throw new Error(copy.evaluationMalformed);
       }
       setSavedReport({ response: payload as EvaluationResponse, context, parameter: activeKey, strategyId: strategy?.id ?? strategyId, request });
       setHistorical(false);
@@ -336,7 +575,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       void loadHistory(++historyRequest.current, true);
     } catch (reason) {
       if (controller.signal.aborted || activeRequest.current !== controller) return;
-      setFailure({ context, message: reason instanceof Error ? reason.message : "Evaluation failed." });
+      setFailure({ context, message: reason instanceof Error ? reason.message : copy.evaluationFailed });
     } finally {
       if (activeRequest.current === controller) {
         activeRequest.current = null;
@@ -364,35 +603,35 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       <div className="evaluation-form flex flex-wrap items-end gap-2.5 p-2.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
         <label className="evaluation-field flex flex-col gap-1 grow min-w-[18rem]">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">DATASET (IMMUTABLE SNAPSHOT)</span>
+            <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">{copy.datasetLabel}</span>
             <div className="flex items-center gap-2">
               {DATASET_ID.test(sourceDataset) && datasetId !== sourceDataset && (
                 <button
                   type="button"
                   onClick={() => setDatasetOverride(null)}
                   className="text-[9px] font-mono text-[var(--ak-signal-info)] hover:underline cursor-pointer"
-                  title="Use dataset from active backtest"
+                  title={copy.useActiveBacktestTitle}
                 >
-                  Use Active Backtest
+                  {copy.useActiveBacktest}
                 </button>
               )}
               {validDataset ? (
-                <span className="text-[9px] font-mono text-[var(--ak-signal-success)] font-bold">READY</span>
+                <span className="text-[9px] font-mono text-[var(--ak-signal-success)] font-bold">{copy.ready}</span>
               ) : (
-                <span className="text-[9px] font-mono text-[var(--ak-signal-action)]">NEED BACKTEST</span>
+                <span className="text-[9px] font-mono text-[var(--ak-signal-action)]">{copy.needBacktest}</span>
               )}
             </div>
           </div>
           <AkInput
-            aria-label="Evaluation dataset id"
+            aria-label={copy.datasetAria}
             className="compact-input h-7 text-xs font-mono"
-            placeholder="sha256:… — run a backtest first"
+            placeholder={copy.datasetPlaceholder}
             value={datasetId}
             onChange={(event) => setDatasetOverride({ source: sourceDataset, value: event.target.value })}
           />
           {recentDatasets.length > 0 && (
             <div className="flex items-center gap-1 flex-wrap pt-0.5 text-[9px] font-mono text-[var(--ak-text-secondary)]">
-              <span className="opacity-60">QUICK PICK:</span>
+              <span className="opacity-60">{copy.quickPick}</span>
               {DATASET_ID.test(sourceDataset) && (
                 <button
                   type="button"
@@ -402,9 +641,9 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                       ? "border-[var(--ak-signal-info)] text-[var(--ak-signal-info)] font-bold bg-[var(--ak-surface-sunken-2)]"
                       : "border-[var(--ak-border-subtle)] hover:text-white"
                   }`}
-                  title={`Active backtest dataset: ${sourceDataset}`}
+                  title={copy.activeDatasetTitle(sourceDataset)}
                 >
-                  Active ({sourceDataset.slice(7, 15)}…)
+                  {copy.activeChip(sourceDataset.slice(7, 15))}
                 </button>
               )}
               {recentDatasets.filter((d) => d.datasetId !== sourceDataset).slice(0, 3).map((d) => (
@@ -417,7 +656,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                       ? "border-[var(--ak-signal-info)] text-[var(--ak-signal-info)] font-bold bg-[var(--ak-surface-sunken-2)]"
                       : "border-[var(--ak-border-subtle)] hover:text-white"
                   }`}
-                  title={`${d.symbol ?? "Backtest"} ${d.timeframe ?? ""} · ${d.datasetId}`}
+                  title={copy.datasetPickTitle(d.symbol, d.timeframe ?? "", d.datasetId)}
                 >
                   {d.symbol ? `${d.symbol} ` : ""}({d.datasetId.slice(7, 15)}…)
                 </button>
@@ -427,12 +666,12 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
         </label>
         <div className="evaluation-field flex flex-col gap-1">
           <label htmlFor="holdout-split-index" className="flex items-center justify-between gap-2 text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">
-            <span>HOLDOUT STARTS AT</span>
-            {currentDatasetMetadata && <span>{currentDatasetMetadata.bars} bars · 2–{currentDatasetMetadata.bars - 2}</span>}
+            <span>{copy.holdoutStartsAt}</span>
+            {currentDatasetMetadata && <span>{copy.splitRange(currentDatasetMetadata.bars, currentDatasetMetadata.bars - 2)}</span>}
           </label>
           <AkInput
             id="holdout-split-index"
-            aria-label="Holdout split index"
+            aria-label={copy.splitAria}
             aria-invalid={currentDatasetMetadata ? !splitValid : undefined}
             aria-describedby={currentDatasetMetadata && !splitValid ? "holdout-split-help" : undefined}
             className="compact-input w-24 h-7 text-xs font-mono"
@@ -442,10 +681,10 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             value={splitIndex}
             onChange={(event) => setSplitIndex(event.target.value)}
           />
-          {datasetMetadataLoading && <span id="holdout-split-help" className="text-[9px] text-[var(--ak-text-secondary)]" role="status">Checking snapshot length…</span>}
+          {datasetMetadataLoading && <span id="holdout-split-help" className="text-[9px] text-[var(--ak-text-secondary)]" role="status">{copy.checkingLength}</span>}
           {currentDatasetMetadataError && (
             <div id="holdout-split-help" className="flex flex-wrap items-center gap-1 text-[9px] text-[var(--ak-signal-danger)]" role="alert">
-              <span>Could not verify snapshot length.</span>
+              <span>{copy.verifyFailed}</span>
               <button
                 type="button"
                 className="text-[var(--ak-signal-info)] hover:underline"
@@ -454,7 +693,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                   setDatasetMetadataRetry((retry) => retry + 1);
                 }}
               >
-                Retry
+                {copy.retry}
               </button>
             </div>
           )}
@@ -462,8 +701,8 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             <div id="holdout-split-help" className="flex flex-wrap items-center gap-1 text-[9px] text-[var(--ak-signal-action)]" role="status">
               <span>
                 {currentDatasetMetadata.bars < 4
-                  ? `At least 4 bars are needed.`
-                  : `Use a whole number from 2 to ${currentDatasetMetadata.bars - 2}.`}
+                  ? copy.splitTooShort
+                  : copy.splitRangeHint(currentDatasetMetadata.bars - 2)}
               </span>
               {currentDatasetMetadata.bars >= 4 && (
                 <Button
@@ -472,28 +711,28 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                   className="h-5 px-1 text-[9px]"
                   onClick={() => setSplitIndex(String(Math.floor(currentDatasetMetadata.bars / 2)))}
                 >
-                  Midpoint {Math.floor(currentDatasetMetadata.bars / 2)}
+                  {copy.midpoint(Math.floor(currentDatasetMetadata.bars / 2))}
                 </Button>
               )}
             </div>
           )}
         </div>
         <label className="evaluation-field flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">PARAMETER</span>
-          <AkSelect aria-label="Evaluation parameter" className="select-input h-7 text-xs font-bold" value={activeKey} onChange={(event) => setParameter(event.target.value)}>
-            {keys.map((key) => <option key={key} value={key}>{label(key)}</option>)}
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">{copy.parameterLabel}</span>
+          <AkSelect aria-label={copy.parameterAria} className="select-input h-7 text-xs font-bold" value={activeKey} onChange={(event) => setParameter(event.target.value)}>
+            {keys.map((key) => <option key={key} value={key}>{parameterName(key, copy)}</option>)}
           </AkSelect>
         </label>
         <label className="evaluation-field flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">FROM</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">{copy.from}</span>
           <AkInput className="compact-input w-20 h-7 text-xs font-mono" type="number" value={from} onChange={(event) => setFrom(event.target.value)} />
         </label>
         <label className="evaluation-field flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">TO</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">{copy.to}</span>
           <AkInput className="compact-input w-20 h-7 text-xs font-mono" type="number" value={to} onChange={(event) => setTo(event.target.value)} />
         </label>
         <label className="evaluation-field flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">STEP</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">{copy.step}</span>
           <AkInput className="compact-input w-20 h-7 text-xs font-mono" type="number" min={0} step="any" value={step} onChange={(event) => setStep(event.target.value)} />
         </label>
         <Button
@@ -505,39 +744,39 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
           icon={running ? <Play size={13} className="spin" /> : <FlaskConical size={13} />}
           className="h-7 text-xs font-bold"
         >
-          {running ? "Evaluating" : "Run evaluation"}
+          {running ? copy.evaluating : copy.runEvaluation}
         </Button>
       </div>
 
 
 
-      <p className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80">Candidates rank on training only; the selected candidate runs once on holdout. Both segments cold-start with fresh cash.</p>
+      <p className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80">{copy.note}</p>
       </>
       ) : !report ? (
-        <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><FlaskConical size={22} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>Nothing to evaluate</strong><span>This strategy has no numeric parameter to vary. Saved evaluations remain available below.</span></div>
+        <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><FlaskConical size={22} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>{copy.nothingTitle}</strong><span>{copy.nothingBody}</span></div>
       ) : null}
-      <section className="evaluation-history flex flex-col gap-1 max-h-36 overflow-auto" aria-label="Saved evaluations">
-        <strong className="text-[10px] uppercase font-mono text-[var(--ak-text-secondary)]">Recent evaluations</strong>
+      <section className="evaluation-history flex flex-col gap-1 max-h-36 overflow-auto" aria-label={copy.historyLabel}>
+        <strong className="text-[10px] uppercase font-mono text-[var(--ak-text-secondary)]">{copy.recentEvaluations}</strong>
         {historyError && <span role="alert" className="text-xs text-[var(--ak-signal-danger)]">{historyError}</span>}
         {history.map((item) => <button key={item.reportId} type="button" className="text-left p-1.5 border border-[var(--ak-border-subtle)] text-xs font-mono hover:bg-[var(--ak-surface-sunken)]" onClick={() => void openHistorical(item.reportId)}>
-          {new Date(item.createdAt).toLocaleString()} · {item.strategyId} · {item.symbol} · holdout {pct(item.holdout.metrics.totalReturn)}
+          {new Date(item.createdAt).toLocaleString()} · {item.strategyId} · {item.symbol} · {copy.historyHoldout(pct(item.holdout.metrics.totalReturn))}
         </button>)}
-        {historyLoading && <span className="text-xs opacity-70">Loading saved evaluations…</span>}
-        {!historyLoading && !history.length && !historyError && <span className="text-xs opacity-70">No saved evaluations yet.</span>}
+        {historyLoading && <span className="text-xs opacity-70">{copy.historyLoading}</span>}
+        {!historyLoading && !history.length && !historyError && <span className="text-xs opacity-70">{copy.noHistory}</span>}
       </section>
 
 
       {keys.length > 0 && !validDataset && (
         <div className="evaluation-caveat flex items-center gap-2 p-2 text-xs text-[var(--ak-signal-action)] bg-yellow-950/20 border border-yellow-800/40" role="status">
           <AlertCircle size={13} className="shrink-0" />
-          <span>A canonical dataset id is required. Results saved before snapshots existed cannot be evaluated — rerun the backtest to create one.</span>
+          <span>{copy.datasetCaveat}</span>
         </div>
       )}
 
       {keys.length > 0 && !spotOnly && (
         <div className="evaluation-caveat flex items-center gap-2 p-2 text-xs text-[var(--ak-signal-action)] bg-yellow-950/20 border border-yellow-800/40" role="status">
           <AlertCircle size={13} className="shrink-0" />
-          <span>Evaluation runs on the spot model with shorts disabled. Switch the backtest account mode to spot in the strategy panel.</span>
+          <span>{copy.spotCaveat}</span>
         </div>
       )}
 
@@ -550,19 +789,19 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       {report && (
         <>
           <p role="status" className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0">
-            {historical ? "Historical saved evaluation · opened from history." : stale ? "Previous evaluation — inputs have changed. Run again for the current inputs." : "Saved evaluation for these inputs."}
-            {running && " New evaluation pending; showing the saved report."}
+            {historical ? copy.statusHistorical : stale ? copy.statusStale : copy.statusSaved}
+            {running && copy.statusPending}
           </p>
           <details className="text-[10px] text-[var(--ak-text-secondary)] font-mono break-all">
-            <summary>Saved evaluation request · {savedReport?.strategyId} · {reportKey ? label(reportKey) : "Scan parameter undetermined"}</summary>
+            <summary>{copy.savedRequest(savedReport?.strategyId ?? "", reportKey ? parameterName(reportKey, copy) : copy.scanUndetermined)}</summary>
             {savedReport?.request}
           </details>
           <div className="evaluation-verdict grid grid-cols-2 md:grid-cols-4 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
             <div className="evaluation-verdict-cell flex flex-col justify-between">
               <div>
-                <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">SELECTED ON TRAIN</span>
+                <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.selectedOnTrain}</span>
                 <strong className="text-xs text-[var(--ak-signal-success)] font-mono font-bold block tabular-nums">
-                  {reportKey ? `${label(reportKey)} = ${String(report.selectedParameters[reportKey])}` : formatParameters(report.selectedParameters)}
+                  {reportKey ? `${parameterName(reportKey, copy)} = ${String(report.selectedParameters[reportKey])}` : formatParameters(report.selectedParameters, copy)}
                 </strong>
               </div>
               <Button
@@ -572,32 +811,32 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                 onClick={applySelected}
                 icon={appliedSelected ? <Check size={10} className="text-[var(--ak-signal-success)]" /> : undefined}
               >
-                {appliedSelected ? "Applied to strategy" : "Apply to strategy"}
+                {appliedSelected ? copy.appliedToStrategy : copy.applyToStrategy}
               </Button>
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
-              <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">TRAIN RETURN</span>
+              <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.trainReturnColumn}</span>
               <strong className={`text-xs font-mono font-bold tabular-nums ${(bestTraining?.result.metrics.totalReturn ?? 0) >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
                 {bestTraining ? pct(bestTraining.result.metrics.totalReturn) : "—"}
               </strong>
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
-              <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">HOLDOUT RETURN</span>
+              <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.holdoutReturn}</span>
               <strong className={`text-xs font-mono font-bold tabular-nums ${report.holdout.metrics.totalReturn >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
                 {pct(report.holdout.metrics.totalReturn)}
               </strong>
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
-              <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">HOLDOUT FINAL EQUITY</span>
+              <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.holdoutFinalEquity}</span>
               <strong className="text-xs font-mono font-bold tabular-nums">{report.holdout.metrics.finalEquity.toFixed(2)}</strong>
             </div>
           </div>
 
           <div className="evaluation-bounds flex flex-wrap items-center gap-2 p-2 text-[10px] font-mono text-[var(--ak-text-secondary)] bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-            <AkTag variant="neutral" className="text-[9px]">TRAIN</AkTag>
-            <span>{report.trainingBoundary.bars} bars · {new Date(report.trainingBoundary.startTime).toLocaleString()} → {new Date(report.trainingBoundary.endTimeExclusive).toLocaleString()}</span>
-            <AkTag variant="neutral" className="text-[9px]">HOLDOUT</AkTag>
-            <span>{report.holdoutBoundary.bars} bars · {new Date(report.holdoutBoundary.startTime).toLocaleString()} → {new Date(report.holdoutBoundary.endTimeExclusive).toLocaleString()}</span>
+            <AkTag variant="neutral" className="text-[9px]">{copy.trainTag}</AkTag>
+            <span>{copy.span(report.trainingBoundary.bars, new Date(report.trainingBoundary.startTime).toLocaleString(), new Date(report.trainingBoundary.endTimeExclusive).toLocaleString())}</span>
+            <AkTag variant="neutral" className="text-[9px]">{copy.holdoutTag}</AkTag>
+            <span>{copy.span(report.holdoutBoundary.bars, new Date(report.holdoutBoundary.startTime).toLocaleString(), new Date(report.holdoutBoundary.endTimeExclusive).toLocaleString())}</span>
             <span className="opacity-70">{report.evaluation} · {report.initialization}</span>
           </div>
 
@@ -605,12 +844,12 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             <table className="data-table evaluation-table w-full text-xs">
               <thead>
                 <tr className="bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] text-[10px] text-[var(--ak-text-secondary)] font-mono uppercase text-left">
-                  <th className="p-1.5">{reportKey ? label(reportKey) : "Parameters (scan parameter undetermined)"}</th>
-                  <th className="p-1.5">TRAIN RETURN</th>
-                  <th className="p-1.5">MAX DD</th>
-                  <th className="p-1.5">SHARPE</th>
-                  <th className="p-1.5">TRADES</th>
-                  <th className="p-1.5 text-right">SELECTED</th>
+                  <th className="p-1.5">{reportKey ? parameterName(reportKey, copy) : copy.parametersUndetermined}</th>
+                  <th className="p-1.5">{copy.trainReturnColumn}</th>
+                  <th className="p-1.5">{copy.maxDdColumn}</th>
+                  <th className="p-1.5">{copy.sharpeColumn}</th>
+                  <th className="p-1.5">{copy.tradesColumn}</th>
+                  <th className="p-1.5 text-right">{copy.selectedColumn}</th>
                 </tr>
               </thead>
               <tbody>
@@ -619,8 +858,8 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                   return (
                     <tr key={candidate.result.resultId} className={`border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors ${isSelected ? "is-best bg-[var(--ak-surface-raised)]" : ""}`}>
                       <td className="mono p-1.5 font-bold flex items-center gap-1.5">
-                        <span className="tabular-nums">{reportKey ? String(candidate.parameters[reportKey]) : formatParameters(candidate.parameters)}</span>
-                        {isSelected && <AkTag variant="advanced" className="text-[9px] px-1 py-0 h-3.5 leading-none">PICKED</AkTag>}
+                        <span className="tabular-nums">{reportKey ? String(candidate.parameters[reportKey]) : formatParameters(candidate.parameters, copy)}</span>
+                        {isSelected && <AkTag variant="advanced" className="text-[9px] px-1 py-0 h-3.5 leading-none">{copy.pickedTag}</AkTag>}
                       </td>
                       <td className={`p-1.5 font-mono tabular-nums font-bold ${candidate.result.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                         {candidate.result.metrics.totalReturn >= 0 ? <TrendingUp size={11} className="inline mr-1" /> : <TrendingDown size={11} className="inline mr-1" />}
@@ -638,10 +877,10 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
           </div>
 
           <p className="evaluation-ids text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80 break-all">
-            Saved · report {report.reportId ?? "—"} · train dataset {report.trainingDatasetId.slice(0, 24)}… · holdout dataset {report.holdoutDatasetId.slice(0, 24)}… · holdout result {report.holdout.resultId} · parent {report.datasetId.slice(0, 24)}…
+            {copy.savedIds(report.reportId ?? "—", report.trainingDatasetId.slice(0, 24), report.holdoutDatasetId.slice(0, 24), report.holdout.resultId, report.datasetId.slice(0, 24))}
           </p>
           <p className="evaluation-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-70">
-            {EXCHANGE_LABELS[report.holdout.exchange]} · {report.holdout.symbol} · {report.holdout.timeframe} · strategy {savedReport?.strategyId} · selection rule {report.selectionRule}
+            {EXCHANGE_LABELS[report.holdout.exchange]} · {report.holdout.symbol} · {report.holdout.timeframe} · {copy.reportFooter(savedReport?.strategyId ?? "", report.selectionRule)}
           </p>
         </>
       )}
@@ -649,10 +888,9 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
       {!report && !error && (
         <div className="empty-state p-8 text-center text-xs text-[var(--ak-text-secondary)]">
           <FlaskConical size={22} className="mx-auto mb-2 text-[var(--ak-signal-info)]" />
-          <strong className="block text-sm text-[var(--ak-text-primary)] mb-1">Pick parameters on train, then look once at holdout</strong>
+          <strong className="block text-sm text-[var(--ak-text-primary)] mb-1">{copy.emptyTitle}</strong>
           <span className="opacity-80">
-            Sweeping the whole window and quoting the best number is how a strategy looks great and fails live.
-            This splits the saved snapshot by time, ranks candidates on the earlier part only, and reports the winner&apos;s result on bars it never saw.
+            {copy.emptyBody}
           </span>
         </div>
       )}

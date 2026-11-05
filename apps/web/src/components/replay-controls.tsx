@@ -5,6 +5,7 @@ import { Clock3, FastForward, LoaderCircle, Pause, Play, SkipForward, Square, Ro
 import type { ReplayConfig, ReplaySession, Timeframe } from "@newbeing/core";
 import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkProgress } from "@swufefox/ak-ui-react";
 import { Button } from "@/components/ui/button";
+import { useCopy, type CopyTable } from "@/lib/i18n";
 
 interface ReplayControlsProps {
   symbol: string;
@@ -28,7 +29,138 @@ interface ReplayControlsProps {
   onNewSession: () => void;
 }
 
+interface ReplayCopy {
+  title: string;
+  titleHint: string;
+  futureHidden: string;
+  pastBoundary: string;
+  startAt: string;
+  seedWindow: string;
+  pastBars: string;
+  bars: (count: number) => string;
+  baseCapital: string;
+  initialCapital: string;
+  initialCapitalQuote: string;
+  perFill: string;
+  feeRate: string;
+  adverse: string;
+  slippageRate: string;
+  loadingBars: string;
+  seed: (symbol: string, timeframe: string) => string;
+  help: string;
+  cursor: string;
+  barsRevealed: (count: number) => string;
+  exhaustedTag: string;
+  localCache: string;
+  play: string;
+  pause: string;
+  playTitle: string;
+  step: string;
+  stepTitle: string;
+  speed: string;
+  speedTitle: string;
+  replaySpeed: string;
+  finish: string;
+  newSession: string;
+  timeline: string;
+  timelineValue: (revealed: number, total: number) => string;
+  stepped: (count: number) => string;
+  statusActive: string;
+  statusFinished: string;
+  exhaustedTitle: string;
+  exhaustedBody: string;
+  alertTitle: string;
+}
+
+const REPLAY_COPY: CopyTable<ReplayCopy> = {
+  en: {
+    title: "Replay simulation",
+    titleHint: "Future bars stay hidden; every step is deterministic and reads only the revealed snapshot.",
+    futureHidden: "future bars hidden",
+    pastBoundary: "PAST BOUNDARY",
+    startAt: "START AT · LOCAL TIME",
+    seedWindow: "SEED WINDOW",
+    pastBars: "PAST BARS",
+    bars: (count) => `${count} bars`,
+    baseCapital: "BASE CAPITAL",
+    initialCapital: "INITIAL CAPITAL",
+    initialCapitalQuote: "INITIAL CAPITAL · QUOTE",
+    perFill: "PER FILL",
+    feeRate: "FEE RATE",
+    adverse: "ADVERSE",
+    slippageRate: "SLIPPAGE RATE",
+    loadingBars: "Loading bars…",
+    seed: (symbol, timeframe) => `Seed ${symbol} · ${timeframe}`,
+    help: "Only completed bars at or before the selected boundary are loaded. Future candles remain strictly hidden until advanced.",
+    cursor: "Cursor:",
+    barsRevealed: (count) => `${count} BARS REVEALED`,
+    exhaustedTag: "DATASET EXHAUSTED",
+    localCache: "LOCAL CACHE",
+    play: "Play",
+    pause: "Pause",
+    playTitle: "Shortcut: Space",
+    step: "Step",
+    stepTitle: "Shortcut: Right Arrow or N",
+    speed: "SPEED",
+    speedTitle: "Speed shortcuts: < and >",
+    replaySpeed: "Replay speed",
+    finish: "Finish",
+    newSession: "New session",
+    timeline: "Timeline revealed",
+    timelineValue: (revealed, total) => `${revealed} / ${total} bars`,
+    stepped: (count) => `${count} STEPPED`,
+    statusActive: "ACTIVE",
+    statusFinished: "FINISHED",
+    exhaustedTitle: "Frozen dataset fully revealed",
+    exhaustedBody: "Every bar in this dataset is now on the chart. Start a new session to keep researching.",
+    alertTitle: "Transport Alert",
+  },
+  zh: {
+    title: "回放模拟",
+    titleHint: "未来 K 线保持隐藏；每次推进都是确定性的，只读取已揭示的快照。",
+    futureHidden: "未来 K 线已隐藏",
+    pastBoundary: "过去边界",
+    startAt: "开始时间 · 本地时间",
+    seedWindow: "种子窗口",
+    pastBars: "过去 K 线",
+    bars: (count) => `${count} 根 K 线`,
+    baseCapital: "基础资金",
+    initialCapital: "初始资金",
+    initialCapitalQuote: "初始资金 · 报价",
+    perFill: "每笔成交",
+    feeRate: "费率",
+    adverse: "不利方向",
+    slippageRate: "滑点率",
+    loadingBars: "加载 K 线…",
+    seed: (symbol, timeframe) => `初始化 ${symbol} · ${timeframe}`,
+    help: "仅加载所选边界之前的已收盘 K 线；在推进前，未来 K 线严格隐藏。",
+    cursor: "游标:",
+    barsRevealed: (count) => `${count} 根 K 线已揭示`,
+    exhaustedTag: "数据集已用尽",
+    localCache: "本地缓存",
+    play: "播放",
+    pause: "暂停",
+    playTitle: "快捷键：空格",
+    step: "步进",
+    stepTitle: "快捷键：方向键 → 或 N",
+    speed: "速度",
+    speedTitle: "速度快捷键：< 和 >",
+    replaySpeed: "回放速度",
+    finish: "结束",
+    newSession: "新建回放",
+    timeline: "已揭示区间",
+    timelineValue: (revealed, total) => `${revealed} / ${total} 根`,
+    stepped: (count) => `已推进 ${count} 步`,
+    statusActive: "进行中",
+    statusFinished: "已结束",
+    exhaustedTitle: "冻结数据集已完全揭示",
+    exhaustedBody: "该数据集的全部 K 线已显示在图上。新建回放以继续研究。",
+    alertTitle: "传输告警",
+  },
+};
+
 export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
+  const copy = useCopy(REPLAY_COPY);
   const {
     symbol, timeframe, session, startAt, limit, speed, playing, busy, error, exhausted = false,
     onStartAtChange, onLimitChange, onSpeedChange, onStart, onTogglePlay, onStep, onFinish, onNewSession,
@@ -85,24 +217,24 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
           tooltip — they are reassurance, not controls the user reads each session. */}
       <div
         className="replay-title flex items-center gap-2 pb-1 mb-1.5 border-b border-[var(--ak-border-subtle)]"
-        title="Future bars stay hidden; every step is deterministic and reads only the revealed snapshot."
+        title={copy.titleHint}
       >
         <Clock3 size={13} className="text-[var(--ak-signal-info)]" />
-        <strong className="tracking-wider text-[11px]">Replay simulation</strong>
+        <strong className="tracking-wider text-[11px]">{copy.title}</strong>
         <span className="ml-auto text-[10px] font-mono text-[var(--ak-text-secondary)] opacity-60">
-          future bars hidden
+          {copy.futureHidden}
         </span>
       </div>
 
       {!session ? (
         <div className="space-y-3">
           <div className="replay-start-group flex flex-wrap items-end gap-2.5 p-2.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-            <AkField hint="PAST BOUNDARY" className="min-w-[190px] flex-1">
+            <AkField hint={copy.pastBoundary} className="min-w-[190px] flex-1">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">START AT · LOCAL TIME</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.startAt}</AkFieldLabel>
                 <AkInput
                   type="datetime-local"
-                  aria-label="START AT · LOCAL TIME"
+                  aria-label={copy.startAt}
                   value={startAt}
                   onChange={(event) => onStartAtChange(event.target.value)}
                   className="text-xs h-8 font-mono"
@@ -110,28 +242,28 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               </label>
             </AkField>
 
-            <AkField hint="SEED WINDOW" className="w-28">
+            <AkField hint={copy.seedWindow} className="w-28">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">PAST BARS</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.pastBars}</AkFieldLabel>
                 <AkSelect
-                  aria-label="PAST BARS"
+                  aria-label={copy.pastBars}
                   value={limit}
                   onChange={(event) => onLimitChange(Number(event.target.value))}
                   className="text-xs h-8 font-mono font-bold"
                 >
-                  <option value={120}>120 bars</option>
-                  <option value={200}>200 bars</option>
-                  <option value={400}>400 bars</option>
+                  <option value={120}>{copy.bars(120)}</option>
+                  <option value={200}>{copy.bars(200)}</option>
+                  <option value={400}>{copy.bars(400)}</option>
                 </AkSelect>
               </label>
             </AkField>
 
-            <AkField hint="BASE CAPITAL" className="w-32">
+            <AkField hint={copy.baseCapital} className="w-32">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">INITIAL CAPITAL</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.initialCapital}</AkFieldLabel>
                 <AkInput
                   type="number"
-                  aria-label="INITIAL CAPITAL · QUOTE"
+                  aria-label={copy.initialCapitalQuote}
                   min="0.01"
                   value={initialCapital}
                   onChange={(event) => setInitialCapital(event.target.value)}
@@ -140,12 +272,12 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               </label>
             </AkField>
 
-            <AkField hint="PER FILL" className="w-24">
+            <AkField hint={copy.perFill} className="w-24">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">FEE RATE</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.feeRate}</AkFieldLabel>
                 <AkInput
                   type="number"
-                  aria-label="FEE RATE"
+                  aria-label={copy.feeRate}
                   min="0"
                   max="0.05"
                   step="0.0001"
@@ -156,12 +288,12 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               </label>
             </AkField>
 
-            <AkField hint="ADVERSE" className="w-24">
+            <AkField hint={copy.adverse} className="w-24">
               <label className="flex flex-col gap-1 w-full">
-                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">SLIPPAGE RATE</AkFieldLabel>
+                <AkFieldLabel className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase font-mono">{copy.slippageRate}</AkFieldLabel>
                 <AkInput
                   type="number"
-                  aria-label="SLIPPAGE RATE"
+                  aria-label={copy.slippageRate}
                   min="0"
                   max="0.05"
                   step="0.0001"
@@ -194,11 +326,11 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
               icon={busy ? <LoaderCircle className="spin" size={13} /> : <Play size={13} />}
               className="h-8 text-xs font-bold px-4 mb-0.5 whitespace-nowrap ml-auto"
             >
-              {busy ? "Loading bars…" : `Seed ${symbol} · ${timeframe}`}
+              {busy ? copy.loadingBars : copy.seed(symbol, timeframe)}
             </Button>
           </div>
           <p className="text-[11px] text-[var(--ak-text-secondary)] flex items-center gap-1.5 opacity-80">
-            <span>ℹ️</span> Only completed bars at or before the selected boundary are loaded. Future candles remain strictly hidden until advanced.
+            <span>ℹ️</span> {copy.help}
           </p>
         </div>
       ) : (
@@ -210,19 +342,19 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 <strong className="font-mono text-xs">{symbol} · {timeframe}</strong>
               </div>
               <span className="text-xs text-[var(--ak-text-secondary)] font-mono">
-                Cursor: <AkNum as="span" className="text-[var(--ak-text-primary)]">{cursor ? new Date(cursor.timestamp).toLocaleString() : "—"}</AkNum>
+                {copy.cursor} <AkNum as="span" className="text-[var(--ak-text-primary)]">{cursor ? new Date(cursor.timestamp).toLocaleString() : "—"}</AkNum>
               </span>
               <AkTag variant="neutral" className="text-[10px] font-mono">
-                {session.bars.length} BARS REVEALED
+                {copy.barsRevealed(session.bars.length)}
               </AkTag>
               {exhausted && session.status === "active" && (
                 <AkTag variant="advanced" className="text-[10px]">
-                  DATASET EXHAUSTED
+                  {copy.exhaustedTag}
                 </AkTag>
               )}
               {session.candleSource === "local-cache" && (
                 <AkTag variant="advanced" className="text-[10px]">
-                  LOCAL CACHE
+                  {copy.localCache}
                 </AkTag>
               )}
             </div>
@@ -235,9 +367,9 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 onClick={onTogglePlay}
                 icon={busy ? <LoaderCircle className="spin" size={13} /> : playing ? <Pause size={13} /> : <Play size={13} />}
                 className="h-7 text-xs font-bold"
-                title="Shortcut: Space"
+                title={copy.playTitle}
               >
-                {playing ? "Pause" : "Play"} <span className="opacity-60 text-[10px] ml-1">[Space]</span>
+                {playing ? copy.pause : copy.play} <span className="opacity-60 text-[10px] ml-1">[Space]</span>
               </Button>
 
               <Button
@@ -248,20 +380,20 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 onClick={onStep}
                 icon={<SkipForward size={13} />}
                 className="h-7 text-xs font-bold"
-                title="Shortcut: Right Arrow or N"
+                title={copy.stepTitle}
               >
-                Step <span className="opacity-60 text-[10px] ml-1">[→]</span>
+                {copy.step} <span className="opacity-60 text-[10px] ml-1">[→]</span>
               </Button>
 
-              <label className="replay-speed-control flex items-center gap-2 bg-[var(--ak-surface-canvas)] px-2 border border-[var(--ak-border)] text-xs" title="Speed shortcuts: < and >">
+              <label className="replay-speed-control flex items-center gap-2 bg-[var(--ak-surface-canvas)] px-2 border border-[var(--ak-border)] text-xs" title={copy.speedTitle}>
                 <FastForward size={13} className="text-[var(--ak-signal-info)]" />
-                <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">SPEED</span>
+                <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.speed}</span>
                 <select
-                  aria-label="Replay speed"
+                  aria-label={copy.replaySpeed}
                   value={speed}
                   onChange={(event) => onSpeedChange(Number(event.target.value))}
                   className="nb-select bg-transparent text-xs font-mono outline-none cursor-pointer border-l border-[var(--ak-border-subtle)] pl-2"
-                  title="Speed shortcuts: < and >"
+                  title={copy.speedTitle}
                 >
                   <option value={0.5}>0.5×</option>
                   <option value={1}>1×</option>
@@ -278,7 +410,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 icon={<Square size={12} />}
                 className="h-7 text-xs"
               >
-                Finish
+                {copy.finish}
               </Button>
 
               <Button
@@ -289,7 +421,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 icon={<RotateCcw size={12} />}
                 className="h-7 text-xs"
               >
-                New session
+                {copy.newSession}
               </Button>
             </div>
           </div>
@@ -297,19 +429,19 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
           <div className="pt-1.5 border-t border-[var(--ak-border-subtle)] flex items-center gap-3">
             <div className="flex-1">
               <AkProgress
-                label="Timeline revealed"
+                label={copy.timeline}
                 min={0}
                 max={Math.max(limit + 50, session.bars.length + 10)}
                 value={session.bars.length}
-                valueLabel={`${session.bars.length} / ${Math.max(limit + 50, session.bars.length + 10)} bars`}
+                valueLabel={copy.timelineValue(session.bars.length, Math.max(limit + 50, session.bars.length + 10))}
                 size="sm"
               />
             </div>
             <div className="flex items-center gap-2 text-[10px] font-mono text-[var(--ak-text-secondary)] shrink-0">
-              <span>{Math.max(0, session.bars.length - limit)} STEPPED</span>
+              <span>{copy.stepped(Math.max(0, session.bars.length - limit))}</span>
               <span>·</span>
               <span className={session.status === "active" ? "text-[var(--ak-signal-success)] font-semibold" : "text-[var(--ak-text-disabled)]"}>
-                {session.status.toUpperCase()}
+                {session.status === "active" ? copy.statusActive : copy.statusFinished}
               </span>
             </div>
           </div>
@@ -318,13 +450,13 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
 
       {exhausted && session?.status === "active" && (
         <div className="mt-2 p-2 border border-[var(--ak-signal-action)]/40 bg-[color-mix(in_srgb,var(--ak-signal-action)_10%,transparent)] text-xs font-mono">
-          <strong className="text-[var(--ak-signal-action)] tracking-wider uppercase">Frozen dataset fully revealed</strong>
-          <span className="block opacity-80 mt-0.5">Every bar in this dataset is now on the chart. Start a new session to keep researching.</span>
+          <strong className="text-[var(--ak-signal-action)] tracking-wider uppercase">{copy.exhaustedTitle}</strong>
+          <span className="block opacity-80 mt-0.5">{copy.exhaustedBody}</span>
         </div>
       )}
       {error && (
         <div className="mt-2">
-          <AkNotice variant="danger" code="REPLAY.ERR" title="Transport Alert">
+          <AkNotice variant="danger" code="REPLAY.ERR" title={copy.alertTitle}>
             {error}
           </AkNotice>
         </div>

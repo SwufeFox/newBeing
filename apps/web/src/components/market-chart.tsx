@@ -25,6 +25,7 @@ import { findCandleGaps, reconnectDelayMs, timeframeMilliseconds } from "@newbei
 import { AkSpinner } from "@swufefox/ak-ui-react";
 import { chartPalette, type ChartPalette } from "@/lib/chart-palette";
 import { usePreferences } from "@/lib/preferences";
+import { translate, useCopy, type CopyTable } from "@/lib/i18n";
 
 type StreamState = "connecting" | "live" | "reconnecting" | "unavailable" | "polling";
 
@@ -33,6 +34,117 @@ interface CandleResponse {
   gaps: Array<{ from: number; to: number }>;
   cache: { fallback: boolean; cachedAt: string | null };
 }
+
+interface MarketChartCopy {
+  chartAria: string;
+  legendOpen: string;
+  legendHigh: string;
+  legendLow: string;
+  legendClose: string;
+  legendVolume: string;
+  awaiting: string;
+  indicatorToolbar: string;
+  toggleSma20: string;
+  toggleSma50: string;
+  toggleEma20: string;
+  toggleBb: string;
+  toggleVolume: string;
+  streamLive: string;
+  streamConnecting: string;
+  streamPoll: (seconds: number) => string;
+  streamOffline: string;
+  streamReconnecting: string;
+  streamReplay: string;
+  loadingHistory: string;
+  loadVenueHistory: (venue: string) => string;
+  retry: string;
+  replayEmpty: string;
+  localCache: (time: string) => string;
+  timeUnavailable: string;
+  gapsDetected: (count: number) => string;
+  futureNotLoaded: string;
+  publicSpot: (venue: string) => string;
+  invalidResponse: string;
+  fetchFailed: string;
+  noBars: string;
+  requestFailed: string;
+  retryFailed: string;
+}
+
+/* Indicator ids (SMA20, BB, VOL) and the TradingView attribution stay literal:
+   they name the study and the library, not UI prose. */
+const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
+  en: {
+    chartAria: "Interactive market chart",
+    legendOpen: "O",
+    legendHigh: "H",
+    legendLow: "L",
+    legendClose: "C",
+    legendVolume: "V",
+    awaiting: "Awaiting market data",
+    indicatorToolbar: "Chart indicators",
+    toggleSma20: "Toggle Simple Moving Average (SMA 20)",
+    toggleSma50: "Toggle Simple Moving Average (SMA 50)",
+    toggleEma20: "Toggle Exponential Moving Average (EMA 20)",
+    toggleBb: "Toggle Bollinger Bands (20, 2)",
+    toggleVolume: "Toggle Volume Histogram",
+    streamLive: "STREAM LIVE",
+    streamConnecting: "CONNECTING",
+    streamPoll: (seconds) => `REST · ${seconds}S POLL`,
+    streamOffline: "OFFLINE",
+    streamReconnecting: "RECONNECTING",
+    streamReplay: "HISTORICAL REPLAY · FUTURE HIDDEN",
+    loadingHistory: "Loading history",
+    loadVenueHistory: (venue) => `Loading ${venue} history`,
+    retry: "Retry",
+    replayEmpty: "Seed a historical session to load past bars only.",
+    localCache: (time) => `LOCAL CACHE · last fetched ${time}`,
+    timeUnavailable: "time unavailable",
+    gapsDetected: (count) => `${count} gap${count === 1 ? "" : "s"} detected`,
+    futureNotLoaded: "Future candles are not loaded · UTC",
+    publicSpot: (venue) => `UTC · ${venue} public spot data`,
+    invalidResponse: "Exchange returned an invalid candle response.",
+    fetchFailed: "Could not fetch market candles.",
+    noBars: "No valid OHLCV bars were returned for this symbol and timeframe.",
+    requestFailed: "Market data request failed.",
+    retryFailed: "Retry failed.",
+  },
+  zh: {
+    chartAria: "交互式行情图",
+    legendOpen: "开",
+    legendHigh: "高",
+    legendLow: "低",
+    legendClose: "收",
+    legendVolume: "量",
+    awaiting: "等待行情数据",
+    indicatorToolbar: "图表指标",
+    toggleSma20: "切换简单移动平均线（SMA 20）",
+    toggleSma50: "切换简单移动平均线（SMA 50）",
+    toggleEma20: "切换指数移动平均线（EMA 20）",
+    toggleBb: "切换布林带（20, 2）",
+    toggleVolume: "切换成交量柱状图",
+    streamLive: "实时推送",
+    streamConnecting: "连接中",
+    streamPoll: (seconds) => `REST · ${seconds} 秒轮询`,
+    streamOffline: "离线",
+    streamReconnecting: "重连中",
+    streamReplay: "历史回放 · 未来已隐藏",
+    loadingHistory: "加载历史",
+    loadVenueHistory: (venue) => `加载 ${venue} 历史`,
+    retry: "重试",
+    replayEmpty: "初始化历史会话，仅加载过去的 K 线。",
+    localCache: (time) => `本地缓存 · 最后获取 ${time}`,
+    timeUnavailable: "时间不可用",
+    gapsDetected: (count) => `${count} 处缺口`,
+    futureNotLoaded: "未来 K 线未加载 · UTC",
+    publicSpot: (venue) => `UTC · ${venue} 公开现货数据`,
+    invalidResponse: "交易所返回了无效的 K 线响应。",
+    fetchFailed: "无法获取行情 K 线。",
+    noBars: "该标的与周期未返回有效的 OHLCV K 线。",
+    requestFailed: "行情请求失败。",
+    retryFailed: "重试失败。",
+  },
+};
 
 export {
   asUTCTime,
@@ -52,7 +164,7 @@ import {
 
 function parseCandleResponse(value: unknown): CandleResponse {
   if (typeof value !== "object" || value === null || !("candles" in value) || !Array.isArray(value.candles)) {
-    throw new Error("Exchange returned an invalid candle response.");
+    throw new Error(translate(MARKET_CHART_COPY).invalidResponse);
   }
   const candles: Candle[] = [];
   for (const item of value.candles) {
@@ -132,6 +244,7 @@ interface MarketChartProps {
 }
 
 export const MarketChart = memo(function MarketChart({ backtest, replayBars, onRangeChange }: MarketChartProps): React.JSX.Element {
+  const copy = useCopy(MARKET_CHART_COPY);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -258,7 +371,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     if (!response.ok) {
       const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
         ? payload.error
-        : "Could not fetch market candles.";
+        : translate(MARKET_CHART_COPY).fetchFailed;
       throw new Error(message);
     }
     const parsed = parseCandleResponse(payload);
@@ -299,7 +412,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       return;
     }
 
-    if (sanitizedCandles.length === 0) throw new Error("No valid OHLCV bars were returned for this symbol and timeframe.");
+    if (sanitizedCandles.length === 0) throw new Error(translate(MARKET_CHART_COPY).noBars);
     barsRef.current = sanitizedCandles;
     const gaps = findCandleGaps(sanitizedCandles, timeframe);
     setLiveGapCount(gaps.length);
@@ -522,7 +635,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     }
     void Promise.resolve().then(() => loadHistory(controller.signal)).catch((reason: unknown) => {
       if (isAbortError(reason)) return;
-      setErrorState({ key: dataKey, message: reason instanceof Error ? reason.message : "Market data request failed." });
+      setErrorState({ key: dataKey, message: reason instanceof Error ? reason.message : translate(MARKET_CHART_COPY).requestFailed });
     });
     return () => controller.abort();
   }, [loadHistory, symbol, timeframe, replayMode, replayBars, dataKey, updateIndicators]);
@@ -673,13 +786,23 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
   }, [backtest, replayMode]);
 
   const effectiveStream: StreamState = !replayMode && exchange !== "binance" ? "polling" : stream;
-  const streamLabel = replayMode ? "HISTORICAL REPLAY · FUTURE HIDDEN" : effectiveStream === "live" ? "STREAM LIVE" : effectiveStream === "connecting" ? "CONNECTING" : effectiveStream === "polling" ? `REST · ${Math.round(Math.max(15_000, Math.min(60_000, timeframeMilliseconds(timeframe) / 4)) / 1000)}S POLL` : effectiveStream === "unavailable" ? "OFFLINE" : "RECONNECTING";
+  const streamLabel = replayMode
+    ? copy.streamReplay
+    : effectiveStream === "live"
+      ? copy.streamLive
+      : effectiveStream === "connecting"
+        ? copy.streamConnecting
+        : effectiveStream === "polling"
+          ? copy.streamPoll(Math.round(Math.max(15_000, Math.min(60_000, timeframeMilliseconds(timeframe) / 4)) / 1000))
+          : effectiveStream === "unavailable"
+            ? copy.streamOffline
+            : copy.streamReconnecting;
   const StreamIcon = replayMode ? Clock3 : effectiveStream === "live" ? Wifi : effectiveStream === "connecting" ? Radio : effectiveStream === "polling" ? Clock3 : WifiOff;
 
   const displayBar = hoveredBar ?? (lastBar ? { timestamp: lastBar.timestamp, open: lastBar.open, high: lastBar.high, low: lastBar.low, close: lastBar.close, volume: lastBar.volume } : null);
 
   return (
-    <section className="chart-shell" data-testid="market-chart" aria-label="Interactive market chart">
+    <section className="chart-shell" data-testid="market-chart" aria-label={copy.chartAria}>
       <div className="chart-meta flex items-center justify-between gap-2 px-3 py-1.5 bg-[var(--ak-surface-sunken)] border-b border-[var(--ak-border-subtle)] font-mono text-[11px]">
         <div className="chart-meta-left flex items-center gap-2.5 overflow-x-auto min-w-0">
           {displayBar ? (
@@ -689,25 +812,25 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
                   {new Date(displayBar.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 </span>
               )}
-              <span>O <b className="text-[var(--ak-text-primary)]">{displayBar.open.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
-              <span>H <b className="text-[var(--ak-text-primary)]">{displayBar.high.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
-              <span>L <b className="text-[var(--ak-text-primary)]">{displayBar.low.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
-              <span>C <b className={displayBar.close >= displayBar.open ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}>{displayBar.close.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
+              <span>{copy.legendOpen} <b className="text-[var(--ak-text-primary)]">{displayBar.open.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
+              <span>{copy.legendHigh} <b className="text-[var(--ak-text-primary)]">{displayBar.high.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
+              <span>{copy.legendLow} <b className="text-[var(--ak-text-primary)]">{displayBar.low.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
+              <span>{copy.legendClose} <b className={displayBar.close >= displayBar.open ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}>{displayBar.close.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
               {displayBar.volume != null && indicators.volume && (
-                <span className="text-[var(--ak-text-secondary)]">V <b className="text-[var(--ak-text-primary)]">{displayBar.volume.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b></span>
+                <span className="text-[var(--ak-text-secondary)]">{copy.legendVolume} <b className="text-[var(--ak-text-primary)]">{displayBar.volume.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b></span>
               )}
             </>
           ) : (
-            <span className="muted text-[var(--ak-text-secondary)] opacity-60">Awaiting market data</span>
+            <span className="muted text-[var(--ak-text-secondary)] opacity-60">{copy.awaiting}</span>
           )}
         </div>
         <div className="chart-meta-right flex items-center gap-3 shrink-0">
-          <div className="indicator-toggles flex items-center gap-1 font-mono text-[9px]" role="toolbar" aria-label="Chart indicators">
+          <div className="indicator-toggles flex items-center gap-1 font-mono text-[9px]" role="toolbar" aria-label={copy.indicatorToolbar}>
             <button
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.sma20 ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, sma20: !prev.sma20 }))}
-              title="Toggle Simple Moving Average (SMA 20)"
+              title={copy.toggleSma20}
             >
               SMA20
             </button>
@@ -715,7 +838,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.sma50 ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, sma50: !prev.sma50 }))}
-              title="Toggle Simple Moving Average (SMA 50)"
+              title={copy.toggleSma50}
             >
               SMA50
             </button>
@@ -723,7 +846,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.ema20 ? "bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, ema20: !prev.ema20 }))}
-              title="Toggle Exponential Moving Average (EMA 20)"
+              title={copy.toggleEma20}
             >
               EMA20
             </button>
@@ -731,7 +854,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.bb ? "bg-sky-500/20 text-sky-300 border-sky-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, bb: !prev.bb }))}
-              title="Toggle Bollinger Bands (20, 2)"
+              title={copy.toggleBb}
             >
               BB
             </button>
@@ -739,12 +862,12 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.volume ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-border-strong)] font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, volume: !prev.volume }))}
-              title="Toggle Volume Histogram"
+              title={copy.toggleVolume}
             >
               VOL
             </button>
           </div>
-          <div className={`stream-indicator stream-${effectiveStream} flex items-center gap-1 text-[10px]`}>
+          <div className={`stream-indicator stream-${effectiveStream} flex items-center gap-1 text-[10px] whitespace-nowrap`}>
             <StreamIcon size={12} />
             <span>{streamLabel}</span>
           </div>
@@ -754,8 +877,8 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
         <div ref={containerRef} className="chart-canvas" />
         {loading && (
           <div className="chart-overlay">
-            <AkSpinner color="#18d1ff" label="Loading history" />
-            <span>Loading {exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase()} history</span>
+            <AkSpinner color="#18d1ff" label={copy.loadingHistory} />
+            <span>{copy.loadVenueHistory(exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase())}</span>
           </div>
         )}
         {error && (
@@ -769,26 +892,26 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
                 setRefreshing(true);
                 void loadHistory()
                   .catch((reason: unknown) => {
-                    setErrorState({ key: dataKey, message: reason instanceof Error ? reason.message : "Retry failed." });
+                    setErrorState({ key: dataKey, message: reason instanceof Error ? reason.message : translate(MARKET_CHART_COPY).retryFailed });
                   })
                   .finally(() => setRefreshing(false));
               }}
             >
-              Retry
+              {copy.retry}
             </button>
           </div>
         )}
         {replayMode && replayBars.length === 0 && (
           <div className="chart-overlay">
             <Clock3 size={16} />
-            <span>Seed a historical session to load past bars only.</span>
+            <span>{copy.replayEmpty}</span>
           </div>
         )}
       </div>
       <div className="chart-footer">
         <span>{!replayMode && cacheInfo.fallback
-          ? <><AlertTriangle size={11} /> LOCAL CACHE · last fetched {cacheInfo.cachedAt ? new Date(cacheInfo.cachedAt).toLocaleString() : "time unavailable"}</>
-          : gapCount > 0 ? <><AlertTriangle size={11} /> {gapCount} gap{gapCount === 1 ? "" : "s"} detected</> : replayMode ? "Future candles are not loaded · UTC" : `UTC · ${exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase()} public spot data`}</span>
+          ? <><AlertTriangle size={11} /> {copy.localCache(cacheInfo.cachedAt ? new Date(cacheInfo.cachedAt).toLocaleString() : copy.timeUnavailable)}</>
+          : gapCount > 0 ? <><AlertTriangle size={11} /> {copy.gapsDetected(gapCount)}</> : replayMode ? copy.futureNotLoaded : copy.publicSpot(exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase())}</span>
         <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noreferrer">Charts by TradingView · Lightweight Charts™</a>
       </div>
     </section>

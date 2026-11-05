@@ -8,17 +8,28 @@ export function derivativeDate(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) && !Number.isNaN(new Date(value).getTime())
     ? new Date(value).toISOString().replace("T", " ").replace(".000Z", " UTC") : "—";
 }
-export function derivativeBlockReason(instrument: DerivativeInstrument | null, quote: DerivativeQuote | null, now: number): string | null {
-  if (!instrument) return "Select a contract with native metadata.";
-  if (!instrument.active) return "This contract is inactive.";
-  if (instrument.expiry !== null && instrument.expiry <= now) return "Expired contract: awaiting official settlement. Paper trading is frozen.";
-  if (instrument.kind !== "perpetual" && instrument.expiry === null) return "Official expiry is unavailable. Paper trading is disabled.";
-  if (instrument.kind !== "option" && (!instrument.linear || instrument.inverse || instrument.settle !== instrument.quote)) return "Only linear contracts settled in quote currency support Paper execution.";
-  if ([instrument.contractSize, instrument.quantityStep, instrument.minContracts, instrument.priceTick].some((value) => value === null || !Number.isFinite(value) || value <= 0)) return "Native contract constraints are unavailable. Paper trading is disabled.";
+/** Why a Paper order cannot be submitted yet, as a code the UI can localise. */
+export type DerivativeBlockCode =
+  | "selectContract"
+  | "inactive"
+  | "expired"
+  | "missingExpiry"
+  | "notLinear"
+  | "missingConstraints"
+  | "needsQuote"
+  | "staleQuote";
+
+export function derivativeBlockCode(instrument: DerivativeInstrument | null, quote: DerivativeQuote | null, now: number): DerivativeBlockCode | null {
+  if (!instrument) return "selectContract";
+  if (!instrument.active) return "inactive";
+  if (instrument.expiry !== null && instrument.expiry <= now) return "expired";
+  if (instrument.kind !== "perpetual" && instrument.expiry === null) return "missingExpiry";
+  if (instrument.kind !== "option" && (!instrument.linear || instrument.inverse || instrument.settle !== instrument.quote)) return "notLinear";
+  if ([instrument.contractSize, instrument.quantityStep, instrument.minContracts, instrument.priceTick].some((value) => value === null || !Number.isFinite(value) || value <= 0)) return "missingConstraints";
   // Fixture orders are accepted only by the engine in the non-production E2E
   // process, so the ticket must not deadlock there; production never sees them.
-  if (!quote || quote.instrumentId !== instrument.id || quote.bid === null || quote.ask === null || quote.bid <= 0 || quote.ask <= 0 || quote.bid > quote.ask) return "A matching two-sided native quote is required for Paper execution.";
-  if (!Number.isFinite(quote.timestamp) || now - quote.timestamp > 15000 || now < quote.timestamp) return "Quote is stale or has an invalid native timestamp. Refresh before submitting.";
+  if (!quote || quote.instrumentId !== instrument.id || quote.bid === null || quote.ask === null || quote.bid <= 0 || quote.ask <= 0 || quote.bid > quote.ask) return "needsQuote";
+  if (!Number.isFinite(quote.timestamp) || now - quote.timestamp > 15000 || now < quote.timestamp) return "staleQuote";
   return null;
 }
 

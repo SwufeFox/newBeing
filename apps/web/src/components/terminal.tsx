@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { useCopy, type CopyTable } from "@/lib/i18n";
+import { PARAMETER_LABELS, STRATEGY_NAMES } from "@/lib/strategy-labels";
 import { applyReplaySelection, captureReplaySelection, captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { EXCHANGE_IDS, EXCHANGE_LABELS } from "@/lib/exchanges";
 import { replayIdentity, useWorkspaceStore, type DockTab, type InspectorTab } from "@/store/workspace";
@@ -295,6 +296,180 @@ const HOTKEYS_COPY: CopyTable<HotkeysCopy> = {
   },
 };
 
+interface PanelCopy {
+  searchPlaceholder: string;
+  closeSearch: string;
+  resultHint: string;
+  spotMarkets: (venue: string) => string;
+  navHint: string;
+  searching: string;
+  searchUnavailable: (venue: string) => string;
+  searchFailed: string;
+  noPair: (query: string) => string;
+  high24h: string;
+  low24h: string;
+  vol24h: string;
+  historicalOnly: string;
+  stale: string;
+  tickerOffline: string;
+  retry: string;
+  runHistory: string;
+  loadingRuns: string;
+  historySuppressed: string;
+  noRuns: string;
+  strategies: string;
+  liveParameters: string;
+  on: string;
+  off: string;
+  session: string;
+  state: string;
+  barsRevealed: string;
+  speed: string;
+  window: string;
+  playing: string;
+  paused: string;
+  idle: string;
+  buildStrategy: string;
+  buildStrategyHint: (symbol: string, timeframe: string) => string;
+  backtestErrorTitle: string;
+  backtestFailed: string;
+  executing: string;
+  fetching: (venue: string) => string;
+  liveFeed: (venue: string) => string;
+  replaySync: string;
+  replaySyncing: string;
+  returnToMarkets: string;
+  feedCursor: (time: string) => string;
+  feedUpdated: (time: string) => string;
+  feedAwaiting: string;
+  feedReplayData: string;
+  feedDelayed: string;
+  feedFixture: string;
+  feedRealtime: string;
+  feedConnecting: string;
+  activeWorkspace: string;
+  railClose: string;
+  signals: (count: number) => string;
+  marketEyebrow: (venue: string) => string;
+}
+
+/* Panel copy for the market shell. Market identifiers, venue names, timeframes
+   and numbers stay literal: only the words around them translate. */
+const PANEL_COPY: CopyTable<PanelCopy> = {
+  en: {
+    searchPlaceholder: "Search market [/]",
+    closeSearch: "Close symbol search",
+    resultHint: "Click or Enter to select · drag into the watchlist to add",
+    spotMarkets: (venue) => `${venue} · SPOT MARKETS`,
+    navHint: "↑/↓ NAV · ↵ CHOOSE",
+    searching: "Searching",
+    searchUnavailable: (venue) => `${venue} symbol search is unavailable.`,
+    searchFailed: "Search failed.",
+    noPair: (query) => `No pair for “${query}”`,
+    high24h: "24H HIGH",
+    low24h: "24H LOW",
+    vol24h: "24H VOL",
+    historicalOnly: "HISTORICAL ONLY",
+    stale: "STALE",
+    tickerOffline: "TICKER OFFLINE",
+    retry: "Retry",
+    runHistory: "RUN HISTORY",
+    loadingRuns: "Loading runs…",
+    historySuppressed: "History suppressed during Replay.",
+    noRuns: "No saved runs yet.",
+    strategies: "STRATEGIES",
+    liveParameters: "LIVE PARAMETERS",
+    on: "ON",
+    off: "OFF",
+    session: "SIMULATION SESSION",
+    state: "STATE",
+    barsRevealed: "BARS REVEALED",
+    speed: "SPEED",
+    window: "WINDOW",
+    playing: "PLAYING",
+    paused: "PAUSED",
+    idle: "IDLE",
+    buildStrategy: "Build strategy",
+    buildStrategyHint: (symbol, timeframe) => `Continue to Research with ${symbol} on ${timeframe}`,
+    backtestErrorTitle: "Backtest Simulation Error",
+    backtestFailed: "Backtest failed.",
+    executing: "Executing",
+    fetching: (venue) => `Fetching ${venue} bars & executing event loop…`,
+    liveFeed: (venue) => `Live quotes and candle feeds are loaded from ${venue} public market endpoints.`,
+    replaySync: "REPLAY SYNC",
+    replaySyncing: "Synchronizing replay session with server…",
+    returnToMarkets: "Return to Markets",
+    feedCursor: (time) => `Cursor: ${time}`,
+    feedUpdated: (time) => `Updated: ${time}`,
+    feedAwaiting: "Awaiting feed",
+    feedReplayData: "REPLAY DATA",
+    feedDelayed: "DELAYED",
+    feedFixture: "TEST FIXTURE",
+    feedRealtime: "PUBLIC REALTIME",
+    feedConnecting: "CONNECTING",
+    activeWorkspace: "Active workspace",
+    railClose: "Close",
+    signals: (count) => `${count} SIGNALS`,
+    marketEyebrow: (venue) => `${venue} · SPOT TRADING`,
+  },
+  zh: {
+    searchPlaceholder: "搜索标的 [/]",
+    closeSearch: "关闭标的搜索",
+    resultHint: "点击或回车选中 · 拖入自选即可添加",
+    spotMarkets: (venue) => `${venue} · 现货市场`,
+    navHint: "↑/↓ 移动 · ↵ 选择",
+    searching: "搜索中",
+    searchUnavailable: (venue) => `${venue} 标的搜索不可用。`,
+    searchFailed: "搜索失败。",
+    noPair: (query) => `未找到 “${query}”`,
+    high24h: "24 小时最高",
+    low24h: "24 小时最低",
+    vol24h: "24 小时成交额",
+    historicalOnly: "仅历史",
+    stale: "已过期",
+    tickerOffline: "行情离线",
+    retry: "重试",
+    runHistory: "运行历史",
+    loadingRuns: "正在加载运行记录…",
+    historySuppressed: "回放期间不显示历史。",
+    noRuns: "暂无保存的运行。",
+    strategies: "策略",
+    liveParameters: "当前参数",
+    on: "开",
+    off: "关",
+    session: "模拟会话",
+    state: "状态",
+    barsRevealed: "已揭示 K 线",
+    speed: "速度",
+    window: "区间",
+    playing: "播放中",
+    paused: "已暂停",
+    idle: "空闲",
+    buildStrategy: "构建策略",
+    buildStrategyHint: (symbol, timeframe) => `以 ${symbol} 的 ${timeframe} 周期进入研究`,
+    backtestErrorTitle: "回测模拟失败",
+    backtestFailed: "回测失败。",
+    executing: "执行中",
+    fetching: (venue) => `正在获取 ${venue} K 线并执行事件循环…`,
+    liveFeed: (venue) => `实时报价与 K 线来自 ${venue} 公开行情接口。`,
+    replaySync: "回放同步",
+    replaySyncing: "正在与服务端同步回放会话…",
+    returnToMarkets: "返回行情",
+    feedCursor: (time) => `光标：${time}`,
+    feedUpdated: (time) => `更新于 ${time}`,
+    feedAwaiting: "等待行情",
+    feedReplayData: "回放数据",
+    feedDelayed: "延迟",
+    feedFixture: "测试数据",
+    feedRealtime: "公开实时",
+    feedConnecting: "连接中",
+    activeWorkspace: "当前工作区",
+    railClose: "关闭",
+    signals: (count) => `${count} 个信号`,
+    marketEyebrow: (venue) => `${venue} · 现货交易`,
+  },
+};
+
 // This cache also survives component remounts when sessionStorage is unavailable.
 const replayOrderRequests = new Map<string, string | null>();
 const REPLAY_ORDER_STORAGE_PREFIX = "newbeing:replay-order:v1:";
@@ -342,10 +517,17 @@ function clearReplayOrderRequest(key: string, requestId: string): void {
   }
 }
 
-const RAIL_NOTES: Record<WorkspaceState["activeWorkspace"], string> = {
-  terminal: "Live quotes, depth stream, and paper execution ticket.",
-  research: "Parameter optimization and deterministic backtesting.",
-  replay: "Time-travel simulation with future bars strictly hidden.",
+const RAIL_NOTES: CopyTable<Record<WorkspaceState["activeWorkspace"], string>> = {
+  en: {
+    terminal: "Live quotes, depth stream, and paper execution ticket.",
+    research: "Parameter optimization and deterministic backtesting.",
+    replay: "Time-travel simulation with future bars strictly hidden.",
+  },
+  zh: {
+    terminal: "实时报价、盘口推送与模拟盘下单区。",
+    research: "参数寻优与确定性历史回测。",
+    replay: "严格隐藏未来 K 线的历史推演。",
+  },
 };
 
 function readItems<T>(payload: unknown): T[] {
@@ -439,6 +621,7 @@ function isTypingActive(event: KeyboardEvent): boolean {
 }
 
 function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.Element {
+  const copy = useCopy(PANEL_COPY);
   const [symbol, exchange, setSymbol, addWatchlist] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.setSymbol, state.addWatchlistSymbol]));
   const [query, setQuery] = useState(symbol);
   const [open, setOpen] = useState(false);
@@ -472,20 +655,20 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
       setLoading(true);
       void fetch(`/api/markets?exchange=${exchange}&q=${encodeURIComponent(query)}`, { cache: "no-store" }).then(async (response) => {
         const payload: unknown = await response.json();
-        if (!response.ok) throw new Error(`${EXCHANGE_LABELS[exchange]} symbol search is unavailable.`);
+        if (!response.ok) throw new Error(copy.searchUnavailable(EXCHANGE_LABELS[exchange]));
         if (!disposed) {
           setSearchResult({ query, exchange, items: readItems<MarketSymbol>(payload), error: null });
           setSelectedIndex(0);
         }
       }).catch((reason: unknown) => {
         if (!disposed) {
-          setSearchResult({ query, exchange, items: [], error: reason instanceof Error ? reason.message : "Search failed." });
+          setSearchResult({ query, exchange, items: [], error: reason instanceof Error ? reason.message : copy.searchFailed });
           setSelectedIndex(0);
         }
       }).finally(() => { if (!disposed) setLoading(false); });
     }, 180);
     return () => { disposed = true; window.clearTimeout(timer); };
-  }, [query, open, exchange]);
+  }, [query, open, exchange, copy]);
 
   const result = searchResult?.query === query && searchResult.exchange === exchange ? searchResult : null;
   const items = result?.items ?? [];
@@ -545,7 +728,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
               }
             }
           }}
-          placeholder="Search market [/]"
+          placeholder={copy.searchPlaceholder}
           className="bg-transparent border-0 outline-none text-xs font-mono w-28 uppercase text-[var(--ak-text-primary)]"
         />
         <ChevronDown size={11} className="text-[var(--ak-text-secondary)] opacity-70" />
@@ -553,13 +736,13 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
 
       {open && (
         <>
-          <button className="popover-backdrop fixed inset-0 z-40 bg-black/40" aria-label="Close symbol search" onClick={() => { setOpen(false); setQuery(symbol); }} />
+          <button className="popover-backdrop fixed inset-0 z-40 bg-black/40" aria-label={copy.closeSearch} onClick={() => { setOpen(false); setQuery(symbol); }} />
           <div ref={resultsListRef} className="symbol-results absolute left-0 top-full mt-1 w-64 max-h-72 overflow-auto bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] z-50 shadow-2xl p-1 font-mono text-xs">
             <div className="popover-title text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase p-1.5 border-b border-[var(--ak-border-subtle)] flex items-center justify-between">
-              <span>{EXCHANGE_LABELS[exchange].toUpperCase()} · SPOT MARKETS</span>
-              <span className="text-[9px] opacity-60">↑/↓ NAV · ↵ CHOOSE</span>
+              <span>{copy.spotMarkets(EXCHANGE_LABELS[exchange].toUpperCase())}</span>
+              <span className="text-[9px] opacity-60">{copy.navHint}</span>
             </div>
-            {showLoading && <div className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><AkSpinner color="#18d1ff" label="Searching" /><span>Searching…</span></div>}
+            {showLoading && <div className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><AkSpinner color="#18d1ff" label={copy.searching} /><span>{copy.searching}…</span></div>}
             {error && <div className="popover-error p-2 text-xs text-[var(--ak-signal-danger)]">{error}</div>}
             {!showLoading && !error && items.map((item, idx) => {
               const isSelected = idx === selectedIndex;
@@ -578,7 +761,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
                     event.dataTransfer.setData(WATCHLIST_DRAG_TYPE, item.symbol);
                     event.dataTransfer.setData("text/plain", item.symbol);
                   }}
-                  title="Click or Enter to select · drag into the watchlist to add"
+                  title={copy.resultHint}
                   onClick={() => choose(item.symbol)}
                 >
                   <span className="symbol-result-pair flex items-center gap-1">
@@ -590,7 +773,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
               );
             })}
             {!showLoading && !error && query.trim().length > 0 && items.length === 0 && (
-              <div className="popover-state p-3 text-center text-xs text-[var(--ak-text-secondary)]">No pair for “{query.trim().toUpperCase()}”</div>
+              <div className="popover-state p-3 text-center text-xs text-[var(--ak-text-secondary)]">{copy.noPair(query.trim().toUpperCase())}</div>
             )}
           </div>
         </>
@@ -600,6 +783,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
 }
 
 const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replayMode, replayPrice, subject, onRetry }: { summary: MarketSummaryPayload | null; error: string | null; replayMode: boolean; replayPrice: number | null; subject: string; onRetry: () => void }): React.JSX.Element {
+  const copy = useCopy(PANEL_COPY);
   const change = summary?.changePct24h;
   const currentPrice = replayMode ? replayPrice : summary?.last;
   const last = formatPrice(currentPrice);
@@ -651,7 +835,7 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
       {!replayMode && (
         <div className="summary-stats hidden lg:flex items-center gap-2 pl-3">
           <div className="summary-pod">
-            <span className="uppercase tracking-wider block opacity-70">24H HIGH</span>
+            <span className="uppercase tracking-wider block opacity-70">{copy.high24h}</span>
             {summary?.high24h != null && Number.isFinite(summary.high24h) ? (
               <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatPrice(summary.high24h)} trigger={`${subject}|hi`} /></strong>
             ) : (
@@ -659,7 +843,7 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
             )}
           </div>
           <div className="summary-pod">
-            <span className="uppercase tracking-wider block opacity-70">24H LOW</span>
+            <span className="uppercase tracking-wider block opacity-70">{copy.low24h}</span>
             {summary?.low24h != null && Number.isFinite(summary.low24h) ? (
               <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatPrice(summary.low24h)} trigger={`${subject}|lo`} /></strong>
             ) : (
@@ -667,7 +851,7 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
             )}
           </div>
           <div className="summary-pod">
-            <span className="uppercase tracking-wider block opacity-70">24H VOL</span>
+            <span className="uppercase tracking-wider block opacity-70">{copy.vol24h}</span>
             {summary?.quoteVolume24h != null && Number.isFinite(summary.quoteVolume24h) ? (
               <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs">
                 <Decoded value={`${(summary.quoteVolume24h / 1_000_000).toFixed(2)}M`} trigger={`${subject}|vol`} />
@@ -681,11 +865,11 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
 
       <div className="summary-source ml-auto text-[10px]">
         {replayMode ? (
-          <AkTag variant="advanced" className="text-[9px]">HISTORICAL ONLY</AkTag>
+          <AkTag variant="advanced" className="text-[9px]">{copy.historicalOnly}</AkTag>
         ) : error ? (
           <div className="flex items-center gap-1.5 text-[var(--ak-signal-danger)]">
-            <span>{summary ? "STALE" : "TICKER OFFLINE"}</span>
-            <button className="summary-retry underline cursor-pointer" type="button" onClick={onRetry}>Retry</button>
+            <span>{summary ? copy.stale : copy.tickerOffline}</span>
+            <button className="summary-retry underline cursor-pointer" type="button" onClick={onRetry}>{copy.retry}</button>
           </div>
         ) : null}
       </div>
@@ -729,6 +913,7 @@ function DragHandle({ direction, onDelta, style }: { direction: "horizontal" | "
 }
 
 function RailRunHistoryContent(): React.JSX.Element {
+  const copy = useCopy(PANEL_COPY);
   const [activeBacktestId, selectedStrategyId, setDockTab] = useWorkspaceStore(useShallow((state) => [
     state.activeBacktestId, state.selectedStrategyId, state.setDockTab,
   ]));
@@ -753,11 +938,11 @@ function RailRunHistoryContent(): React.JSX.Element {
   return (
     <div className="rail-block font-mono text-xs">
       <span className="rail-block-head flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)]">
-        <span>RUN HISTORY</span> <b>{items.length || "—"}</b>
+        <span>{copy.runHistory}</span> <b>{items.length || "—"}</b>
       </span>
-      {state === "loading" && <span className="rail-hint text-[10px] text-[var(--ak-text-secondary)] p-1">Loading runs…</span>}
-      {state === "blocked" && <span className="rail-hint text-[10px] text-[var(--ak-signal-action)] p-1">History suppressed during Replay.</span>}
-      {state === "ready" && items.length === 0 && <span className="rail-hint text-[10px] text-[var(--ak-text-secondary)] p-1">No saved runs yet.</span>}
+      {state === "loading" && <span className="rail-hint text-[10px] text-[var(--ak-text-secondary)] p-1">{copy.loadingRuns}</span>}
+      {state === "blocked" && <span className="rail-hint text-[10px] text-[var(--ak-signal-action)] p-1">{copy.historySuppressed}</span>}
+      {state === "ready" && items.length === 0 && <span className="rail-hint text-[10px] text-[var(--ak-text-secondary)] p-1">{copy.noRuns}</span>}
       <div className="rail-list space-y-1 mt-1 max-h-48 overflow-auto">
         {items.map((run, idx) => (
           <button
@@ -785,6 +970,9 @@ function RailRunHistoryContent(): React.JSX.Element {
 const RailRunHistory = memo(RailRunHistoryContent);
 
 function RailStrategyRosterContent(): React.JSX.Element {
+  const copy = useCopy(PANEL_COPY);
+  const parameterLabels = useCopy(PARAMETER_LABELS);
+  const strategyNames = useCopy(STRATEGY_NAMES);
   const [selectedStrategyId, parameters, setStrategy, setInspectorTab] = useWorkspaceStore(useShallow((state) => [
     state.selectedStrategyId, state.strategyParameters, state.setStrategy, state.setInspectorTab,
   ]));
@@ -810,7 +998,7 @@ function RailStrategyRosterContent(): React.JSX.Element {
     <>
       <div className="rail-block font-mono text-xs">
         <span className="rail-block-head flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)]">
-          <span>STRATEGIES</span> <b>{items.length || "—"}</b>
+          <span>{copy.strategies}</span> <b>{items.length || "—"}</b>
         </span>
         <div className="rail-list space-y-1 mt-1 max-h-40 overflow-auto">
           {items.map((s) => (
@@ -820,7 +1008,7 @@ function RailStrategyRosterContent(): React.JSX.Element {
               className={`rail-item w-full p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${selectedStrategyId === s.id ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-action)] font-bold" : ""}`}
               onClick={() => { setStrategy(s.id, {}); setInspectorTab("strategy"); }}
             >
-              <div className="rail-item-main truncate">{s.name ?? s.id}</div>
+              <div className="rail-item-main truncate">{strategyNames[s.id] ?? s.name ?? s.id}</div>
               <div className="rail-item-sub text-[9px] text-[var(--ak-text-secondary)] opacity-70 truncate">{s.id}</div>
             </button>
           ))}
@@ -830,13 +1018,13 @@ function RailStrategyRosterContent(): React.JSX.Element {
       {params.length > 0 && (
         <div className="rail-block font-mono text-xs">
           <span className="rail-block-head text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)] block">
-            LIVE PARAMETERS
+            {copy.liveParameters}
           </span>
           <div className="rail-facts compact grid grid-cols-2 gap-1 mt-1 p-1 bg-[var(--ak-surface-sunken)] text-[10px]">
             {params.map(([key, value]) => (
               <span key={key} className="flex flex-col">
-                <em className="not-italic text-[var(--ak-text-secondary)] opacity-70 truncate">{key}</em>
-                <strong className="text-[var(--ak-text-primary)] font-bold">{typeof value === "boolean" ? (value ? "ON" : "OFF") : String(value)}</strong>
+                <em className="not-italic text-[var(--ak-text-secondary)] opacity-70 truncate">{parameterLabels[key] ?? key}</em>
+                <strong className="text-[var(--ak-text-primary)] font-bold">{typeof value === "boolean" ? (value ? copy.on : copy.off) : String(value)}</strong>
               </span>
             ))}
           </div>
@@ -849,6 +1037,7 @@ function RailStrategyRosterContent(): React.JSX.Element {
 const RailStrategyRoster = memo(RailStrategyRosterContent);
 
 function RailReplayState({ session, playing, speed }: { session: ReplaySession | null; playing: boolean; speed: number }): React.JSX.Element {
+  const copy = useCopy(PANEL_COPY);
   const bars = session?.bars ?? [];
   const first = bars[0];
   const last = bars.at(-1);
@@ -859,24 +1048,24 @@ function RailReplayState({ session, playing, speed }: { session: ReplaySession |
   return (
     <div className="rail-block font-mono text-xs">
       <span className="rail-block-head text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase pb-1 border-b border-[var(--ak-border-subtle)] block">
-        SIMULATION SESSION
+        {copy.session}
       </span>
       <div className="rail-facts compact space-y-1 mt-1 p-2 bg-[var(--ak-surface-sunken)] text-[11px]">
         <div className="flex justify-between">
-          <span className="text-[var(--ak-text-secondary)]">STATE</span>
-          <strong className={playing ? "text-[var(--ak-signal-success)] font-bold" : ""}>{session ? (playing ? "PLAYING" : "PAUSED") : "IDLE"}</strong>
+          <span className="text-[var(--ak-text-secondary)]">{copy.state}</span>
+          <strong className={playing ? "text-[var(--ak-signal-success)] font-bold" : ""}>{session ? (playing ? copy.playing : copy.paused) : copy.idle}</strong>
         </div>
         <div className="flex justify-between">
-          <span className="text-[var(--ak-text-secondary)]">BARS REVEALED</span>
+          <span className="text-[var(--ak-text-secondary)]">{copy.barsRevealed}</span>
           <strong>{bars.length || "—"}</strong>
         </div>
         <div className="flex justify-between">
-          <span className="text-[var(--ak-text-secondary)]">SPEED</span>
+          <span className="text-[var(--ak-text-secondary)]">{copy.speed}</span>
           <strong>{speed}×</strong>
         </div>
         {range && (
           <div className="flex justify-between">
-            <span className="text-[var(--ak-text-secondary)]">WINDOW</span>
+            <span className="text-[var(--ak-text-secondary)]">{copy.window}</span>
             <strong className="rail-range text-[10px]">{range}</strong>
           </div>
         )}
@@ -893,6 +1082,8 @@ export function Terminal(): React.JSX.Element {
   const workspaceReady = useWorkspaceStore((state) => state.workspaceReady);
   const shell = useCopy(SHELL_COPY);
   const hotkeys = useCopy(HOTKEYS_COPY);
+  const copy = useCopy(PANEL_COPY);
+  const railNotes = useCopy(RAIL_NOTES);
   const [showSettings, setShowSettings] = useState(false);
   const exchange = useWorkspaceStore((state) => state.exchange);
   const [workspace, setWorkspace, symbol, timeframe, layout, setLayout, setVisibleRange, setBacktest, setDockTab, strategyId, parameters, config, activeReplayId, setActiveReplayId] = useWorkspaceStore(useShallow((state) => [
@@ -1093,7 +1284,7 @@ export function Terminal(): React.JSX.Element {
     const canApply = captureWorkspaceSelection();
     setRunning(true);
     setBacktestError(null);
-    setLastAction(`Fetching ${EXCHANGE_LABELS[exchange]} bars & executing event loop…`);
+    setLastAction(copy.fetching(EXCHANGE_LABELS[exchange]));
     try {
       const response = await fetch("/api/backtests", {
         method: "POST",
@@ -1121,13 +1312,13 @@ export function Terminal(): React.JSX.Element {
       }
       setLastAction(null);
     } catch (reason) {
-      const message = reason instanceof Error ? reason.message : "Backtest failed.";
+      const message = reason instanceof Error ? reason.message : copy.backtestFailed;
       setBacktestError(message);
       setLastAction(null);
     } finally {
       setRunning(false);
     }
-  }, [exchange, symbol, timeframe, strategyId, parameters, config, setBacktest, setWorkspace, setDockTab]);
+  }, [exchange, symbol, timeframe, strategyId, parameters, config, setBacktest, setWorkspace, setDockTab, copy]);
 
   const handleRunBacktest = useCallback((): void => {
     void runBacktest();
@@ -1580,17 +1771,17 @@ export function Terminal(): React.JSX.Element {
         <div className="replay-sync-banner px-3 py-1.5 bg-amber-950/40 border-b border-amber-500/40 text-xs font-mono text-amber-300 flex items-center justify-between z-20 backdrop-blur-md">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none shrink-0" />
-            <span className="text-[10px] font-bold px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 uppercase tracking-wider">REPLAY SYNC</span>
-            <span role={replaySyncError ? "alert" : "status"} className="text-[11px]">{replaySyncError ?? "Synchronizing replay session with server…"}</span>
+            <span className="text-[10px] font-bold px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 uppercase tracking-wider">{copy.replaySync}</span>
+            <span role={replaySyncError ? "alert" : "status"} className="text-[11px]">{replaySyncError ?? copy.replaySyncing}</span>
           </div>
           <div className="flex items-center gap-2">
             {replaySyncError && (
               <button className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 uppercase tracking-wider transition-all cursor-pointer" onClick={retryReplaySync}>
-                Retry
+                {copy.retry}
               </button>
             )}
             <button className="px-2 py-0.5 text-[10px] font-bold bg-[var(--ak-surface-sunken-2)] hover:bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border border-[var(--ak-border-subtle)] uppercase tracking-wider transition-all cursor-pointer" onClick={() => setPage("terminal")}>
-              Return to Markets
+              {copy.returnToMarkets}
             </button>
           </div>
         </div>
@@ -1602,7 +1793,7 @@ export function Terminal(): React.JSX.Element {
           <div className="flex flex-col">
             <span className="market-eyebrow text-[9px] text-[var(--ak-signal-info)] uppercase tracking-widest font-bold flex items-center gap-1.5">
               <span className="opacity-70 font-mono">{"//"}</span>
-              {EXCHANGE_LABELS[exchange]} · SPOT TRADING
+              {copy.marketEyebrow(EXCHANGE_LABELS[exchange])}
             </span>
             <select
               aria-label="Exchange"
@@ -1649,10 +1840,10 @@ export function Terminal(): React.JSX.Element {
         <div className="market-heading-right flex items-center gap-3 text-xs font-mono text-[var(--ak-text-secondary)]">
           <span className="exchange-time text-[10px]">
             {workspace === "replay" && replaySession?.bars.at(-1)
-              ? `Cursor: ${new Date(replaySession.cursor).toLocaleTimeString()}`
+              ? copy.feedCursor(new Date(replaySession.cursor).toLocaleTimeString())
               : summary?.timestamp
-                ? `Updated: ${new Date(summary.timestamp).toLocaleTimeString()}`
-                : "Awaiting feed"}
+                ? copy.feedUpdated(new Date(summary.timestamp).toLocaleTimeString())
+                : copy.feedAwaiting}
           </span>
           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[10px] font-bold">
             <span className="relative flex h-2 w-2">
@@ -1662,7 +1853,7 @@ export function Terminal(): React.JSX.Element {
               <span className={`relative inline-flex rounded-full h-2 w-2 ${summaryError ? "bg-rose-500" : workspace === "replay" ? "bg-cyan-400" : summary ? "bg-emerald-500" : "bg-amber-400"}`} />
             </span>
             <span className={summaryError ? "text-rose-400" : workspace === "replay" ? "text-cyan-400" : summary ? "text-emerald-400" : "text-amber-400"}>
-              {workspace === "replay" ? "REPLAY DATA" : summaryError ? "DELAYED" : summary?.source?.toLowerCase().includes("fixture") ? "TEST FIXTURE" : summary ? "PUBLIC REALTIME" : "CONNECTING"}
+              {workspace === "replay" ? copy.feedReplayData : summaryError ? copy.feedDelayed : summary?.source?.toLowerCase().includes("fixture") ? copy.feedFixture : summary ? copy.feedRealtime : copy.feedConnecting}
             </span>
           </div>
         </div>
@@ -1670,19 +1861,19 @@ export function Terminal(): React.JSX.Element {
 
       <main className={`workspace-layout mode-layout-${workspace}`}>
         {workspace !== "replay" && (showResearchRail || researchRailVisited || mobileResearchOpen) && (
-          <div className={`primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs${mobileResearchOpen ? " is-mobile-open" : ""}`} aria-label="Active workspace" hidden={!showResearchRail && !mobileResearchOpen}>
+          <div className={`primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs${mobileResearchOpen ? " is-mobile-open" : ""}`} aria-label={copy.activeWorkspace} hidden={!showResearchRail && !mobileResearchOpen}>
             {mobileResearchOpen && <div className="mobile-rail-backdrop" onClick={() => setMobileRailOpen(false)} aria-hidden="true" />}
             {mobileResearchOpen && (
-              <button type="button" ref={mobileRailCloseRef} className="mobile-rail-close" aria-label="Close list drawer" onClick={() => setMobileRailOpen(false)}>
-                <PanelLeftClose size={13} /> Close
+              <button type="button" ref={mobileRailCloseRef} className="mobile-rail-close" aria-label={shell.closeDrawer} onClick={() => setMobileRailOpen(false)}>
+                <PanelLeftClose size={13} /> {copy.railClose}
               </button>
             )}
             <div className="rail-status research p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1">
               <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
-                RESEARCH
+                {shell.researchName.toUpperCase()}
               </span>
               <span className="rail-status-note text-[10px] text-[var(--ak-text-secondary)] block leading-tight">
-                {RAIL_NOTES.research}
+                {railNotes.research}
               </span>
             </div>
             <RailStrategyRoster />
@@ -1690,13 +1881,13 @@ export function Terminal(): React.JSX.Element {
           </div>
         )}
         {workspace === "replay" && sidebarOpen && (
-          <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label="Active workspace">
+          <div className="primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs" aria-label={copy.activeWorkspace}>
             <div className="rail-status replay p-2 bg-[var(--ak-surface-sunken)] border-l-2 border-[var(--ak-signal-action)] space-y-1">
               <span className="rail-status-head font-bold text-xs text-[var(--ak-signal-action)] uppercase flex items-center gap-1">
-                REPLAY
+                {shell.replayName.toUpperCase()}
               </span>
               <span className="rail-status-note text-[10px] text-[var(--ak-text-secondary)] block leading-tight">
-                {RAIL_NOTES.replay}
+                {railNotes.replay}
               </span>
             </div>
             <RailReplayState session={replaySession} playing={replayPlaying} speed={replaySpeed} />
@@ -1709,8 +1900,8 @@ export function Terminal(): React.JSX.Element {
               <div className={`left-rail${mobileWatchlistOpen ? " is-mobile-open" : ""}`} style={{ gridColumn: col.rail, gridRow: "1 / 4" }} hidden={!showsWatchlist && !mobileWatchlistOpen}>
                 {mobileWatchlistOpen && <div className="mobile-rail-backdrop" onClick={() => setMobileRailOpen(false)} aria-hidden="true" />}
                 {mobileWatchlistOpen && (
-                  <button type="button" ref={mobileRailCloseRef} className="mobile-rail-close" aria-label="Close list drawer" onClick={() => setMobileRailOpen(false)}>
-                    <PanelLeftClose size={13} /> Close
+                  <button type="button" ref={mobileRailCloseRef} className="mobile-rail-close" aria-label={shell.closeDrawer} onClick={() => setMobileRailOpen(false)}>
+                    <PanelLeftClose size={13} /> {copy.railClose}
                   </button>
                 )}
                 <Watchlist disabled={(!showsWatchlist && !mobileWatchlistOpen) || replayLocked} selectedSummary={summary} selectedStale={Boolean(summaryError)} />
@@ -1726,7 +1917,7 @@ export function Terminal(): React.JSX.Element {
                   <span className="font-bold">{workspaceName.toUpperCase()} · {symbol} · {timeframe}</span>
                   {result && (
                     <AkTag variant="advanced" className="text-[10px] px-1.5 py-0">
-                      {result.trades.length} SIGNALS
+                      {copy.signals(result.trades.length)}
                     </AkTag>
                   )}
                 </div>
@@ -1734,14 +1925,14 @@ export function Terminal(): React.JSX.Element {
                 <div className="chart-toolbar-right flex items-center gap-2">
                   {running ? (
                     <span role="status" className="run-status text-xs text-[var(--ak-signal-action)] flex items-center gap-1.5">
-                      <AkSpinner color="#ffd800" label="Executing" /> {lastAction ?? "Executing…"}
+                      <AkSpinner color="#ffd800" label={copy.executing} /> {lastAction ?? `${copy.executing}…`}
                     </span>
                   ) : lastAction ? (
                     <span role="status" className="run-status text-xs text-[var(--ak-text-secondary)]">{lastAction}</span>
                   ) : null}
                   {workspace === "terminal" && (
-                    <Button variant="outline" size="sm" onClick={() => setPage("research")} className="h-6 text-[10px]" title={`Continue to Research with ${symbol} on ${timeframe}`}>
-                      Build strategy
+                    <Button variant="outline" size="sm" onClick={() => setPage("research")} className="h-6 text-[10px]" title={copy.buildStrategyHint(symbol, timeframe)}>
+                      {copy.buildStrategy}
                     </Button>
                   )}
                 </div>
@@ -1749,7 +1940,7 @@ export function Terminal(): React.JSX.Element {
 
               {backtestError && (
                 <div className="p-2 bg-[var(--ak-surface-canvas)] border-b border-[var(--ak-border-subtle)]">
-                  <AkNotice variant="danger" code="PRTS.EXEC" title="Backtest Simulation Error">
+                  <AkNotice variant="danger" code="PRTS.EXEC" title={copy.backtestErrorTitle}>
                     {backtestError}
                   </AkNotice>
                 </div>
@@ -1757,7 +1948,7 @@ export function Terminal(): React.JSX.Element {
 
               {exchange !== "binance" && (
                 <div className="global-alert p-1.5 bg-[var(--ak-surface-sunken)] text-[10px] font-mono text-[var(--ak-text-secondary)] border-b border-[var(--ak-border-subtle)]" role="status">
-                  Live quotes and candle feeds are loaded from {EXCHANGE_LABELS[exchange]} public market endpoints.
+                  {copy.liveFeed(EXCHANGE_LABELS[exchange])}
                 </div>
               )}
 

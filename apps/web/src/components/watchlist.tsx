@@ -8,6 +8,7 @@ import type { MarketSummary } from "@newbeing/market-data/types";
 import { EXCHANGE_QUOTE } from "@/lib/exchanges";
 import { AkTag, AkCorner, AkInput } from "@swufefox/ak-ui-react";
 import { Decoded } from "@/components/decoded";
+import { translate, useCopy, type CopyTable } from "@/lib/i18n";
 
 /** Data-transfer key used when a search result is dropped into the watchlist. */
 export const WATCHLIST_DRAG_TYPE = "application/x-newbeing-symbol";
@@ -29,7 +30,84 @@ function quotePrice(value: number | null | undefined): string {
 /** Spot symbols accept the quote currencies supported by the selected venue. */
 const SYMBOL_PATTERN = /^[A-Z0-9]{2,20}\/[A-Z0-9]{2,20}$/;
 
+interface WatchlistCopy {
+  panelTitle: string;
+  heading: string;
+  add: string;
+  cancelAdd: string;
+  placeholder: (quote: string) => string;
+  symbolLabel: string;
+  addAria: string;
+  columnSymbol: string;
+  columnLast: string;
+  reorder: (symbol: string) => string;
+  select: (symbol: string) => string;
+  remove: (symbol: string) => string;
+  empty: string;
+  staleError: (error: string) => string;
+  retrying: string;
+  retry: string;
+  feedLive: string;
+  dragHint: string;
+  invalidPair: string;
+  alreadyListed: (symbol: string) => string;
+  quotesUnavailable: (exchange: string) => string;
+  refreshFailed: string;
+}
+
+const WATCHLIST_COPY: CopyTable<WatchlistCopy> = {
+  en: {
+    panelTitle: "Watchlist · Use [ and ] to cycle symbols",
+    heading: "WATCHLIST",
+    add: "Add a symbol",
+    cancelAdd: "Cancel adding a symbol",
+    placeholder: (quote) => `SOL or SOL/${quote}`,
+    symbolLabel: "Symbol to add",
+    addAria: "Add symbol",
+    columnSymbol: "SYMBOL",
+    columnLast: "LAST",
+    reorder: (symbol) => `Reorder ${symbol}`,
+    select: (symbol) => `Select ${symbol}`,
+    remove: (symbol) => `Remove ${symbol} from watchlist`,
+    empty: "Empty. Add a symbol above, or drag one in from the search field.",
+    staleError: (error) => `${error} Showing last successful quotes as stale · retrying automatically.`,
+    retrying: "Retrying…",
+    retry: "Retry",
+    feedLive: "FEED LIVE",
+    dragHint: "DRAG ⁞⁞ TO REORDER",
+    invalidPair: "Use a pair like SOL/USD or SOL/USDT.",
+    alreadyListed: (symbol) => `${symbol} is already in the list.`,
+    quotesUnavailable: (exchange) => `${exchange} watchlist quotes are unavailable.`,
+    refreshFailed: "Could not refresh watchlist quotes.",
+  },
+  zh: {
+    panelTitle: "自选 · 使用 [ 和 ] 切换标的",
+    heading: "自选",
+    add: "添加标的",
+    cancelAdd: "取消添加标的",
+    placeholder: (quote) => `SOL 或 SOL/${quote}`,
+    symbolLabel: "要添加的标的",
+    addAria: "添加标的",
+    columnSymbol: "标的",
+    columnLast: "最新价",
+    reorder: (symbol) => `拖动 ${symbol} 排序`,
+    select: (symbol) => `选中 ${symbol}`,
+    remove: (symbol) => `将 ${symbol} 移出自选`,
+    empty: "暂无标的。在上方添加，或从搜索框拖入。",
+    staleError: (error) => `${error} 当前显示上次成功的报价，已标记为过期 · 正在自动重试。`,
+    retrying: "重试中…",
+    retry: "重试",
+    feedLive: "行情在线",
+    dragHint: "拖动 ⁞⁞ 排序",
+    invalidPair: "请使用 SOL/USD 或 SOL/USDT 这样的交易对。",
+    alreadyListed: (symbol) => `${symbol} 已在自选列表中。`,
+    quotesUnavailable: (exchange) => `${exchange} 自选报价不可用。`,
+    refreshFailed: "无法刷新自选报价。",
+  },
+};
+
 export const Watchlist = memo(function Watchlist({ disabled = false, selectedSummary = null, selectedStale = false }: { disabled?: boolean; selectedSummary?: MarketSummary | null; selectedStale?: boolean }): React.JSX.Element {
+  const copy = useCopy(WATCHLIST_COPY);
   const [watchlist, selected, exchange, setSymbol, remove, add, move] = useWorkspaceStore(useShallow((state) => [
     state.watchlist, state.symbol, state.exchange, state.setSymbol,
     state.removeWatchlistSymbol, state.addWatchlistSymbol, state.moveWatchlistSymbol,
@@ -125,7 +203,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
     try {
       const response = await fetch(`/api/market?kind=tickers&exchange=${exchange}&symbols=${encodeURIComponent(symbolsKey)}`, { cache: "no-store", signal });
       const payload: unknown = await response.json();
-      if (!response.ok) throw new Error(`${exchange} watchlist quotes are unavailable.`);
+      if (!response.ok) throw new Error(translate(WATCHLIST_COPY).quotesUnavailable(exchange));
       if (requestId !== refreshRequestRef.current || signal.aborted) return;
       const next = Object.fromEntries(readSummaries(payload).map((summary) => [summary.symbol, summary]));
       setSnapshot({ key, summaries: next, error: null });
@@ -134,7 +212,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
       setSnapshot((current) => ({
         key,
         summaries: current?.key === key ? current.summaries : {},
-        error: reason instanceof Error ? reason.message : "Could not refresh watchlist quotes.",
+        error: reason instanceof Error ? reason.message : translate(WATCHLIST_COPY).refreshFailed,
       }));
     } finally {
       if (requestId === refreshRequestRef.current && !signal.aborted) {
@@ -163,8 +241,8 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
     const value = raw.trim().toUpperCase().replace(/\s+/g, "").replace(/^([A-Z0-9]+)(USDT|USD)$/, "$1/$2");
     if (!value) return false;
     const symbol = value.includes("/") ? value : `${value}/${EXCHANGE_QUOTE[exchange]}`;
-    if (!SYMBOL_PATTERN.test(symbol)) { setAddError("Use a pair like SOL/USD or SOL/USDT."); return false; }
-    if (watchlist.includes(symbol)) { setAddError(`${symbol} is already in the list.`); return false; }
+    if (!SYMBOL_PATTERN.test(symbol)) { setAddError(translate(WATCHLIST_COPY).invalidPair); return false; }
+    if (watchlist.includes(symbol)) { setAddError(translate(WATCHLIST_COPY).alreadyListed(symbol)); return false; }
     add(symbol);
     setAddError(null);
     setAddOk(true);
@@ -197,17 +275,17 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
       onDragLeave={() => setExternalDrop(false)}
       onDrop={onPanelDrop}
     >
-      <div className="panel-heading" title="Watchlist · Use [ and ] to cycle symbols">
+      <div className="panel-heading" title={copy.panelTitle}>
         <div className="flex items-center gap-1.5">
           <BookmarkCheck size={13} className="text-[var(--ak-signal-info)]" />
-          <span className="font-bold tracking-wider text-xs">WATCHLIST</span>
+          <span className="font-bold tracking-wider text-xs">{copy.heading}</span>
         </div>
         <div className="watchlist-head-actions flex items-center gap-1.5">
           <span className="count-label text-[10px] font-mono px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] font-bold">{watchlist.length}</span>
           <button
             type="button"
             className="watchlist-add-toggle transition-transform active:scale-95"
-            aria-label={adding ? "Cancel adding a symbol" : "Add a symbol"}
+            aria-label={adding ? copy.cancelAdd : copy.add}
             aria-expanded={adding}
             disabled={disabled}
             onClick={() => {
@@ -236,21 +314,21 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
             data-slot="ak-input"
             value={draft}
             onChange={(event) => { setDraft(event.target.value); setAddError(null); }}
-            placeholder={`SOL or SOL/${EXCHANGE_QUOTE[exchange]}`}
-            aria-label="Symbol to add"
+            placeholder={copy.placeholder(EXCHANGE_QUOTE[exchange])}
+            aria-label={copy.symbolLabel}
             spellCheck={false}
             autoComplete="off"
             disabled={disabled}
             autoFocus
           />
-          <button type="submit" aria-label="Add symbol" disabled={disabled || draft.trim().length === 0} className="transition-transform active:scale-90">
+          <button type="submit" aria-label={copy.addAria} disabled={disabled || draft.trim().length === 0} className="transition-transform active:scale-90">
             {addOk ? <Check size={12} className="text-[var(--ak-signal-success)]" /> : <Plus size={12} />}
           </button>
         </form>
       )}
       {addError && <div className="watchlist-add-error" role="alert">{addError}</div>}
 
-      <div className="watchlist-columns"><span>SYMBOL</span><span>LAST</span></div>
+      <div className="watchlist-columns"><span>{copy.columnSymbol}</span><span>{copy.columnLast}</span></div>
 
       <div className="watchlist-rows" ref={listRef}>
         {watchlist.map((symbol, index) => {
@@ -282,7 +360,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
                 className="watch-grip cursor-grab active:cursor-grabbing"
                 role="button"
                 tabIndex={-1}
-                aria-label={`Reorder ${symbol}`}
+                aria-label={copy.reorder(symbol)}
                 onPointerDown={(event) => {
                   if (disabled) return;
                   event.preventDefault();
@@ -299,7 +377,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
               <button
                 className="watch-row-main group"
                 onClick={() => setSymbol(symbol)}
-                title={`Select ${symbol}`}
+                title={copy.select(symbol)}
                 disabled={disabled}
               >
                 <span className="watch-symbol">
@@ -328,7 +406,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
               </button>
               <button
                 className="watch-remove hover:text-[var(--ak-signal-danger)] transition-colors"
-                aria-label={`Remove ${symbol} from watchlist`}
+                aria-label={copy.remove(symbol)}
                 onClick={() => remove(symbol)}
                 disabled={disabled}
               >
@@ -341,14 +419,14 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
         {watchlist.length === 0 && (
           <div className="empty-watchlist">
             <BookmarkCheck size={14} className="text-[var(--ak-signal-action)]" />
-            <span>Empty. Add a symbol above, or drag one in from the search field.</span>
+            <span>{copy.empty}</span>
           </div>
         )}
         {error && (
           <div className="watchlist-error" role="status">
             <WifiOff size={12} />
-            <span>{summaries && Object.keys(summaries).length > 0 ? `${error} Showing last successful quotes as stale · retrying automatically.` : error}</span>
-            <button className="watchlist-retry" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? <LoaderCircle className="spin" size={11} /> : null}{refreshing ? "Retrying…" : "Retry"}</button>
+            <span>{summaries && Object.keys(summaries).length > 0 ? copy.staleError(error) : error}</span>
+            <button className="watchlist-retry" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? <LoaderCircle className="spin" size={11} /> : null}{refreshing ? copy.retrying : copy.retry}</button>
           </div>
         )}
       </div>
@@ -356,9 +434,9 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
       <div className="watchlist-footer mt-auto pt-2 px-2 pb-1 border-t border-[var(--ak-border-subtle)] flex items-center justify-between text-[9px] font-mono text-[var(--ak-text-secondary)]">
         <span className="flex items-center gap-1.5 text-[var(--ak-signal-success)] font-bold">
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-success)] animate-pulse motion-reduce:animate-none inline-block" />
-          FEED LIVE
+          {copy.feedLive}
         </span>
-        <span className="opacity-60 text-[8px] uppercase tracking-wider">DRAG ⁞⁞ TO REORDER</span>
+        <span className="opacity-60 text-[8px] uppercase tracking-wider">{copy.dragHint}</span>
       </div>
     </section>
   );

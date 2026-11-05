@@ -14,6 +14,388 @@ import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import { floorToDecimals } from "@/lib/indicators";
 import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress, AkSpinner } from "@swufefox/ak-ui-react";
+import { translate, useCopy, type CopyTable } from "@/lib/i18n";
+
+interface InspectorCopy {
+  /* Depth ladder and tape */
+  priceWithQuote: (quote: string) => string;
+  size: string;
+  spread: string;
+  staleNotice: string;
+  pickAsk: (price: string) => string;
+  pickBid: (price: string) => string;
+  pickTrade: (price: string) => string;
+  pickHint: string;
+  loadingDepth: string;
+  loadingPublicDepth: string;
+  loadingTrades: string;
+  loadingLatestTrades: string;
+  bookUnavailable: string;
+  bookInvalid: string;
+  bookRequestFailed: string;
+  depthStampStale: (exchange: string) => string;
+  depthStamp: (exchange: string) => string;
+  tradesUnavailable: string;
+  tradesRequestFailed: string;
+  tradesStampStale: (exchange: string) => string;
+  tradesStamp: (exchange: string) => string;
+  columnPrice: string;
+  columnAmount: string;
+  columnTime: string;
+  /* Context bridge */
+  bridge: string;
+  bridgeActive: string;
+  allContextFields: string;
+  fieldStrategy: string;
+  fieldExecution: string;
+  executionPaperLocal: string;
+  fieldActiveBacktest: string;
+  none: string;
+  fieldChartRange: string;
+  chartRangeDynamic: string;
+  bridgeNote: string;
+  copiedJson: string;
+  copyContextJson: string;
+  /* Paper ticket */
+  paperTicket: string;
+  simulated: string;
+  available: (quote: string) => string;
+  collateral: string;
+  position: (base: string) => string;
+  closeFull: string;
+  closeFullHint: string;
+  unrealizedPnl: (value: string) => string;
+  positionAllocation: string;
+  bookReference: (value: string) => string;
+  reset: string;
+  quantity: (base: string) => string;
+  toggleSizingSide: string;
+  sizingHint: string;
+  sizingBuy: string;
+  sizingSell: string;
+  setPercent: (percent: string, side: "buy" | "sell") => string;
+  max: string;
+  decreaseQuantity: string;
+  increaseQuantity: string;
+  estimatedNotional: string;
+  buy: string;
+  sell: string;
+  aiOrderPreview: string;
+  previewSide: (side: "buy" | "sell", quantity: string, base: string) => string;
+  previewNumbers: (reference: string, estimated: string, quote: string, fee: string) => string;
+  expires: (time: string) => string;
+  confirmPaper: string;
+  dismiss: string;
+  prtsSimulation: string;
+  publicQuotes: string;
+  previewActionFailed: string;
+  paperOrderFailed: string;
+  paperSubmitFailed: string;
+  previewConfirmationSaved: string;
+  previewConfirmed: string;
+  previewDismissed: string;
+  filledAtPublicQuote: (side: "buy" | "sell") => string;
+  paperOrderCancelled: string;
+  savedPaperStatus: (status: string) => string;
+  /* Replay ticket */
+  replayAccount: string;
+  isolated: string;
+  replayProtocol: string;
+  awaitingSeed: string;
+  replaySeedNote: string;
+  replaySimulator: string;
+  queueCloseHint: string;
+  cursorClosePrice: string;
+  cursorCloseHint: string;
+  priceAppliedToTrigger: (value: string) => string;
+  orderType: string;
+  replayOrderType: string;
+  market: string;
+  limit: string;
+  stop: string;
+  toggleReplaySizingSide: string;
+  limitStopPrice: (quote: string) => string;
+  stopLossOptional: string;
+  takeProfitOptional: string;
+  queueBuy: string;
+  queueSell: string;
+  cancel: string;
+  sessionNotes: string;
+  notesPlaceholder: string;
+  tags: string;
+  tagsPlaceholder: string;
+  saveNotesTags: string;
+  exportJournal: string;
+  marketCloseQueued: string;
+  limitStopRequired: string;
+  replayOrderFailed: string;
+  queuedForNextBar: (side: "buy" | "sell") => string;
+  journalSummary: (equity: string, quote: string, netPnl: string, fills: number, maxDrawdown: string) => string;
+  /* Panel chrome */
+  tabBook: string;
+  tabTrades: string;
+  tabStrategy: string;
+  tabAi: string;
+  ariaOrderBook: string;
+  ariaRecentTrades: string;
+  ariaStrategyLab: string;
+  ariaAiContext: string;
+  paperAccountMode: string;
+  legacyWallet: string;
+  sharedSpotWallet: string;
+  priceAppliedToTicket: (value: string) => string;
+}
+
+const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
+  en: {
+    priceWithQuote: (quote) => `PRICE (${quote})`,
+    size: "SIZE",
+    spread: "SPREAD",
+    staleNotice: "STALE · last update failed; showing previous data.",
+    pickAsk: (value) => `Pick ask ${value}`,
+    pickBid: (value) => `Pick bid ${value}`,
+    pickTrade: (value) => `Pick trade ${value}`,
+    pickHint: "Click to copy price to ticket",
+    loadingDepth: "Loading depth",
+    loadingPublicDepth: "Loading public depth…",
+    loadingTrades: "Loading trades",
+    loadingLatestTrades: "Loading latest trades…",
+    bookUnavailable: "Order book is unavailable.",
+    bookInvalid: "Invalid order book response.",
+    bookRequestFailed: "Order book request failed.",
+    depthStampStale: (exchange) => `STALE · ${exchange} public depth`,
+    depthStamp: (exchange) => `${exchange} depth snapshot`,
+    tradesUnavailable: "Recent trades are unavailable.",
+    tradesRequestFailed: "Recent trade request failed.",
+    tradesStampStale: (exchange) => `STALE · ${exchange} public trades`,
+    tradesStamp: (exchange) => `${exchange} public stream`,
+    columnPrice: "PRICE",
+    columnAmount: "AMOUNT",
+    columnTime: "TIME",
+    bridge: "MCP CONTEXT BRIDGE",
+    bridgeActive: "ACTIVE",
+    allContextFields: "All context fields",
+    fieldStrategy: "STRATEGY",
+    fieldExecution: "EXECUTION",
+    executionPaperLocal: "Paper (Local)",
+    fieldActiveBacktest: "ACTIVE BACKTEST",
+    none: "None",
+    fieldChartRange: "CHART RANGE",
+    chartRangeDynamic: "Dynamic",
+    bridgeNote: "The stdio MCP server reads this live SQLite workspace snapshot. No account credentials or exchange API keys are exposed.",
+    copiedJson: "Copied JSON to clipboard",
+    copyContextJson: "Copy Context JSON",
+    paperTicket: "PAPER EXECUTION TICKET",
+    simulated: "SIMULATED",
+    available: (quote) => `${quote} AVAILABLE`,
+    collateral: "COLLATERAL",
+    position: (base) => `${base} POSITION`,
+    closeFull: "Close 100%",
+    closeFullHint: "Market close full position",
+    unrealizedPnl: (value) => `uPnL ${value}`,
+    positionAllocation: "POSITION ALLOCATION",
+    bookReference: (value) => `BOOK REF: ${value}`,
+    reset: "Reset",
+    quantity: (base) => `QUANTITY · ${base}`,
+    toggleSizingSide: "Toggle sizing side",
+    sizingHint: "Click to toggle between Quote (Buy) and Inventory (Sell) sizing",
+    sizingBuy: "SIZING · BUY",
+    sizingSell: "SIZING · SELL",
+    setPercent: (percent, side) => `Set ${percent}% for ${side}`,
+    max: "MAX",
+    decreaseQuantity: "Decrease quantity",
+    increaseQuantity: "Increase quantity",
+    estimatedNotional: "ESTIMATED NOTIONAL",
+    buy: "Buy",
+    sell: "Sell",
+    aiOrderPreview: "AI ORDER PREVIEW",
+    previewSide: (side, quantity, base) => `${side.toUpperCase()} ${quantity} ${base}`,
+    previewNumbers: (reference, estimated, quote, fee) => `Ref ${reference} · Est ${estimated} ${quote} · Fee ${fee}`,
+    expires: (time) => `Expires: ${time}`,
+    confirmPaper: "Confirm Paper",
+    dismiss: "Dismiss",
+    prtsSimulation: "PRTS SIMULATION",
+    publicQuotes: "PUBLIC QUOTES",
+    previewActionFailed: "Preview action failed.",
+    paperOrderFailed: "Paper order failed.",
+    paperSubmitFailed: "Could not submit paper order.",
+    previewConfirmationSaved: "Confirmation saved · execution pending",
+    previewConfirmed: "Paper preview confirmed · simulated order recorded",
+    previewDismissed: "Preview dismissed",
+    filledAtPublicQuote: (side) => `${side.toUpperCase()} filled in Paper at a public quote`,
+    paperOrderCancelled: "Paper order cancelled",
+    savedPaperStatus: (status) => `Saved Paper status: ${status}`,
+    replayAccount: "REPLAY ACCOUNT",
+    isolated: "ISOLATED",
+    replayProtocol: "REPLAY PROTOCOL",
+    awaitingSeed: "AWAITING SEED",
+    replaySeedNote: "Time-travel simulation strictly isolates lookahead history. Seed the window on the chart bar to initialize local ledger state and execute paper fills.",
+    replaySimulator: "REPLAY SIMULATOR",
+    queueCloseHint: "Queue market sell of entire position on next bar",
+    cursorClosePrice: "CURSOR CLOSE PRICE",
+    cursorCloseHint: "Click to copy cursor close to limit/stop price input",
+    priceAppliedToTrigger: (value) => `Price $${value} applied to limit/stop`,
+    orderType: "ORDER TYPE",
+    replayOrderType: "Replay order type",
+    market: "Market",
+    limit: "Limit",
+    stop: "Stop",
+    toggleReplaySizingSide: "Toggle replay sizing side",
+    limitStopPrice: (quote) => `LIMIT / STOP PRICE · ${quote}`,
+    stopLossOptional: "STOP LOSS (OPT)",
+    takeProfitOptional: "TAKE PROFIT (OPT)",
+    queueBuy: "Queue buy",
+    queueSell: "Queue sell",
+    cancel: "Cancel",
+    sessionNotes: "SESSION NOTES",
+    notesPlaceholder: "Record your entry reasoning...",
+    tags: "TAGS · COMMA SEPARATED",
+    tagsPlaceholder: "breakout, trend-following",
+    saveNotesTags: "Save notes / tags",
+    exportJournal: "Export journal JSON",
+    marketCloseQueued: "Market close queued for next bar",
+    limitStopRequired: "Limit/stop price is required and must be positive.",
+    replayOrderFailed: "Replay order failed.",
+    queuedForNextBar: (side) => `${side.toUpperCase()} queued for next bar`,
+    journalSummary: (equity, quote, netPnl, fills, maxDrawdown) => `Equity: ${equity} ${quote} · Net PnL: ${netPnl} · ${fills} fills · Max DD: ${maxDrawdown}%`,
+    tabBook: "Book",
+    tabTrades: "Trades",
+    tabStrategy: "Strategy",
+    tabAi: "AI",
+    ariaOrderBook: "Order book",
+    ariaRecentTrades: "Recent trades",
+    ariaStrategyLab: "Strategy lab",
+    ariaAiContext: "AI context",
+    paperAccountMode: "Paper account mode",
+    legacyWallet: "Legacy pair wallet",
+    sharedSpotWallet: "New shared spot wallet",
+    priceAppliedToTicket: (value) => `Price $${value} applied to ticket`,
+  },
+  zh: {
+    priceWithQuote: (quote) => `价格 (${quote})`,
+    size: "规模",
+    spread: "价差",
+    staleNotice: "已过期 · 上次更新失败，显示上次数据。",
+    pickAsk: (value) => `选取卖一 ${value}`,
+    pickBid: (value) => `选取买一 ${value}`,
+    pickTrade: (value) => `选取成交 ${value}`,
+    pickHint: "点击将价格填入下单区",
+    loadingDepth: "加载盘口",
+    loadingPublicDepth: "加载公开盘口…",
+    loadingTrades: "加载成交明细",
+    loadingLatestTrades: "加载最新成交…",
+    bookUnavailable: "盘口不可用。",
+    bookInvalid: "盘口响应无效。",
+    bookRequestFailed: "盘口请求失败。",
+    depthStampStale: (exchange) => `已过期 · ${exchange} 公开盘口`,
+    depthStamp: (exchange) => `${exchange} 盘口快照`,
+    tradesUnavailable: "成交明细不可用。",
+    tradesRequestFailed: "成交明细请求失败。",
+    tradesStampStale: (exchange) => `已过期 · ${exchange} 公开成交`,
+    tradesStamp: (exchange) => `${exchange} 公开数据流`,
+    columnPrice: "价格",
+    columnAmount: "数量",
+    columnTime: "时间",
+    bridge: "MCP 上下文桥",
+    bridgeActive: "活跃",
+    allContextFields: "全部上下文字段",
+    fieldStrategy: "策略",
+    fieldExecution: "执行",
+    executionPaperLocal: "模拟盘（本地）",
+    fieldActiveBacktest: "当前回测",
+    none: "无",
+    fieldChartRange: "图表区间",
+    chartRangeDynamic: "动态",
+    bridgeNote: "stdio MCP 服务读取这份实时 SQLite 工作台快照。不暴露任何账户凭证或交易所 API 密钥。",
+    copiedJson: "JSON 已复制到剪贴板",
+    copyContextJson: "复制上下文 JSON",
+    paperTicket: "模拟盘下单区",
+    simulated: "模拟",
+    available: (quote) => `${quote} 可用`,
+    collateral: "抵押金",
+    position: (base) => `${base} 持仓`,
+    closeFull: "100% 平仓",
+    closeFullHint: "市价全平持仓",
+    unrealizedPnl: (value) => `未实现盈亏 ${value}`,
+    positionAllocation: "仓位占比",
+    bookReference: (value) => `盘口参考: ${value}`,
+    reset: "重置",
+    quantity: (base) => `数量 · ${base}`,
+    toggleSizingSide: "切换规模方向",
+    sizingHint: "点击在报价（买入）与持仓（卖出）规模间切换",
+    sizingBuy: "规模 · 买入",
+    sizingSell: "规模 · 卖出",
+    setPercent: (percent, side) => `将${side === "buy" ? "买入" : "卖出"}设为 ${percent}%`,
+    max: "全部",
+    decreaseQuantity: "减少数量",
+    increaseQuantity: "增加数量",
+    estimatedNotional: "预估名义价值",
+    buy: "买入",
+    sell: "卖出",
+    aiOrderPreview: "AI 委托预览",
+    previewSide: (side, quantity, base) => `${side === "buy" ? "买入" : "卖出"} ${quantity} ${base}`,
+    previewNumbers: (reference, estimated, quote, fee) => `参考 ${reference} · 预估 ${estimated} ${quote} · 手续费 ${fee}`,
+    expires: (time) => `到期: ${time}`,
+    confirmPaper: "确认模拟",
+    dismiss: "忽略",
+    prtsSimulation: "PRTS 模拟",
+    publicQuotes: "公开报价",
+    previewActionFailed: "预览操作失败。",
+    paperOrderFailed: "模拟盘下单失败。",
+    paperSubmitFailed: "无法提交模拟盘委托。",
+    previewConfirmationSaved: "确认已保存 · 待执行",
+    previewConfirmed: "模拟预览已确认 · 已记录模拟委托",
+    previewDismissed: "预览已忽略",
+    filledAtPublicQuote: (side) => `${side === "buy" ? "买入" : "卖出"}已在模拟盘按公开报价成交`,
+    paperOrderCancelled: "模拟盘委托已取消",
+    savedPaperStatus: (status) => `已保存模拟状态: ${status}`,
+    replayAccount: "回放账户",
+    isolated: "隔离",
+    replayProtocol: "回放协议",
+    awaitingSeed: "等待种子",
+    replaySeedNote: "时间旅行模拟严格隔离未来数据。在图表上播种窗口，以初始化本地账本状态并执行模拟成交。",
+    replaySimulator: "回放模拟器",
+    queueCloseHint: "在下一根 K 线市价卖出全部持仓",
+    cursorClosePrice: "光标收盘价",
+    cursorCloseHint: "点击将光标收盘价填入限价/止损价输入",
+    priceAppliedToTrigger: (value) => `价格 $${value} 已填入限价/止损`,
+    orderType: "委托类型",
+    replayOrderType: "回放委托类型",
+    market: "市价",
+    limit: "限价",
+    stop: "止损",
+    toggleReplaySizingSide: "切换回放规模方向",
+    limitStopPrice: (quote) => `限价 / 止损价 · ${quote}`,
+    stopLossOptional: "止损（可选）",
+    takeProfitOptional: "止盈（可选）",
+    queueBuy: "排队买入",
+    queueSell: "排队卖出",
+    cancel: "取消",
+    sessionNotes: "会话备注",
+    notesPlaceholder: "记录你的入场理由...",
+    tags: "标签 · 逗号分隔",
+    tagsPlaceholder: "突破, 趋势跟随",
+    saveNotesTags: "保存备注 / 标签",
+    exportJournal: "导出日志 JSON",
+    marketCloseQueued: "市价平仓已排队至下一根 K 线",
+    limitStopRequired: "限价/止损价必填，且必须为正数。",
+    replayOrderFailed: "回放委托失败。",
+    queuedForNextBar: (side) => `${side === "buy" ? "买入" : "卖出"}已排队至下一根 K 线`,
+    journalSummary: (equity, quote, netPnl, fills, maxDrawdown) => `权益: ${equity} ${quote} · 净盈亏: ${netPnl} · ${fills} 笔成交 · 最大回撤: ${maxDrawdown}%`,
+    tabBook: "盘口",
+    tabTrades: "成交",
+    tabStrategy: "策略",
+    tabAi: "AI",
+    ariaOrderBook: "盘口",
+    ariaRecentTrades: "成交明细",
+    ariaStrategyLab: "策略实验室",
+    ariaAiContext: "AI 上下文",
+    paperAccountMode: "模拟盘账户模式",
+    legacyWallet: "旧版币对钱包",
+    sharedSpotWallet: "新版共享现货钱包",
+    priceAppliedToTicket: (value) => `价格 $${value} 已填入下单区`,
+  },
+};
 
 function exchangeLabel(exchange: ExchangeId): string {
   return ({ binance: "Binance Spot", coinbaseexchange: "Coinbase Exchange", kraken: "Kraken Spot", okx: "OKX Spot" })[exchange];
@@ -71,6 +453,7 @@ function parsePreviews(payload: unknown): OrderPreview[] {
 }
 
 function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: string; exchange: ExchangeId; active?: boolean; onPickPrice?: (price: number) => void }): React.JSX.Element {
+  const copy = useCopy(INSPECTOR_COPY);
   const [book, setBook] = useState<OrderBookSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -84,6 +467,7 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
     if (!active) return;
     hasDataRef.current = false;
     const refresh = async (): Promise<void> => {
+      const text = translate(INSPECTOR_COPY);
       requestRef.current += 1;
       const requestId = requestRef.current;
       controllerRef.current?.abort();
@@ -93,9 +477,9 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
       try {
         const response = await fetch(`/api/market?kind=book&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store", signal });
         const payload: unknown = await response.json();
-        if (!response.ok) throw new Error("Order book is unavailable.");
+        if (!response.ok) throw new Error(text.bookUnavailable);
         const parsed = parseBook(payload);
-        if (!parsed) throw new Error("Invalid order book response.");
+        if (!parsed) throw new Error(text.bookInvalid);
         if (requestId !== requestRef.current || signal.aborted) return;
         setBook(parsed);
         setError(null);
@@ -103,7 +487,7 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
         hasDataRef.current = true;
       } catch (reason) {
         if (requestId !== requestRef.current || signal.aborted) return;
-        setError(reason instanceof Error ? reason.message : "Order book request failed.");
+        setError(reason instanceof Error ? reason.message : text.bookRequestFailed);
         if (hasDataRef.current) setStale(true);
       }
     };
@@ -130,11 +514,11 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
   return (
     <div className="orderbook-panel bg-[var(--ak-surface-canvas)] p-2.5 font-mono text-xs">
       <div className="book-columns flex justify-between text-[10px] text-[var(--ak-text-secondary)] uppercase font-mono pb-1 border-b border-[var(--ak-border-subtle)]">
-        <span>PRICE ({quote})</span>
-        <span>SIZE</span>
+        <span>{copy.priceWithQuote(quote)}</span>
+        <span>{copy.size}</span>
       </div>
       {error && !book && <div className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{error}</div>}
-      {stale && book && <div role="alert" className="small-error text-xs text-[var(--ak-signal-danger)] p-1">STALE · last update failed; showing previous data.</div>}
+      {stale && book && <div role="alert" className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{copy.staleNotice}</div>}
 
       {!book && !error && (
         <div className="book-skeleton py-1 space-y-1 opacity-40 animate-pulse motion-reduce:animate-none">
@@ -164,8 +548,8 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
             className="book-row ask relative flex justify-between py-[2px] px-1 hover:bg-red-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight w-full text-left"
             key={`ask-${index}`}
             onClick={() => onPickPrice?.(level.price)}
-            aria-label={`Pick ask ${price(level.price)}`}
-            title="Click to copy price to ticket"
+            aria-label={copy.pickAsk(price(level.price))}
+            title={copy.pickHint}
           >
             <span
               className="depth-bar absolute right-0 top-0 bottom-0 pointer-events-none transition-all duration-300"
@@ -189,7 +573,7 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
             <strong className="text-xs font-bold text-[var(--ak-text-primary)] tabular-nums">{price(midPrice)}</strong>
           </div>
           <span className="book-spread text-[10px] text-[var(--ak-text-secondary)] flex items-center gap-1">
-            <em className="not-italic opacity-70">SPREAD</em>
+            <em className="not-italic opacity-70">{copy.spread}</em>
             <b className="text-[var(--ak-signal-action)] tabular-nums">{price(spread)}</b>
           </span>
         </div>
@@ -202,8 +586,8 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
             className="book-row bid relative flex justify-between py-[2px] px-1 hover:bg-emerald-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight w-full text-left"
             key={`bid-${index}`}
             onClick={() => onPickPrice?.(level.price)}
-            aria-label={`Pick bid ${price(level.price)}`}
-            title="Click to copy price to ticket"
+            aria-label={copy.pickBid(price(level.price))}
+            title={copy.pickHint}
           >
             <span
               className="depth-bar absolute right-0 top-0 bottom-0 pointer-events-none transition-all duration-300"
@@ -222,18 +606,19 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
 
       {!book && !error && (
         <div className="book-loading p-4 text-center text-xs text-[var(--ak-text-secondary)] flex items-center justify-center gap-2">
-          <AkSpinner color="#18d1ff" label="Loading depth" />
-          <span>Loading public depth…</span>
+          <AkSpinner color="#18d1ff" label={copy.loadingDepth} />
+          <span>{copy.loadingPublicDepth}</span>
         </div>
       )}
       <div className="data-stamp text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-2 text-right">
-        {error ? `STALE · ${exchangeLabel(exchange)} public depth` : `${exchangeLabel(exchange)} depth snapshot`}
+        {error ? copy.depthStampStale(exchangeLabel(exchange)) : copy.depthStamp(exchangeLabel(exchange))}
       </div>
     </div>
   );
 }
 
 function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol: string; exchange: ExchangeId; active?: boolean; onPickPrice?: (price: number) => void }): React.JSX.Element {
+  const copy = useCopy(INSPECTOR_COPY);
   const [trades, setTrades] = useState<RecentTrade[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -247,6 +632,7 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
     if (!active) return;
     hasDataRef.current = false;
     const refresh = async (): Promise<void> => {
+      const text = translate(INSPECTOR_COPY);
       requestRef.current += 1;
       const requestId = requestRef.current;
       controllerRef.current?.abort();
@@ -256,7 +642,7 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
       try {
         const response = await fetch(`/api/market?kind=trades&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}`, { cache: "no-store", signal });
         const payload: unknown = await response.json();
-        if (!response.ok) throw new Error("Recent trades are unavailable.");
+        if (!response.ok) throw new Error(text.tradesUnavailable);
         const next = parseTrades(payload);
         if (requestId !== requestRef.current || signal.aborted) return;
         setTrades(next);
@@ -265,7 +651,7 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
         hasDataRef.current = true;
       } catch (reason) {
         if (requestId !== requestRef.current || signal.aborted) return;
-        setError(reason instanceof Error ? reason.message : "Recent trade request failed.");
+        setError(reason instanceof Error ? reason.message : text.tradesRequestFailed);
         if (hasDataRef.current) setStale(true);
       }
     };
@@ -282,12 +668,12 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
   return (
     <div className="recent-trades-panel bg-[var(--ak-surface-canvas)] p-2.5 font-mono text-xs">
       <div className="trades-columns flex justify-between text-[10px] text-[var(--ak-text-secondary)] uppercase pb-1 border-b border-[var(--ak-border-subtle)]">
-        <span>PRICE</span>
-        <span>AMOUNT</span>
-        <span>TIME</span>
+        <span>{copy.columnPrice}</span>
+        <span>{copy.columnAmount}</span>
+        <span>{copy.columnTime}</span>
       </div>
       {error && trades.length === 0 && <div className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{error}</div>}
-      {stale && trades.length > 0 && <div role="alert" className="small-error text-xs text-[var(--ak-signal-danger)] p-1">STALE · last update failed; showing previous data.</div>}
+      {stale && trades.length > 0 && <div role="alert" className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{copy.staleNotice}</div>}
 
       <div className="trades-list space-y-0.5 py-1">
         {trades.slice(0, 14).map((trade) => {
@@ -298,8 +684,8 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
               className="trade-row flex justify-between py-0.5 px-1 hover:bg-[var(--ak-surface-sunken)] cursor-pointer select-none group w-full text-left"
               key={trade.id}
               onClick={() => onPickPrice?.(trade.price)}
-              aria-label={`Pick trade ${price(trade.price)}`}
-              title="Click to copy price to ticket"
+              aria-label={copy.pickTrade(price(trade.price))}
+              title={copy.pickHint}
             >
               <span className={`font-bold tabular-nums group-hover:underline flex items-center gap-1 ${isBuy ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
                 {isBuy ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
@@ -316,18 +702,19 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
 
       {trades.length === 0 && !error && (
         <div className="book-loading p-4 text-center text-xs text-[var(--ak-text-secondary)] flex items-center justify-center gap-2">
-          <AkSpinner color="#18d1ff" label="Loading trades" />
-          <span>Loading latest trades…</span>
+          <AkSpinner color="#18d1ff" label={copy.loadingTrades} />
+          <span>{copy.loadingLatestTrades}</span>
         </div>
       )}
       <div className="data-stamp text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-2 text-right">
-        {error ? `STALE · ${exchangeLabel(exchange)} public trades` : `${exchangeLabel(exchange)} public stream`}
+        {error ? copy.tradesStampStale(exchangeLabel(exchange)) : copy.tradesStamp(exchangeLabel(exchange))}
       </div>
     </div>
   );
 }
 
 function WorkspaceContext(): React.JSX.Element {
+  const copy = useCopy(INSPECTOR_COPY);
   const state = useWorkspaceStore(useShallow((workspace) => ({
     symbol: workspace.symbol,
     exchange: workspace.exchange,
@@ -345,7 +732,7 @@ function WorkspaceContext(): React.JSX.Element {
     quoteScope: "public market data only; paper portfolio is local; live trading disabled",
   }), [state]);
 
-  const copy = async (): Promise<void> => {
+  const copyContext = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(JSON.stringify(context, null, 2));
       setCopied(true);
@@ -360,11 +747,11 @@ function WorkspaceContext(): React.JSX.Element {
       <div className="context-callout flex items-center justify-between p-2 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
         <div className="flex items-center gap-1.5">
           <Braces size={13} className="text-[var(--ak-signal-info)]" />
-          <span className="font-bold text-xs tracking-wider">MCP CONTEXT BRIDGE</span>
+          <span className="font-bold text-xs tracking-wider">{copy.bridge}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-info)]" />
-          <span className="text-[10px] text-[var(--ak-signal-info)] uppercase">ACTIVE</span>
+          <span className="text-[10px] text-[var(--ak-signal-info)] uppercase">{copy.bridgeActive}</span>
         </div>
       </div>
 
@@ -379,20 +766,20 @@ function WorkspaceContext(): React.JSX.Element {
       </div>
 
       <details className="context-details text-[10px] text-[var(--ak-text-secondary)] font-mono">
-        <summary className="cursor-pointer opacity-70 hover:opacity-100 py-0.5">All context fields</summary>
+        <summary className="cursor-pointer opacity-70 hover:opacity-100 py-0.5">{copy.allContextFields}</summary>
         <div className="context-list grid grid-cols-2 gap-1.5 p-2 mt-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
-          <ContextField label="STRATEGY" value={state.selectedStrategyId} />
-          <ContextField label="EXECUTION" value="Paper (Local)" />
-          <ContextField label="ACTIVE BACKTEST" value={state.activeBacktestId ? `${state.activeBacktestId.slice(0, 10)}…` : "None"} />
+          <ContextField label={copy.fieldStrategy} value={state.selectedStrategyId} />
+          <ContextField label={copy.fieldExecution} value={copy.executionPaperLocal} />
+          <ContextField label={copy.fieldActiveBacktest} value={state.activeBacktestId ? `${state.activeBacktestId.slice(0, 10)}…` : copy.none} />
           <ContextField
-            label="CHART RANGE"
+            label={copy.fieldChartRange}
             value={state.visibleRange.from && state.visibleRange.to
               ? `${new Date(state.visibleRange.from).toISOString().slice(5, 10)} → ${new Date(state.visibleRange.to).toISOString().slice(5, 10)}`
-              : "Dynamic"}
+              : copy.chartRangeDynamic}
           />
         </div>
         <p className="context-note opacity-70 leading-normal mt-1.5 m-0">
-          The stdio MCP server reads this live SQLite workspace snapshot. No account credentials or exchange API keys are exposed.
+          {copy.bridgeNote}
         </p>
       </details>
 
@@ -400,11 +787,11 @@ function WorkspaceContext(): React.JSX.Element {
         variant="outline"
         size="sm"
         block
-        onClick={() => void copy()}
+        onClick={() => void copyContext()}
         icon={copied ? <Check size={13} className="text-[var(--ak-signal-success)]" /> : <Copy size={13} />}
         className="text-xs"
       >
-        {copied ? "Copied JSON to clipboard" : "Copy Context JSON"}
+        {copied ? copy.copiedJson : copy.copyContextJson}
       </Button>
     </div>
   );
@@ -430,6 +817,7 @@ function PaperTicket({
   prefilledPrice?: number | null;
   onClearPrefilledPrice?: () => void;
 }): React.JSX.Element {
+  const copy = useCopy(INSPECTOR_COPY);
   const exchange = useWorkspaceStore((state) => state.exchange);
   const [portfolio, setPortfolio] = useState<PaperPortfolio | null>(null);
   const [previews, setPreviews] = useState<OrderPreview[]>([]);
@@ -466,6 +854,7 @@ function PaperTicket({
   }, [symbol, notice, exchange]);
 
   const resolvePreview = async (previewId: string, action: "confirm" | "dismiss"): Promise<void> => {
+    const text = translate(INSPECTOR_COPY);
     setResolvingPreview(previewId);
     setError(null);
     try {
@@ -476,21 +865,22 @@ function PaperTicket({
       });
       const payload: unknown = await response.json();
       if (!response.ok) {
-        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Preview action failed.";
+        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : text.previewActionFailed;
         throw new Error(message);
       }
-      setNotice(response.status === 202 ? "Confirmation saved · execution pending" : action === "confirm" ? "Paper preview confirmed · simulated order recorded" : "Preview dismissed");
+      setNotice(response.status === 202 ? text.previewConfirmationSaved : action === "confirm" ? text.previewConfirmed : text.previewDismissed);
       const refresh = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
       const account = parsePaper(await refresh.json());
       if (refresh.ok && account) setPortfolio(account.portfolio);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Preview action failed.");
+      setError(reason instanceof Error ? reason.message : text.previewActionFailed);
     } finally {
       setResolvingPreview(null);
     }
   };
 
   const submit = async (side: "buy" | "sell"): Promise<void> => {
+    const text = translate(INSPECTOR_COPY);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -503,7 +893,7 @@ function PaperTicket({
       });
       const payload: unknown = await response.json();
       if (!response.ok && response.status !== 202) {
-        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Paper order failed.";
+        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : text.paperOrderFailed;
         throw new Error(message);
       }
       if (typeof payload === "object" && payload !== null && "portfolio" in payload) {
@@ -511,12 +901,12 @@ function PaperTicket({
         if (typeof p === "object" && p !== null && "quoteBalance" in p) setPortfolio(p as PaperPortfolio);
       }
       const savedOrder = typeof payload === "object" && payload !== null && "order" in payload ? payload.order as PaperOrder : null;
-      if (savedOrder?.status === "filled") setNotice(`${side.toUpperCase()} filled in Paper at a public quote`);
-      else if (savedOrder?.status === "cancelled") setNotice("Paper order cancelled");
-      else setNotice(`Saved Paper status: ${savedOrder?.status ?? "unavailable"}`);
+      if (savedOrder?.status === "filled") setNotice(text.filledAtPublicQuote(side));
+      else if (savedOrder?.status === "cancelled") setNotice(text.paperOrderCancelled);
+      else setNotice(text.savedPaperStatus(savedOrder?.status ?? "unavailable"));
       window.setTimeout(() => setNotice(null), 3_500);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not submit paper order.");
+      setError(reason instanceof Error ? reason.message : text.paperSubmitFailed);
     } finally {
       setBusy(false);
     }
@@ -586,22 +976,22 @@ function PaperTicket({
       <div className="ticket-heading flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
         <div className="flex items-center gap-1.5">
           <Wallet size={13} className="text-[var(--ak-signal-action)]" />
-          <span className="font-bold text-xs tracking-wider">PAPER EXECUTION TICKET</span>
+          <span className="font-bold text-xs tracking-wider">{copy.paperTicket}</span>
         </div>
-        <AkTag variant="advanced" className="text-[10px]">SIMULATED</AkTag>
+        <AkTag variant="advanced" className="text-[10px]">{copy.simulated}</AkTag>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <div className="telemetry-kpi-card">
-          <span className="kpi-label">{quote} AVAILABLE</span>
+          <span className="kpi-label">{copy.available(quote)}</span>
           <strong className="kpi-val text-[var(--ak-text-primary)]">
             {activePortfolio ? `$${activePortfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
           </strong>
-          <small className="text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-1">COLLATERAL</small>
+          <small className="text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-1">{copy.collateral}</small>
         </div>
         <div className="telemetry-kpi-card">
           <div className="flex items-center justify-between">
-            <span className="kpi-label">{base} POSITION</span>
+            <span className="kpi-label">{copy.position(base)}</span>
             {activePortfolio && activePortfolio.baseBalance > 0 && (
               <button
                 type="button"
@@ -611,9 +1001,9 @@ function PaperTicket({
                   void submit("sell");
                 }}
                 className="text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
-                title="Market close full position"
+                title={copy.closeFullHint}
               >
-                Close 100%
+                {copy.closeFull}
               </button>
             )}
           </div>
@@ -621,7 +1011,7 @@ function PaperTicket({
             {activePortfolio ? `${activePortfolio.baseBalance.toFixed(5)} ${base}` : "—"}
           </strong>
           <small className={`text-[10px] font-bold tabular-nums mt-1 ${pnl >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
-            uPnL {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} {quote}
+            {copy.unrealizedPnl(`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} ${quote}`)}
           </small>
         </div>
       </div>
@@ -637,7 +1027,7 @@ function PaperTicket({
               <AkProgress
                 value={pct}
                 max={100}
-                label="POSITION ALLOCATION"
+                label={copy.positionAllocation}
                 valueLabel={`${pct}%`}
                 size="sm"
                 variant={pct > 80 ? "danger" : pct > 50 ? "warning" : "default"}
@@ -649,14 +1039,14 @@ function PaperTicket({
 
       {prefilledPrice !== null && prefilledPrice !== undefined && (
         <div className="flex items-center justify-between px-2 py-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-info)] text-[10px] text-[var(--ak-signal-info)] font-mono">
-          <span className="tabular-nums">BOOK REF: ${price(prefilledPrice)} {quote}</span>
+          <span className="tabular-nums">{copy.bookReference(`$${price(prefilledPrice)} ${quote}`)}</span>
           {onClearPrefilledPrice && (
             <button
               type="button"
               onClick={onClearPrefilledPrice}
               className="text-[var(--ak-text-secondary)] hover:text-white underline cursor-pointer"
             >
-              Reset
+              {copy.reset}
             </button>
           )}
         </div>
@@ -665,16 +1055,16 @@ function PaperTicket({
       <div className="ticket-field flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
           <label htmlFor="paper-qty" className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">
-            QUANTITY · {base}
+            {copy.quantity(base)}
           </label>
           <button
             type="button"
-            aria-label="Toggle sizing side"
+            aria-label={copy.toggleSizingSide}
             onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
             className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
-            title="Click to toggle between Quote (Buy) and Inventory (Sell) sizing"
+            title={copy.sizingHint}
           >
-            {sizingSide === "buy" ? "SIZING · BUY" : "SIZING · SELL"}
+            {sizingSide === "buy" ? copy.sizingBuy : copy.sizingSell}
           </button>
         </div>
         <div className="grid grid-cols-4 gap-1.5">
@@ -684,9 +1074,9 @@ function PaperTicket({
               type="button"
               onClick={() => applyPercent(pct, sizingSide)}
               className="tactile-chip text-[10px] py-1 text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] cursor-pointer font-mono font-bold text-center select-none"
-              title={`Set ${pct * 100}% for ${sizingSide}`}
+              title={copy.setPercent(String(pct * 100), sizingSide)}
             >
-              {pct === 1 ? "MAX" : `${pct * 100}%`}
+              {pct === 1 ? copy.max : `${pct * 100}%`}
             </button>
           ))}
         </div>
@@ -695,15 +1085,15 @@ function PaperTicket({
             type="button"
             onClick={() => stepQuantity(-1)}
             className="w-8 shrink-0 flex items-center justify-center text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-raised)] border-r border-[var(--ak-border-subtle)] active:bg-[var(--ak-signal-info)] active:text-black transition-all text-sm font-bold cursor-pointer select-none"
-            title="Decrease quantity"
-            aria-label="Decrease quantity"
+            title={copy.decreaseQuantity}
+            aria-label={copy.decreaseQuantity}
           >
             −
           </button>
           <AkInput
             id="paper-qty"
             data-testid="paper-quantity"
-            aria-label={`QUANTITY · ${base}`}
+            aria-label={copy.quantity(base)}
             type="number"
             min="0"
             step="0.0001"
@@ -715,8 +1105,8 @@ function PaperTicket({
             type="button"
             onClick={() => stepQuantity(1)}
             className="w-8 shrink-0 flex items-center justify-center text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-raised)] border-l border-[var(--ak-border-subtle)] active:bg-[var(--ak-signal-info)] active:text-black transition-all text-sm font-bold cursor-pointer select-none"
-            title="Increase quantity"
-            aria-label="Increase quantity"
+            title={copy.increaseQuantity}
+            aria-label={copy.increaseQuantity}
           >
             +
           </button>
@@ -724,7 +1114,7 @@ function PaperTicket({
       </div>
 
       <div className="ticket-estimate flex items-center justify-between p-2 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] shadow-inner">
-        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase font-bold tracking-wider">ESTIMATED NOTIONAL</span>
+        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase font-bold tracking-wider">{copy.estimatedNotional}</span>
         <strong className="text-xs text-[var(--ak-text-primary)] font-bold">
           {estimated === null ? "—" : `$${estimated.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${quote}`}
         </strong>
@@ -745,7 +1135,7 @@ function PaperTicket({
               : "bg-emerald-950/20 hover:bg-emerald-950/40 text-emerald-400 border border-emerald-500/30"
           } disabled:opacity-30 disabled:pointer-events-none`}
         >
-          Buy
+          {copy.buy}
         </Button>
         <Button
           variant="danger"
@@ -760,29 +1150,29 @@ function PaperTicket({
               : "bg-rose-950/20 hover:bg-rose-950/40 text-rose-400 border border-rose-500/30"
           } disabled:opacity-30 disabled:pointer-events-none`}
         >
-          Sell
+          {copy.sell}
         </Button>
       </div>
 
       {activePreviews.map((preview) => (
         <div className="order-preview-card p-2 bg-[var(--ak-surface-sunken-2)] border-l-2 border-[var(--ak-signal-action)] space-y-1.5" key={preview.id}>
           <div className="preview-topline flex items-center justify-between">
-            <span className="text-[10px] font-bold text-[var(--ak-signal-info)]">AI ORDER PREVIEW</span>
+            <span className="text-[10px] font-bold text-[var(--ak-signal-info)]">{copy.aiOrderPreview}</span>
             <AkTag variant="advanced" className="text-[9px]">{preview.status.toUpperCase()}</AkTag>
           </div>
           <strong className={`block text-xs font-bold ${preview.side === "buy" ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
-            {preview.side.toUpperCase()} {preview.quantity} {base}
+            {copy.previewSide(preview.side, String(preview.quantity), base)}
           </strong>
           <div className="text-[10px] text-[var(--ak-text-secondary)] space-y-0.5">
-            <div>Ref {price(preview.referencePrice)} · Est {price(preview.estimatedNotional)} {quote} · Fee {price(preview.estimatedFee)}</div>
-            <div>Expires: {new Date(preview.expiresAt).toLocaleTimeString()}</div>
+            <div>{copy.previewNumbers(price(preview.referencePrice), price(preview.estimatedNotional), quote, price(preview.estimatedFee))}</div>
+            <div>{copy.expires(new Date(preview.expiresAt).toLocaleTimeString())}</div>
           </div>
           <div className="preview-actions flex gap-2 pt-1">
             <Button size="sm" variant="primary" className="h-6 text-[10px]" disabled={resolvingPreview === preview.id} onClick={() => void resolvePreview(preview.id, "confirm")}>
-              Confirm Paper
+              {copy.confirmPaper}
             </Button>
             <Button size="sm" variant="ghost" className="h-6 text-[10px]" disabled={resolvingPreview === preview.id} onClick={() => void resolvePreview(preview.id, "dismiss")}>
-              Dismiss
+              {copy.dismiss}
             </Button>
           </div>
         </div>
@@ -793,9 +1183,9 @@ function PaperTicket({
       <div className="ticket-disclaimer flex items-center justify-between text-[8px] text-[var(--ak-text-secondary)] opacity-60 font-mono tracking-wider pt-0.5">
         <div className="flex items-center gap-1">
           <span className="w-1 h-1 rounded-full bg-[var(--ak-signal-info)]" />
-          <span>PRTS SIMULATION</span>
+          <span>{copy.prtsSimulation}</span>
         </div>
-        <span>PUBLIC QUOTES</span>
+        <span>{copy.publicQuotes}</span>
       </div>
     </div>
   );
@@ -822,6 +1212,7 @@ function ReplayTicket({
   busy: boolean;
   onOrder: (side: "buy" | "sell", quantity: number, options?: Partial<ReplayOrderInput>) => Promise<void>;
 }): React.JSX.Element {
+  const copy = useCopy(INSPECTOR_COPY);
   const [quantity, setQuantity] = useState("0.001");
   const [sizingSide, setSizingSide] = useState<"buy" | "sell">("buy");
   const [orderType, setOrderType] = useState<ReplayOrderInput["type"]>("market");
@@ -834,11 +1225,12 @@ function ReplayTicket({
   const [ticketNotice, setTicketNotice] = useState<string | null>(null);
 
   const submit = (side: "buy" | "sell"): void => {
+    const text = translate(INSPECTOR_COPY);
     setTicketError(null);
     setTicketNotice(null);
     const triggerNum = Number(trigger);
     if (orderType !== "market" && (!Number.isFinite(triggerNum) || triggerNum <= 0)) {
-      setTicketError("Limit/stop price is required and must be positive.");
+      setTicketError(text.limitStopRequired);
       return;
     }
     void onOrder(side, Number(quantity), {
@@ -847,10 +1239,10 @@ function ReplayTicket({
       ...(side === "buy" && stopLoss ? { stopLoss: Number(stopLoss) } : {}),
       ...(side === "buy" && takeProfit ? { takeProfit: Number(takeProfit) } : {}),
     }).then(() => {
-      setTicketNotice(`${side.toUpperCase()} queued for next bar`);
+      setTicketNotice(text.queuedForNextBar(side));
       window.setTimeout(() => setTicketNotice(null), 3000);
     }).catch((reason) => {
-      setTicketError(reason instanceof Error ? reason.message : "Replay order failed.");
+      setTicketError(reason instanceof Error ? reason.message : text.replayOrderFailed);
       window.setTimeout(() => setTicketError(null), 4000);
     });
   };
@@ -920,20 +1312,20 @@ function ReplayTicket({
         <div className="ticket-heading flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
           <div className="flex items-center gap-1.5">
             <Clock3 size={13} className="text-[var(--ak-signal-info)]" />
-            <span className="font-bold">REPLAY ACCOUNT</span>
+            <span className="font-bold">{copy.replayAccount}</span>
           </div>
-          <AkTag variant="advanced" className="text-[10px]">ISOLATED</AkTag>
+          <AkTag variant="advanced" className="text-[10px]">{copy.isolated}</AkTag>
         </div>
         <div className="p-3 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-2">
           <div className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase flex items-center justify-between">
-            <span>REPLAY PROTOCOL</span>
+            <span>{copy.replayProtocol}</span>
             <span className="text-[var(--ak-signal-action)] flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-action)] animate-pulse motion-reduce:animate-none inline-block" />
-              AWAITING SEED
+              {copy.awaitingSeed}
             </span>
           </div>
           <span className="ticket-disclaimer text-[10px] text-[var(--ak-text-secondary)] opacity-80 block leading-relaxed">
-            Time-travel simulation strictly isolates lookahead history. Seed the window on the chart bar to initialize local ledger state and execute paper fills.
+            {copy.replaySeedNote}
           </span>
         </div>
       </div>
@@ -958,7 +1350,7 @@ function ReplayTicket({
       <div className="ticket-heading flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
         <div className="flex items-center gap-1.5">
           <Clock3 size={13} className="text-[var(--ak-signal-info)]" />
-          <span className="font-bold">REPLAY SIMULATOR</span>
+          <span className="font-bold">{copy.replaySimulator}</span>
         </div>
         <AkTag variant={session.status === "active" ? "default" : "neutral"} className="text-[10px]">
           {session.status.toUpperCase()}
@@ -967,28 +1359,28 @@ function ReplayTicket({
 
       <div className="grid grid-cols-2 gap-2 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
         <div className="flex flex-col">
-          <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{quote} AVAILABLE</span>
+          <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{copy.available(quote)}</span>
           <strong className="text-xs text-[var(--ak-text-primary)] font-bold tabular-nums">
             ${portfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </strong>
         </div>
         <div className="flex flex-col">
           <div className="flex items-center justify-between">
-            <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{base} POSITION</span>
+            <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{copy.position(base)}</span>
             {portfolio.baseBalance > 0 && (
               <button
                 type="button"
                 disabled={busy || session.status !== "active"}
                 onClick={() => {
                   void onOrder("sell", portfolio.baseBalance, { type: "market" }).then(() => {
-                    setTicketNotice("Market close queued for next bar");
+                    setTicketNotice(translate(INSPECTOR_COPY).marketCloseQueued);
                     window.setTimeout(() => setTicketNotice(null), 3000);
                   });
                 }}
                 className="text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
-                title="Queue market sell of entire position on next bar"
+                title={copy.queueCloseHint}
               >
-                Close 100%
+                {copy.closeFull}
               </button>
             )}
           </div>
@@ -996,7 +1388,7 @@ function ReplayTicket({
             {portfolio.baseBalance.toFixed(6)} {base}
           </strong>
           <small className={`text-[10px] font-bold tabular-nums ${unrealized >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
-            uPnL {unrealized >= 0 ? "+" : ""}{unrealized.toFixed(2)} {quote}
+            {copy.unrealizedPnl(`${unrealized >= 0 ? "+" : ""}${unrealized.toFixed(2)} ${quote}`)}
           </small>
         </div>
       </div>
@@ -1006,21 +1398,21 @@ function ReplayTicket({
         onClick={() => {
           if (current) {
             setTrigger(current.close.toString());
-            setTicketNotice(`Price $${price(current.close)} applied to limit/stop`);
+            setTicketNotice(translate(INSPECTOR_COPY).priceAppliedToTrigger(price(current.close)));
             window.setTimeout(() => setTicketNotice(null), 2500);
           }
         }}
-        title="Click to copy cursor close to limit/stop price input"
+        title={copy.cursorCloseHint}
       >
-        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">CURSOR CLOSE PRICE</span>
+        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">{copy.cursorClosePrice}</span>
         <strong className="text-xs text-[var(--ak-text-primary)] font-bold tabular-nums hover:underline">{price(current.close)} {quote}</strong>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <label className="ticket-field flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">ORDER TYPE</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">{copy.orderType}</span>
           <AkSelect
-            aria-label="Replay order type"
+            aria-label={copy.replayOrderType}
             value={orderType}
             onChange={(event) => {
               const nextType = event.target.value as ReplayOrderInput["type"];
@@ -1031,22 +1423,22 @@ function ReplayTicket({
             }}
             className="h-7 text-xs font-bold"
           >
-            <option value="market">Market</option>
-            <option value="limit">Limit</option>
-            <option value="stop">Stop</option>
+            <option value="market">{copy.market}</option>
+            <option value="limit">{copy.limit}</option>
+            <option value="stop">{copy.stop}</option>
           </AkSelect>
         </label>
         <div className="ticket-field flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">QUANTITY · {base}</span>
+            <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">{copy.quantity(base)}</span>
             <button
               type="button"
-              aria-label="Toggle replay sizing side"
+              aria-label={copy.toggleReplaySizingSide}
               onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
               className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
-              title="Click to toggle between Quote (Buy) and Inventory (Sell) sizing"
+              title={copy.sizingHint}
             >
-              {sizingSide === "buy" ? "SIZING · BUY" : "SIZING · SELL"}
+              {sizingSide === "buy" ? copy.sizingBuy : copy.sizingSell}
             </button>
           </div>
           <div className="grid grid-cols-4 gap-1">
@@ -1056,9 +1448,9 @@ function ReplayTicket({
                 type="button"
                 onClick={() => applyPercent(pct, sizingSide)}
                 className="text-[10px] py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] hover:border-[var(--ak-signal-info)] active:scale-95 transition-all cursor-pointer font-mono font-bold text-center"
-                title={`Set ${pct * 100}% for ${sizingSide}`}
+                title={copy.setPercent(String(pct * 100), sizingSide)}
               >
-                {pct === 1 ? "MAX" : `${pct * 100}%`}
+                {pct === 1 ? copy.max : `${pct * 100}%`}
               </button>
             ))}
           </div>
@@ -1067,14 +1459,14 @@ function ReplayTicket({
               type="button"
               onClick={() => stepQuantity(-1)}
               className="w-8 shrink-0 flex items-center justify-center text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-raised)] border-r border-[var(--ak-border-subtle)] active:bg-[var(--ak-signal-info)] active:text-black transition-all text-sm font-bold cursor-pointer select-none"
-              title="Decrease quantity"
-              aria-label="Decrease quantity"
+              title={copy.decreaseQuantity}
+              aria-label={copy.decreaseQuantity}
             >
               −
             </button>
             <AkInput
               type="number"
-              aria-label={`QUANTITY · ${base}`}
+              aria-label={copy.quantity(base)}
               min="0"
               step="0.0001"
               value={quantity}
@@ -1085,8 +1477,8 @@ function ReplayTicket({
               type="button"
               onClick={() => stepQuantity(1)}
               className="w-8 shrink-0 flex items-center justify-center text-[var(--ak-text-secondary)] hover:text-white hover:bg-[var(--ak-surface-raised)] border-l border-[var(--ak-border-subtle)] active:bg-[var(--ak-signal-info)] active:text-black transition-all text-sm font-bold cursor-pointer select-none"
-              title="Increase quantity"
-              aria-label="Increase quantity"
+              title={copy.increaseQuantity}
+              aria-label={copy.increaseQuantity}
             >
               +
             </button>
@@ -1095,7 +1487,7 @@ function ReplayTicket({
       </div>
 
       <div className="ticket-estimate flex items-center justify-between p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">ESTIMATED NOTIONAL</span>
+        <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">{copy.estimatedNotional}</span>
         <strong className="text-xs text-[var(--ak-text-primary)] font-bold tabular-nums">
           {Number.isFinite(size) && size > 0 ? `$${(size * current.close).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${quote}` : "—"}
         </strong>
@@ -1103,7 +1495,7 @@ function ReplayTicket({
 
       {orderType !== "market" && (
         <label className="ticket-field flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">LIMIT / STOP PRICE · {quote}</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">{copy.limitStopPrice(quote)}</span>
           <AkInput
             type="number"
             min="0"
@@ -1117,7 +1509,7 @@ function ReplayTicket({
 
       <div className="grid grid-cols-2 gap-2">
         <label className="ticket-field flex flex-col gap-1">
-          <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">STOP LOSS (OPT)</span>
+          <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">{copy.stopLossOptional}</span>
           <AkInput
             type="number"
             min="0"
@@ -1128,7 +1520,7 @@ function ReplayTicket({
           />
         </label>
         <label className="ticket-field flex flex-col gap-1">
-          <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">TAKE PROFIT (OPT)</span>
+          <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">{copy.takeProfitOptional}</span>
           <AkInput
             type="number"
             min="0"
@@ -1156,7 +1548,7 @@ function ReplayTicket({
           icon={<TrendingUp size={13} />}
           className="h-8 font-bold text-xs bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-[0_0_12px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)] border-0"
         >
-          Queue buy
+          {copy.queueBuy}
         </Button>
         <Button
           variant="danger"
@@ -1174,7 +1566,7 @@ function ReplayTicket({
           icon={<TrendingDown size={13} />}
           className="h-8 font-bold text-xs bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white shadow-[0_0_12px_rgba(244,63,94,0.3)] hover:shadow-[0_0_20px_rgba(244,63,94,0.5)] border-0"
         >
-          Queue sell
+          {copy.queueSell}
         </Button>
       </div>
 
@@ -1191,7 +1583,7 @@ function ReplayTicket({
               <span className="text-[var(--ak-text-secondary)] tabular-nums">{order.fillPrice === null ? "—" : price(order.fillPrice)}</span>
               {order.status === "submitted" && (
                 <Button size="sm" variant="ghost" className="h-5 text-[9px] px-1" disabled={busy} onClick={() => void onCommand({ action: "cancel", clientOrderId: order.clientOrderId }).catch(() => undefined)}>
-                  Cancel
+                  {copy.cancel}
                 </Button>
               )}
             </div>
@@ -1201,39 +1593,39 @@ function ReplayTicket({
 
       <div className="space-y-1.5 pt-1 border-t border-[var(--ak-border-subtle)]">
         <label className="ticket-field flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">SESSION NOTES</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">{copy.sessionNotes}</span>
           <textarea
-            aria-label="SESSION NOTES"
+            aria-label={copy.sessionNotes}
             value={notes}
             maxLength={20_000}
             onChange={(event) => setNotes(event.target.value)}
             className="p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border)] text-xs font-mono outline-none h-14 resize-none"
-            placeholder="Record your entry reasoning..."
+            placeholder={copy.notesPlaceholder}
           />
         </label>
         <label className="ticket-field flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">TAGS · COMMA SEPARATED</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">{copy.tags}</span>
           <AkInput
-            aria-label="TAGS · COMMA SEPARATED"
+            aria-label={copy.tags}
             value={tags}
             onChange={(event) => setTags(event.target.value)}
             className="h-7 text-xs font-mono"
-            placeholder="breakout, trend-following"
+            placeholder={copy.tagsPlaceholder}
           />
         </label>
         <div className="flex gap-2">
           <Button size="sm" variant="subtle" className="flex-1 h-7 text-xs" disabled={busy} onClick={() => void onCommand({ action: "journal", notes, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean) }).catch(() => undefined)}>
-            Save notes / tags
+            {copy.saveNotesTags}
           </Button>
           <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" disabled={busy || !execution} onClick={exportJournal}>
-            Export journal JSON
+            {copy.exportJournal}
           </Button>
         </div>
       </div>
 
       {report && (
         <div className="ticket-disclaimer text-[10px] text-[var(--ak-text-secondary)] p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-          Equity: {price(report.equity)} {quote} · Net PnL: {price(report.netPnl)} · {report.fillCount} fills · Max DD: {(report.maxDrawdown * 100).toFixed(2)}%
+          {copy.journalSummary(price(report.equity), quote, price(report.netPnl), report.fillCount, (report.maxDrawdown * 100).toFixed(2))}
         </div>
       )}
     </div>
@@ -1241,6 +1633,7 @@ function ReplayTicket({
 }
 
 export function Inspector({ workspace = "terminal", summary, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayExecution, replayReport: serverReplayReport = null, onReplayCommand, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
+  const copy = useCopy(INSPECTOR_COPY);
   const [paperMode, setPaperMode] = useState<"legacy" | "shared-spot">("legacy");
   const [symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
   const [pickedPrice, setPickedPrice] = useState<number | null>(null);
@@ -1248,7 +1641,7 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
 
   const handlePickPrice = (p: number) => {
     setPickedPrice(p);
-    setPriceNotice(`Price $${price(p)} applied to ticket`);
+    setPriceNotice(translate(INSPECTOR_COPY).priceAppliedToTicket(price(p)));
     window.setTimeout(() => setPriceNotice(null), 2500);
   };
 
@@ -1273,27 +1666,27 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
       >
         <TabsList className="inspector-tab-list flex border-b border-[var(--ak-border-strong)] bg-[var(--ak-surface-sunken)]">
           {offered.includes("book") && (
-            <TabsTrigger value="book" aria-label="Order book" className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
+            <TabsTrigger value="book" aria-label={copy.ariaOrderBook} className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
               <BookOpen size={13} className="mr-1 text-[var(--ak-signal-info)]" />
-              <span>Book</span>
+              <span>{copy.tabBook}</span>
             </TabsTrigger>
           )}
           {offered.includes("trades") && (
-            <TabsTrigger value="trades" aria-label="Recent trades" className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
+            <TabsTrigger value="trades" aria-label={copy.ariaRecentTrades} className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
               <History size={13} className="mr-1 text-[var(--ak-signal-action)]" />
-              <span>Trades</span>
+              <span>{copy.tabTrades}</span>
             </TabsTrigger>
           )}
           {offered.includes("strategy") && (
-            <TabsTrigger value="strategy" aria-label="Strategy lab" className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
+            <TabsTrigger value="strategy" aria-label={copy.ariaStrategyLab} className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
               <Layers3 size={13} className="mr-1 text-[var(--ak-signal-info)]" />
-              <span>Strategy</span>
+              <span>{copy.tabStrategy}</span>
             </TabsTrigger>
           )}
           {offered.includes("context") && (
-            <TabsTrigger value="context" aria-label="AI context" className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
+            <TabsTrigger value="context" aria-label={copy.ariaAiContext} className="flex-1 py-2 text-xs font-bold tracking-wider uppercase">
               <Braces size={13} className="mr-1 text-[var(--ak-signal-info)]" />
-              <span>AI</span>
+              <span>{copy.tabAi}</span>
             </TabsTrigger>
           )}
         </TabsList>
@@ -1333,16 +1726,16 @@ export function Inspector({ workspace = "terminal", summary, result, running, re
                 <label className="flex items-center justify-between gap-2 w-full text-[10px] font-mono font-bold text-[var(--ak-text-secondary)] uppercase">
                   <span className="flex items-center gap-1.5 tracking-wider">
                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--ak-signal-action)] shadow-[0_0_6px_var(--ak-signal-action)]" />
-                    Paper account mode
+                    {copy.paperAccountMode}
                   </span>
                   <AkSelect
-                    aria-label="Paper account mode"
+                    aria-label={copy.paperAccountMode}
                     value={paperMode}
                     onChange={(event) => setPaperMode(event.target.value as "legacy" | "shared-spot")}
                     className="h-6 text-xs font-mono min-w-[155px] bg-[var(--c-surface)] border-[var(--ak-border)] text-[var(--ak-text-primary)]"
                   >
-                    <option value="legacy">Legacy pair wallet</option>
-                    <option value="shared-spot">New shared spot wallet</option>
+                    <option value="legacy">{copy.legacyWallet}</option>
+                    <option value="shared-spot">{copy.sharedSpotWallet}</option>
                   </AkSelect>
                 </label>
               </div>

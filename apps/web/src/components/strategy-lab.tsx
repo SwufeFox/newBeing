@@ -5,6 +5,8 @@ import { Play, ShieldAlert, Sliders } from "lucide-react";
 import { STRATEGIES, type StrategyParameters } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
+import { useCopy, type CopyTable } from "@/lib/i18n";
+import { PARAMETER_LABELS, STRATEGY_NAMES, STRATEGY_DESCRIPTIONS } from "@/lib/strategy-labels";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import { AkSelect, AkChoice, AkTag, AkNotice, AkField, AkFieldLabel, AkInput } from "@swufefox/ak-ui-react";
@@ -13,6 +15,168 @@ interface StrategyLabProps {
   onRun: () => void;
   running: boolean;
 }
+
+interface StrategyLabCopy {
+  empty: string;
+  template: string;
+  executable: string;
+  tunable: string;
+  resetDefaults: string;
+  resetDefaultsTitle: string;
+  presetBar: string;
+  defaultPreset: string;
+  presetLabels: Record<string, string>;
+  presetSaved: (name: string) => string;
+  presetDeleted: (name: string) => string;
+  presetLoaded: (name: string) => string;
+  presetReset: string;
+  customPresetGroup: (name: string) => string;
+  customPresetTitle: (name: string) => string;
+  customPresetDelete: (name: string) => string;
+  customPresetDeleteTitle: string;
+  presetNamePlaceholder: string;
+  presetNameLabel: string;
+  presetSaveTitle: string;
+  presetSaveDisabledTitle: string;
+  save: string;
+  cancel: string;
+  savePreset: string;
+  savePresetTitle: string;
+  invalidSma: string;
+  assumptions: string;
+  deterministic: string;
+  parameters: Record<string, string>;
+  initialCapital: string;
+  positionFraction: string;
+  highAllocation: (percent: number) => string;
+  allocationShare: string;
+  fee: string;
+  slippage: string;
+  executionAccount: string;
+  accountModeLabel: string;
+  accountSpot: string;
+  accountLegacy: string;
+  allowShorts: string;
+  legacyNote: string;
+  spotNote: string;
+  runsOn: string;
+  running: string;
+  runBacktest: string;
+  runBacktestTitle: string;
+}
+
+const STRATEGY_LAB_COPY: CopyTable<StrategyLabCopy> = {
+  en: {
+    empty: "No built-in strategy is available.",
+    template: "STRATEGY TEMPLATE",
+    executable: "EXECUTABLE",
+    tunable: "TUNABLE PARAMETERS",
+    resetDefaults: "Reset Defaults",
+    resetDefaultsTitle: "Reset parameters to factory defaults",
+    presetBar: "PRESET:",
+    defaultPreset: "Default",
+    presetLabels: {
+      Aggressive: "Aggressive",
+      Conservative: "Conservative",
+      Sensitive: "Sensitive",
+      Extreme: "Extreme",
+      "Short-term": "Short-term",
+      "High-conviction": "High-conviction",
+    },
+    presetSaved: (name) => `Saved preset '${name}'`,
+    presetDeleted: (name) => `Deleted preset '${name}'`,
+    presetLoaded: (name) => `Loaded '${name}' preset`,
+    presetReset: "Reset to defaults",
+    customPresetGroup: (name) => `Custom preset ${name}`,
+    customPresetTitle: (name) => `Custom preset: ${name}`,
+    customPresetDelete: (name) => `Delete custom preset ${name}`,
+    customPresetDeleteTitle: "Delete this custom preset",
+    presetNamePlaceholder: "Preset name…",
+    presetNameLabel: "Preset name (required)",
+    presetSaveTitle: "Save this custom preset",
+    presetSaveDisabledTitle: "Enter a name to enable Save",
+    save: "Save",
+    cancel: "Cancel",
+    savePreset: "+ Save Preset",
+    savePresetTitle: "Save current parameters as a custom preset",
+    invalidSma: "Fast period must be lower than slow period.",
+    assumptions: "SIMULATION ASSUMPTIONS",
+    deterministic: "DETERMINISTIC",
+    parameters: { ...PARAMETER_LABELS.en },
+    initialCapital: "INITIAL CAPITAL",
+    positionFraction: "POSITION %",
+    highAllocation: (percent) => `High allocation · ${percent}% of available cash per entry.`,
+    allocationShare: "Share of available cash used per entry.",
+    fee: "FEE (BPS)",
+    slippage: "SLIPPAGE (BPS)",
+    executionAccount: "EXECUTION ACCOUNT",
+    accountModeLabel: "Backtest account mode",
+    accountSpot: "Spot · fee-inclusive sizing",
+    accountLegacy: "Legacy synthetic margin simulation",
+    allowShorts: "Allow synthetic shorts (no borrow/funding model)",
+    legacyNote: "Historical synthetic model; no native derivative contract, margin, liquidation or funding simulation.",
+    spotNote: "Spot inventory and quote fees; budget includes entry fee. Opening gaps precede opening orders; entry-bar targets are deferred.",
+    runsOn: "Runs on",
+    running: "Running",
+    runBacktest: "Run backtest",
+    runBacktestTitle: "Run backtest [B or ⌘↵]",
+  },
+  zh: {
+    empty: "暂无内置策略。",
+    template: "策略模板",
+    executable: "可执行",
+    tunable: "可调参数",
+    resetDefaults: "恢复默认",
+    resetDefaultsTitle: "将参数恢复为出厂默认值",
+    presetBar: "预设：",
+    defaultPreset: "默认",
+    presetLabels: {
+      Aggressive: "激进",
+      Conservative: "稳健",
+      Sensitive: "敏感",
+      Extreme: "极端",
+      "Short-term": "短线",
+      "High-conviction": "高确信",
+    },
+    presetSaved: (name) => `已保存预设“${name}”`,
+    presetDeleted: (name) => `已删除预设“${name}”`,
+    presetLoaded: (name) => `已加载“${name}”预设`,
+    presetReset: "已恢复默认值",
+    customPresetGroup: (name) => `自定义预设 ${name}`,
+    customPresetTitle: (name) => `自定义预设：${name}`,
+    customPresetDelete: (name) => `删除自定义预设 ${name}`,
+    customPresetDeleteTitle: "删除这个自定义预设",
+    presetNamePlaceholder: "预设名称…",
+    presetNameLabel: "预设名称（必填）",
+    presetSaveTitle: "保存这个自定义预设",
+    presetSaveDisabledTitle: "输入名称后才能保存",
+    save: "保存",
+    cancel: "取消",
+    savePreset: "+ 保存预设",
+    savePresetTitle: "将当前参数保存为自定义预设",
+    invalidSma: "快线周期必须小于慢线周期。",
+    assumptions: "模拟假设",
+    deterministic: "确定性",
+    parameters: { ...PARAMETER_LABELS.zh },
+    initialCapital: "初始资金",
+    positionFraction: "仓位比例 %",
+    highAllocation: (percent) => `高仓位 · 每次开仓占可用资金 ${percent}%。`,
+    allocationShare: "每次开仓占可用资金的比例。",
+    fee: "费率 (BPS)",
+    slippage: "滑点率 (BPS)",
+    executionAccount: "执行账户",
+    accountModeLabel: "回测账户模式",
+    accountSpot: "现货 · 含手续费计算规模",
+    accountLegacy: "旧版合成保证金模拟",
+    allowShorts: "允许合成做空（不模拟借币与资金费率）",
+    legacyNote: "历史合成模型；不模拟原生衍生品合约、保证金、强平与资金费率。",
+    spotNote: "现货库存与报价手续费；预算已包含开仓手续费。开盘跳空先于开仓委托处理；入场 K 线的目标价延后执行。",
+    runsOn: "运行于",
+    running: "运行中",
+    runBacktest: "运行回测",
+    runBacktestTitle: "运行回测 [B 或 ⌘↵]",
+  },
+};
 
 const BUILTIN_PRESETS: Record<string, Array<{ name: string; params: StrategyParameters }>> = {
   "sma-crossover": [
@@ -29,8 +193,8 @@ const BUILTIN_PRESETS: Record<string, Array<{ name: string; params: StrategyPara
   ],
 };
 
-function parameterLabel(key: string): string {
-  return key.replace(/([A-Z])/g, " $1").replace(/^./, (first) => first.toUpperCase());
+function parameterLabel(copy: StrategyLabCopy, key: string): string {
+  return copy.parameters[key] ?? key.replace(/([A-Z])/g, " $1").replace(/^./, (first) => first.toUpperCase());
 }
 
 function loadStoredPresets(strategyId?: string): Array<{ name: string; params: StrategyParameters }> {
@@ -48,6 +212,9 @@ function loadStoredPresets(strategyId?: string): Array<{ name: string; params: S
 }
 
 export const StrategyLab = memo(function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Element {
+  const copy = useCopy(STRATEGY_LAB_COPY);
+  const strategyNames = useCopy(STRATEGY_NAMES);
+  const strategyDescriptions = useCopy(STRATEGY_DESCRIPTIONS);
   const [strategyId, setStrategyId, params, setParams, config, setConfig] = useWorkspaceStore(useShallow((state) => [
     state.selectedStrategyId,
     state.setStrategy,
@@ -81,7 +248,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
     } catch {
       // ignore
     }
-    setPresetNotice(`Saved preset '${trimmed}'`);
+    setPresetNotice(copy.presetSaved(copy.presetLabels[trimmed] ?? trimmed));
     setShowSaveInput(false);
     setNewPresetName("");
     window.setTimeout(() => setPresetNotice(null), 2200);
@@ -96,7 +263,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
     } catch {
       // ignore
     }
-    setPresetNotice(`Deleted preset '${name}'`);
+    setPresetNotice(copy.presetDeleted(copy.presetLabels[name] ?? name));
     window.setTimeout(() => setPresetNotice(null), 2200);
   };
 
@@ -108,14 +275,14 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
   const applyPreset = (name: string, nextParams: StrategyParameters): void => {
     if (!strategy) return;
     setParams({ ...strategy.defaults, ...nextParams });
-    setPresetNotice(`Loaded '${name}' preset`);
+    setPresetNotice(copy.presetLoaded(copy.presetLabels[name] ?? name));
     window.setTimeout(() => setPresetNotice(null), 2200);
   };
 
   const resetDefaults = (): void => {
     if (!strategy) return;
     setParams({ ...strategy.defaults });
-    setPresetNotice("Reset to defaults");
+    setPresetNotice(copy.presetReset);
     window.setTimeout(() => setPresetNotice(null), 2200);
   };
 
@@ -136,7 +303,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
     setParams({ ...params, [key]: num });
   };
 
-  if (!strategy) return <div className="empty-panel p-4 font-mono text-xs">No built-in strategy is available.</div>;
+  if (!strategy) return <div className="empty-panel p-4 font-mono text-xs">{copy.empty}</div>;
 
   const invalidSma = strategy.id === "sma-crossover"
     && typeof params.fastPeriod === "number" && typeof params.slowPeriod === "number"
@@ -146,7 +313,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
     <div className="strategy-lab flex flex-col gap-3 p-3 bg-[var(--ak-surface-canvas)]">
       <div className="strategy-toolbar flex items-center justify-between gap-2 border-b border-[var(--ak-border-subtle)] pb-2">
         <label className="field-label text-xs font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider" htmlFor="strategy-select">
-          STRATEGY TEMPLATE
+          {copy.template}
         </label>
         <AkSelect
           id="strategy-select"
@@ -156,7 +323,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         >
           {STRATEGIES.map((item) => (
             <option key={item.id} value={item.id}>
-              {item.name}
+              {strategyNames[item.id] ?? item.name}
             </option>
           ))}
         </AkSelect>
@@ -165,11 +332,11 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
       <div className="strategy-description bg-[var(--ak-surface-sunken)] p-2.5 border-l-2 border-[var(--ak-signal-info)]" data-testid="executable-strategy">
         <div className="flex items-center gap-2 mb-1">
           <strong className="text-xs font-mono text-[var(--ak-signal-info)]">
-            EXECUTABLE · {strategy.id}@{strategy.version}
+            {copy.executable} · {strategy.id}@{strategy.version}
           </strong>
         </div>
         <p className="text-xs text-[var(--ak-text-secondary)] leading-relaxed m-0">
-          {strategy.executionSummary?.(params) ?? strategy.description}
+          {strategy.executionSummary?.(params) ?? strategyDescriptions[strategy.id] ?? strategy.description}
         </p>
       </div>
 
@@ -177,21 +344,21 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         <div className="flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
           <div className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">
             <Sliders size={12} className="text-[var(--ak-signal-action)]" />
-            <span>TUNABLE PARAMETERS</span>
+            <span>{copy.tunable}</span>
           </div>
           <button
             type="button"
             onClick={resetDefaults}
             disabled={isDefault}
             className="text-[9px] font-mono text-[var(--ak-text-secondary)] hover:text-white underline cursor-pointer disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed transition-colors"
-            title="Reset parameters to factory defaults"
+            title={copy.resetDefaultsTitle}
           >
-            Reset Defaults
+            {copy.resetDefaults}
           </button>
         </div>
 
         <div className="preset-bar flex items-center flex-wrap gap-1 py-0.5">
-          <span className="text-[9px] font-mono text-[var(--ak-text-secondary)] uppercase mr-1">PRESET:</span>
+          <span className="text-[9px] font-mono text-[var(--ak-text-secondary)] uppercase mr-1">{copy.presetBar}</span>
           <button
             type="button"
             onClick={resetDefaults}
@@ -201,7 +368,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                 : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white"
             }`}
           >
-            Default
+            {copy.defaultPreset}
           </button>
           {BUILTIN_PRESETS[strategy.id]?.map((preset) => {
             const isActive = Object.entries(preset.params).every(([k, v]) => params[k] === v);
@@ -216,7 +383,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                     : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white"
                 }`}
               >
-                {preset.name}
+                {copy.presetLabels[preset.name] ?? preset.name}
               </button>
             );
           })}
@@ -226,13 +393,13 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
               <div
                 key={preset.name}
                 role="group"
-                aria-label={`Custom preset ${preset.name}`}
+                aria-label={copy.customPresetGroup(copy.presetLabels[preset.name] ?? preset.name)}
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-mono border transition-all ${
                   isActive
                     ? "bg-[var(--ak-signal-action)] text-black border-transparent font-bold"
                     : "bg-[var(--ak-surface-sunken)] text-[var(--ak-text-primary)] border-[var(--ak-border-subtle)] hover:border-[var(--ak-signal-action)]"
                 }`}
-                title={`Custom preset: ${preset.name}`}
+                title={copy.customPresetTitle(copy.presetLabels[preset.name] ?? preset.name)}
               >
                 <button
                   type="button"
@@ -240,14 +407,14 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                   aria-pressed={isActive}
                   className="cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--ak-signal-info)]"
                 >
-                  {preset.name}
+                  {copy.presetLabels[preset.name] ?? preset.name}
                 </button>
                 <button
                   type="button"
                   onClick={() => deleteCustomPreset(preset.name)}
-                  aria-label={`Delete custom preset ${preset.name}`}
+                  aria-label={copy.customPresetDelete(copy.presetLabels[preset.name] ?? preset.name)}
                   className="hover:text-red-500 font-bold ml-0.5 text-[10px] leading-none opacity-60 hover:opacity-100"
-                  title="Delete this custom preset"
+                  title={copy.customPresetDeleteTitle}
                 >
                   ×
                 </button>
@@ -258,8 +425,8 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
             <div className="inline-flex items-center gap-1 bg-[var(--ak-surface-sunken-2)] px-1 py-0.5 border border-[var(--ak-signal-info)]">
               <input
                 type="text"
-                placeholder="Preset name…"
-                aria-label="Preset name (required)"
+                placeholder={copy.presetNamePlaceholder}
+                aria-label={copy.presetNameLabel}
                 required
                 value={newPresetName}
                 onChange={(e) => setNewPresetName(e.target.value)}
@@ -278,16 +445,16 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                 onClick={() => saveCustomPreset(newPresetName)}
                 disabled={!canSavePreset}
                 className="px-1.5 py-0.5 text-[9px] font-mono bg-[var(--ak-signal-info)] text-black font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                title={canSavePreset ? "Save this custom preset" : "Enter a name to enable Save"}
+                title={canSavePreset ? copy.presetSaveTitle : copy.presetSaveDisabledTitle}
               >
-                Save
+                {copy.save}
               </button>
               <button
                 type="button"
                 onClick={() => setShowSaveInput(false)}
                 className="px-1 py-0.5 text-[9px] font-mono text-[var(--ak-text-secondary)] hover:text-white cursor-pointer"
               >
-                Cancel
+                {copy.cancel}
               </button>
             </div>
           ) : (
@@ -298,9 +465,9 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                 setNewPresetName("");
               }}
               className="px-1.5 py-0.5 text-[9px] font-mono border border-dashed border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:border-[var(--ak-signal-info)] hover:text-white transition-all cursor-pointer"
-              title="Save current parameters as a custom preset"
+              title={copy.savePresetTitle}
             >
-              + Save Preset
+              {copy.savePreset}
             </button>
           )}
         </div>
@@ -317,7 +484,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           if (typeof defaultValue === "boolean") {
             return (
               <div className="toggle-row flex items-center justify-between py-1" key={key}>
-                <label htmlFor={inputId} className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(key)}</label>
+                <label htmlFor={inputId} className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(copy, key)}</label>
                 <AkChoice
                   variant="switch"
                   id={inputId}
@@ -329,7 +496,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           }
           return (
             <div className="param-row flex items-center justify-between gap-2 py-1" key={key}>
-              <label htmlFor={inputId} className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(key)}</label>
+              <label htmlFor={inputId} className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(copy, key)}</label>
               <AkInput
                 className="compact-input w-24 h-7 text-xs font-mono text-right"
                 id={inputId}
@@ -348,18 +515,18 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         {invalidSma && (
           <div id="strategy-sma-validation" role="alert" className="inline-alert flex items-center gap-1.5 text-[11px] text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">
             <ShieldAlert size={13} />
-            <span>Fast period must be lower than slow period.</span>
+            <span>{copy.invalidSma}</span>
           </div>
         )}
       </div>
 
       <div className="assumptions-heading text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider pt-1 flex items-center justify-between border-b border-[var(--ak-border-subtle)] pb-1">
-        <span>SIMULATION ASSUMPTIONS</span>
-        <span className="text-[9px] font-mono text-[var(--ak-signal-info)]">DETERMINISTIC</span>
+        <span>{copy.assumptions}</span>
+        <span className="text-[9px] font-mono text-[var(--ak-signal-info)]">{copy.deterministic}</span>
       </div>
       <div className="assumption-grid grid grid-cols-2 gap-2 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
         <label className="flex flex-col gap-1">
-          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">INITIAL CAPITAL</span>
+          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.initialCapital}</span>
           <AkInput
             className="compact-input h-7 text-xs font-mono"
             type="number"
@@ -375,7 +542,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           />
         </label>
         <div className="flex flex-col gap-1">
-          <label htmlFor="position-fraction-input" className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">POSITION %</label>
+          <label htmlFor="position-fraction-input" className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.positionFraction}</label>
           <AkInput
             className="compact-input h-7 text-xs font-mono"
             id="position-fraction-input"
@@ -397,12 +564,12 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
             className={`text-[9px] leading-tight ${config.positionFraction >= 0.9 ? "text-[var(--ak-signal-action)]" : "text-[var(--ak-text-secondary)]"}`}
           >
             {config.positionFraction >= 0.9
-              ? `High allocation · ${Math.round(config.positionFraction * 100)}% of available cash per entry.`
-              : "Share of available cash used per entry."}
+              ? copy.highAllocation(Math.round(config.positionFraction * 100))
+              : copy.allocationShare}
           </span>
         </div>
         <label className="flex flex-col gap-1">
-          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">FEE (BPS)</span>
+          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.fee}</span>
           <AkInput
             className="compact-input h-7 text-xs font-mono"
             type="number"
@@ -419,7 +586,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">SLIPPAGE (BPS)</span>
+          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.slippage}</span>
           <AkInput
             className="compact-input h-7 text-xs font-mono"
             type="number"
@@ -437,20 +604,20 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         </label>
       </div>
       <label className="flex flex-col gap-1 text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">
-        <span>EXECUTION ACCOUNT</span>
-        <AkSelect aria-label="Backtest account mode" value={config.accountMode ?? "spot"} onChange={(event) => setConfig({ ...config, accountMode: event.target.value as "spot" | "legacy-margin", allowShorts: false })} className="h-7 text-xs font-mono font-normal">
-          <option value="spot">Spot · fee-inclusive sizing</option>
-          <option value="legacy-margin">Legacy synthetic margin simulation</option>
+        <span>{copy.executionAccount}</span>
+        <AkSelect aria-label={copy.accountModeLabel} value={config.accountMode ?? "spot"} onChange={(event) => setConfig({ ...config, accountMode: event.target.value as "spot" | "legacy-margin", allowShorts: false })} className="h-7 text-xs font-mono font-normal">
+          <option value="spot">{copy.accountSpot}</option>
+          <option value="legacy-margin">{copy.accountLegacy}</option>
         </AkSelect>
       </label>
-      {config.accountMode === "legacy-margin" && <label className="flex gap-2 text-xs"><input type="checkbox" checked={config.allowShorts} onChange={(event) => setConfig({ ...config, allowShorts: event.target.checked })} />Allow synthetic shorts (no borrow/funding model)</label>}
+      {config.accountMode === "legacy-margin" && <label className="flex gap-2 text-xs"><input type="checkbox" checked={config.allowShorts} onChange={(event) => setConfig({ ...config, allowShorts: event.target.checked })} />{copy.allowShorts}</label>}
       <p className="assumption-note text-[10px] text-[var(--ak-text-secondary)] opacity-70 m-0">
-        {config.accountMode === "legacy-margin" ? "Historical synthetic model; no native derivative contract, margin, liquidation or funding simulation." : "Spot inventory and quote fees; budget includes entry fee. Opening gaps precede opening orders; entry-bar targets are deferred."}
+        {config.accountMode === "legacy-margin" ? copy.legacyNote : copy.spotNote}
       </p>
 
       <div className="strategy-actions sticky bottom-0 bg-[var(--ak-surface-canvas)] flex flex-col gap-1.5 pt-2 pb-1 border-t border-[var(--ak-border-subtle)] z-10">
         <p className="assumption-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80 text-center">
-          Runs on {EXCHANGE_LABELS[exchange]} · {symbol} · {timeframe}
+          {copy.runsOn} {EXCHANGE_LABELS[exchange]} · {symbol} · {timeframe}
         </p>
 
         <Button
@@ -460,9 +627,9 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           disabled={running || invalidSma}
           icon={running ? <Play size={13} className="spin" /> : <Play size={13} />}
           className="w-full text-xs font-bold transition-transform active:scale-95"
-          title="Run backtest [B or ⌘↵]"
+          title={copy.runBacktestTitle}
         >
-          {running ? "Running" : "Run backtest"}
+          {running ? copy.running : copy.runBacktest}
         </Button>
       </div>
     </div>
