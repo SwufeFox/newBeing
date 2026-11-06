@@ -147,7 +147,7 @@ export async function installApiMocks(page: Page): Promise<ApiMockState> {
         const order = { clientOrderId: "e2e-paper-order", symbol: SYMBOL, side: body.side ?? "buy", quantity: Number(body.quantity ?? 0.001), fillPrice: last.close, status: "filled", createdAt: "2026-10-09T00:00:00.000Z" };
         return json({ order, portfolio: { ...portfolio, quoteBalance: 9_915, baseBalance: 0.001, averageEntryPrice: last.close } });
       }
-      return json({ portfolio, orders: [], previews: [] });
+      return json({ portfolio, orders: [], hasPendingOrders: false, previews: [] });
     }
 
     if (path === "/api/paper/recovery") return json({ pending: [], recoveries: [] });

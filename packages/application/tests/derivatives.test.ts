@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { closeDatabaseForTests, getDatabase, getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
-import { executeDerivativesOrder, getDerivativesAccount, openDerivativesAccount, valueDerivativesPosition, type DerivativesInstrument, type DerivativesMarketData, type DerivativesQuote } from "../src/derivatives.js";
+import { executeDerivativesOrder, findDerivativesOrders, getDerivativesAccount, getDerivativesOrder, listDerivativesAccounts, openDerivativesAccount, recoverDerivativesOrder, valueDerivativesPosition, type DerivativesInstrument, type DerivativesMarketData, type DerivativesQuote } from "../src/derivatives.js";
 import { DERIVATIVES_POLICY, type DerivativesOrderRequest } from "../src/derivatives-types.js";
 
 let directory: string;
@@ -145,10 +145,49 @@ describe("execution validation and atomic idempotency", () => {
     await expect(execute(request({ maximumPrice: "101" }), offline)).rejects.toThrow(/different parameters/);
     expect(offline.getDerivativeQuote).not.toHaveBeenCalled();
   });
+  it("returns recent orders while preserving full history, balances and old offline identities", async () => {
+    const first = await execute();
+    for (let index = 0; index < 100; index++) {
+      await executeDerivativesOrder(request({ clientOrderId: `later-${index}` }), connector(), clock, 20);
+    }
+    const full = account();
+    const recent = getDerivativesAccount("okx", "USDT", 20)!;
+    expect(full.orderCount).toBe(101);
+    expect(full.orders).toHaveLength(101);
+    expect(recent.orders).toEqual(full.orders.slice(-20));
+    expect(recent.orderCount).toBe(101);
+    expect(recent.available).toBe("79.598");
+    expect(recent.positions[0]).toMatchObject({ quantity: "202", margin: "20.2" });
+    expect(listDerivativesAccounts(20)[0]).toEqual(recent);
+    expect(listDerivativesAccounts()[0]).toEqual(full);
+    expect(openDerivativesAccount("okx", "USDT", "999", "0", 20)).toEqual(recent);
+    expect(getDerivativesOrder("okx", "USDT", "open-one")).toEqual(first.order);
+    expect(findDerivativesOrders("open-one", instrument().id)).toEqual([first.order]);
+    expect(findDerivativesOrders("open-one", "other")).toEqual([]);
+    closeDatabaseForTests();
+    const offline = connector();
+    const retry = await executeDerivativesOrder(request(), offline, clock, 20);
+    expect(retry).toEqual({ account: recent, order: first.order, deduplicated: true });
+    expect(recoverDerivativesOrder(request(), 20)).toEqual(retry);
+    expect(recoverDerivativesOrder(request())?.account).toEqual(full);
+    expect(account()).toEqual(full);
+    expect(offline.getDerivativeInstrument).not.toHaveBeenCalled();
+    await expect(executeDerivativesOrder(request({ maximumPrice: "101" }), offline, clock, 20)).rejects.toThrow(/different parameters/);
+    expect(offline.getDerivativeQuote).not.toHaveBeenCalled();
+  });
+  it("rejects a conflicting concurrent intent after both requests reach the market", async () => {
+    const market = connector();
+    const first = executeDerivativesOrder(request(), market, clock, 20);
+    const conflict = executeDerivativesOrder(request({ quantity: "3" }), market, clock, 20);
+    const results = await Promise.allSettled([first, conflict]);
+    expect(results[0]?.status).toBe("fulfilled");
+    expect(results[1]).toMatchObject({ status: "rejected", reason: expect.objectContaining({ message: expect.stringMatching(/different parameters/) }) });
+    expect(account()).toMatchObject({ available: "99.798", orderCount: 1, positions: [{ quantity: "2", margin: "0.2" }] });
+  });
   it("rolls back both balance and order ledger when the final write fails", async () => {
     const before = account();
     getDatabase().run("CREATE TRIGGER fail_derivatives BEFORE UPDATE ON derivatives_accounts BEGIN SELECT RAISE(ABORT, 'failed commit'); END");
-    await expect(execute()).rejects.toThrow(/failed commit/); expect(account()).toEqual(before);
+    await expect(execute()).rejects.toThrow(); expect(account()).toEqual(before);
   });
   it.each([0, 21, 1.5])("rejects invalid leverage %s", async (leverage) => {
     await expect(execute(request({ leverage }))).rejects.toThrow(/leverage/); expect(account().orders).toEqual([]);

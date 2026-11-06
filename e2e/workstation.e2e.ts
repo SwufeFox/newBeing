@@ -221,6 +221,7 @@ test("shows failed backtest reruns and Paper closes without replacing known stat
       body: JSON.stringify({
         portfolio: { quoteBalance: 9_915, baseBalance: 0.001, averageEntryPrice: 85_000, realizedPnl: 0, totalFees: 0 },
         orders: [],
+        hasPendingOrders: false,
         mode: "paper",
         exchange: "binance",
       }),
@@ -457,9 +458,10 @@ test("applies an authoritative filled Paper close from a non-2xx response", asyn
     fee: 0.085,
     createdAt: new Date().toISOString(),
   };
-  let account: { portfolio: { quoteBalance: number; baseBalance: number; averageEntryPrice: number | null; realizedPnl: number; totalFees: number; feeRate: number }; orders: typeof filledOrder[]; mode: string; exchange: string } = {
+  let account: { portfolio: { quoteBalance: number; baseBalance: number; averageEntryPrice: number | null; realizedPnl: number; totalFees: number; feeRate: number }; orders: typeof filledOrder[]; hasPendingOrders: boolean; mode: string; exchange: string } = {
     portfolio: { quoteBalance: 9_915, baseBalance: 0.001, averageEntryPrice: 85_000, realizedPnl: 0, totalFees: 0, feeRate: 0.001 },
     orders: [],
+    hasPendingOrders: false,
     mode: "paper",
     exchange: "binance",
   };
@@ -470,6 +472,7 @@ test("applies an authoritative filled Paper close from a non-2xx response", asyn
       account = {
         portfolio: { quoteBalance: 9_999.915, baseBalance: 0, averageEntryPrice: null, realizedPnl: -0.085, totalFees: 0.085, feeRate: 0.001 },
         orders: [filledOrder],
+        hasPendingOrders: false,
         mode: "paper",
         exchange: "binance",
       };

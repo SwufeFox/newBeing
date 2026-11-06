@@ -115,6 +115,32 @@ function migrateSchema(sqlite: Database.Database): void {
       session_id TEXT PRIMARY KEY REFERENCES replay_sessions(id), payload TEXT NOT NULL
     );
   `);
+  sqlite.exec("CREATE TABLE IF NOT EXISTS derivatives_accounts (id TEXT PRIMARY KEY, payload TEXT NOT NULL)");
+  const ordersTable = sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'derivatives_orders'").get();
+  if (!ordersTable) {
+    sqlite.exec(`CREATE TABLE derivatives_orders (
+      account_id TEXT NOT NULL REFERENCES derivatives_accounts(id), sequence INTEGER NOT NULL,
+      client_order_id TEXT NOT NULL, instrument_id TEXT NOT NULL, payload TEXT NOT NULL,
+      PRIMARY KEY (account_id, sequence), UNIQUE (account_id, client_order_id)
+    ); CREATE INDEX derivatives_orders_lookup_idx ON derivatives_orders(client_order_id, instrument_id)`);
+    const insert = sqlite.prepare("INSERT INTO derivatives_orders (account_id, sequence, client_order_id, instrument_id, payload) VALUES (?, ?, ?, ?, ?)");
+    const update = sqlite.prepare("UPDATE derivatives_accounts SET payload = ? WHERE id = ?");
+    for (const row of sqlite.prepare("SELECT id, payload FROM derivatives_accounts").all() as Array<{ id: string; payload: string }>) {
+      const state: unknown = JSON.parse(row.payload);
+      if (!state || typeof state !== "object" || Array.isArray(state)) throw new Error("Invalid legacy derivatives account.");
+      const account = state as Record<string, unknown>;
+      if (account.id !== row.id || !Array.isArray(account.orders)) throw new Error("Invalid legacy derivatives account identity or orders.");
+      for (const [index, item] of account.orders.entries()) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("Invalid legacy derivatives order.");
+        const order = item as Record<string, unknown>;
+        if (typeof order.clientOrderId !== "string" || !order.clientOrderId.trim() || typeof order.instrumentId !== "string" || !order.instrumentId.trim()) throw new Error("Invalid legacy derivatives order identity.");
+        insert.run(row.id, index + 1, order.clientOrderId, order.instrumentId, JSON.stringify(order));
+      }
+      delete account.orders;
+      delete account.orderCount;
+      update.run(JSON.stringify(account), row.id);
+    }
+  }
   /* Migration: databases created before replay sessions recorded their venue
      have the table without the column. CREATE TABLE IF NOT EXISTS leaves such a
      table untouched, so add the column explicitly. Every existing session could

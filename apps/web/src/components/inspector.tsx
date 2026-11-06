@@ -148,6 +148,8 @@ interface InspectorCopy {
   previewActionFailed: string;
   paperOrderFailed: string;
   paperSubmitFailed: string;
+  paperUnconfirmed: (id: string) => string;
+  paperPending: (id: string) => string;
   previewConfirmationSaved: string;
   previewConfirmed: string;
   previewDismissed: string;
@@ -329,6 +331,8 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     previewActionFailed: "Preview action failed.",
     paperOrderFailed: "Paper order failed.",
     paperSubmitFailed: "Could not submit paper order.",
+    paperUnconfirmed: (id) => `Paper order ${id} could not be confirmed. Inspect Orders and Paper recovery before placing another order.`,
+    paperPending: (id) => `Paper order ${id} is unresolved. Inspect Orders and Paper recovery before placing another order.`,
     previewConfirmationSaved: "Confirmation saved · execution pending",
     previewConfirmed: "Paper preview confirmed · simulated order recorded",
     previewDismissed: "Preview dismissed",
@@ -506,6 +510,8 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     previewActionFailed: "预览操作失败。",
     paperOrderFailed: "模拟盘下单失败。",
     paperSubmitFailed: "无法提交模拟盘委托。",
+    paperUnconfirmed: (id) => `无法确认模拟盘委托 ${id}。再次下单前请检查委托和模拟盘恢复记录。`,
+    paperPending: (id) => `模拟盘委托 ${id} 尚未确定。再次下单前请检查委托和模拟盘恢复记录。`,
     previewConfirmationSaved: "确认已保存 · 待执行",
     previewConfirmed: "模拟预览已确认 · 已记录模拟委托",
     previewDismissed: "预览已忽略",
@@ -1584,6 +1590,8 @@ function PaperTicket({
   const [resolvingPreview, setResolvingPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const mutationRef = useRef(false);
+  const refreshRef = useRef(0);
   const mode = useWorkspaceStore((state) => state.mode);
   const number = Number(quantity);
   const canBuy = mode === "paper" && !busy && Number.isFinite(number) && number > 0;
@@ -1595,16 +1603,17 @@ function PaperTicket({
   useEffect(() => {
     let disposed = false;
     const refresh = async (): Promise<void> => {
+      const request = ++refreshRef.current;
       try {
         const response = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
         const payload: unknown = await response.json();
         const parsed = parsePaper(payload);
-        if (response.ok && parsed && !disposed) setPortfolio(parsed.portfolio);
+        if (response.ok && parsed && !disposed && request === refreshRef.current && !mutationRef.current) setPortfolio(parsed.portfolio);
         const previewResponse = await fetch(`/api/order-previews?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
         const previewPayload: unknown = await previewResponse.json();
-        if (previewResponse.ok && !disposed) setPreviews(parsePreviews(previewPayload).filter((preview) => preview.status === "prepared"));
+        if (previewResponse.ok && !disposed && request === refreshRef.current && !mutationRef.current) setPreviews(parsePreviews(previewPayload).filter((preview) => preview.status === "prepared"));
       } catch {
-        if (!disposed) setPortfolio(null);
+        if (!disposed && request === refreshRef.current && !mutationRef.current) setPortfolio(null);
       }
     };
     void refresh();
@@ -1614,6 +1623,9 @@ function PaperTicket({
 
   const resolvePreview = async (previewId: string, action: "confirm" | "dismiss"): Promise<void> => {
     const text = translate(INSPECTOR_COPY);
+    if (mutationRef.current) return;
+    mutationRef.current = true;
+    refreshRef.current += 1;
     setResolvingPreview(previewId);
     setError(null);
     try {
@@ -1627,24 +1639,27 @@ function PaperTicket({
         const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : text.previewActionFailed;
         throw new Error(message);
       }
+      setPreviews((current) => current.filter((preview) => preview.id !== previewId));
       setNotice(response.status === 202 ? text.previewConfirmationSaved : action === "confirm" ? text.previewConfirmed : text.previewDismissed);
-      const refresh = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
-      const account = parsePaper(await refresh.json());
-      if (refresh.ok && account) setPortfolio(account.portfolio);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : text.previewActionFailed);
     } finally {
+      mutationRef.current = false;
+      refreshRef.current += 1;
       setResolvingPreview(null);
     }
   };
 
   const submit = async (side: "buy" | "sell", orderQuantity = number): Promise<void> => {
     const text = translate(INSPECTOR_COPY);
+    if (mutationRef.current) return;
+    mutationRef.current = true;
+    refreshRef.current += 1;
+    const clientOrderId = globalThis.crypto?.randomUUID?.() ?? `paper-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const clientOrderId = globalThis.crypto?.randomUUID?.() ?? `paper-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       const response = await fetch("/api/paper", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1655,18 +1670,23 @@ function PaperTicket({
         const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : text.paperOrderFailed;
         throw new Error(message);
       }
-      if (typeof payload === "object" && payload !== null && "portfolio" in payload) {
-        const p = (payload as { portfolio?: unknown }).portfolio;
-        if (typeof p === "object" && p !== null && "quoteBalance" in p) setPortfolio(p as PaperPortfolio);
-      }
+      const paper = parsePaper(payload);
+      if (paper) setPortfolio(paper.portfolio);
       const savedOrder = typeof payload === "object" && payload !== null && "order" in payload ? payload.order as PaperOrder : null;
-      if (savedOrder?.status === "filled") setNotice(text.filledAtPublicQuote(side));
-      else if (savedOrder?.status === "cancelled") setNotice(text.paperOrderCancelled);
-      else setNotice(text.savedPaperStatus(savedOrder?.status ?? "unavailable"));
-      window.setTimeout(() => setNotice(null), 3_500);
+      if (savedOrder?.status === "filled") {
+        setNotice(text.filledAtPublicQuote(side));
+        window.setTimeout(() => setNotice(null), 3_500);
+      } else if (savedOrder?.status === "cancelled") {
+        setNotice(text.paperOrderCancelled);
+      } else {
+        const detail = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? `${payload.error} ` : "";
+        setError(`${detail}${text.paperPending(clientOrderId)}`);
+      }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : text.paperSubmitFailed);
+      setError(reason instanceof Error && reason.message !== text.paperSubmitFailed ? `${reason.message} ${text.paperUnconfirmed(clientOrderId)}` : text.paperUnconfirmed(clientOrderId));
     } finally {
+      mutationRef.current = false;
+      refreshRef.current += 1;
       setBusy(false);
     }
   };
@@ -1919,17 +1939,17 @@ function PaperTicket({
             <div>{copy.expires(new Date(preview.expiresAt).toLocaleTimeString())}</div>
           </div>
           <div className="preview-actions flex gap-2 pt-1">
-            <Button size="sm" variant="primary" className="h-6 text-[10px]" disabled={resolvingPreview === preview.id} onClick={() => void resolvePreview(preview.id, "confirm")}>
+            <Button size="sm" variant="primary" className="h-6 text-[10px]" disabled={resolvingPreview !== null || busy} onClick={() => void resolvePreview(preview.id, "confirm")}>
               {copy.confirmPaper}
             </Button>
-            <Button size="sm" variant="ghost" className="h-6 text-[10px]" disabled={resolvingPreview === preview.id} onClick={() => void resolvePreview(preview.id, "dismiss")}>
+            <Button size="sm" variant="ghost" className="h-6 text-[10px]" disabled={resolvingPreview !== null || busy} onClick={() => void resolvePreview(preview.id, "dismiss")}>
               {copy.dismiss}
             </Button>
           </div>
         </div>
       ))}
 
-      {error && <div className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">{error}</div>}
+      {error && <div role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">{error}</div>}
       {notice && <div className="success-inline text-xs text-[var(--ak-signal-success)] p-1.5 bg-emerald-950/20 border border-emerald-800/40">{notice}</div>}
       <div className="ticket-disclaimer flex items-center justify-between text-[8px] text-[var(--ak-text-secondary)] opacity-60 font-mono tracking-wider pt-0.5">
         <div className="flex items-center gap-1">

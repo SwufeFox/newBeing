@@ -107,7 +107,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
     state.removeWatchlistSymbol, state.addWatchlistSymbol, state.moveWatchlistSymbol,
   ]));
 
-  const watchlistKey = `${exchange}|${watchlist.join(",")}`;
+  const watchlistKey = `${exchange}|${selected}|${watchlist.join(",")}`;
   /* The selected symbol's quote comes from the terminal's own 5s summary poll,
      so the 12s batch skips it instead of asking the venue twice for one row. */
   const batchSymbols = watchlist.filter((item) => item !== selected);
@@ -326,7 +326,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
 
       <div className="watchlist-rows" ref={listRef}>
         {watchlist.map((symbol, index) => {
-          const summary = summaries[symbol] ?? (symbol === selected && selectedSummary ? selectedSummary : null);
+          const summary = symbol === selected ? selectedSummary : summaries[symbol] ?? null;
           const base = symbol.split("/")[0] ?? symbol;
           const quote = symbol.split("/")[1] ?? "";
           const change = summary?.changePct24h;

@@ -32,7 +32,7 @@
    wrong black". Point the ak tokens at the app ramp once, here, instead of
    overriding surface colours at forty call sites. Declared after the ak-ui import
    so it wins inside the same layer. */
-::root {
+:root {
   --ak-surface-canvas: var(--c-canvas);
   --ak-surface-sunken: var(--c-inset);
   --ak-surface-sunken-2: var(--c-surface-2);
@@ -940,6 +940,7 @@ input[type="number"] {
   box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 .left-rail, .chart-column { display: flex; flex-direction: column; }
+.chart-column { container: chart / inline-size; }
 .inspector-slot { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .inspector-panel { display: flex; flex-direction: column; height: 100%; }
 
@@ -1212,16 +1213,26 @@ input[type="number"] {
 .chart-shell { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .chart-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--s-3);
-  padding: var(--s-2) var(--s-3) 0;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-2) var(--s-3);
   color: var(--c-fg-3);
   font-family: var(--f-mono);
   font-size: var(--t-label);
   font-weight: 500;
 }
-.chart-meta-left { display: flex; gap: var(--s-3); min-width: 0; overflow: hidden; white-space: nowrap; }
+.chart-meta-left { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: var(--s-1) var(--s-3); min-width: 0; }
+.chart-meta-left > span { white-space: nowrap; }
+.chart-meta-right { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; gap: var(--s-1) var(--s-3); }
+
+@container chart (max-width: 600px) {
+  .chart-toolbar { flex: 0 0 auto; height: auto; min-height: var(--head-h); flex-wrap: wrap; padding-block: var(--s-1); }
+  .chart-toolbar-left { flex: 1 1 150px; flex-wrap: wrap; overflow: visible; white-space: normal; }
+  .chart-toolbar-right { flex: 0 0 auto; margin-left: auto; }
+  .chart-toolbar-right button { min-height: 44px; height: auto; white-space: nowrap; }
+}
 .chart-stage { flex: 1 1 auto; min-height: 0; position: relative; }
 .chart-stage::before { display: none; }
 .chart-stage::after { display: none; }
@@ -2739,6 +2750,9 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
      with its empty-state text clipped; the column grows instead and the canvas
      scrolls. */
   .chart-column > .chart-host { min-height: 300px; }
+  @container chart (max-width: 600px) {
+    .chart-column > .chart-host { min-height: 400px; }
+  }
   .dock-slot { min-height: 220px; }
   /* Wrapped Research tabs need room above the results on a phone. */
   .mode-research .dock-slot { min-height: 360px; }
@@ -3178,6 +3192,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .watchlist-add-toggle { width: 44px; height: 44px; }
   .watch-row { min-height: 44px; }
   .watch-remove { width: 44px; height: 44px; opacity: 1; }
+  .chart-toolbar { flex: 0 0 auto; height: auto; min-height: var(--head-h); }
+  .chart-toolbar-right button { min-height: 44px; height: auto; white-space: nowrap; }
   .indicator-toggles button { min-width: 44px; min-height: 44px; padding: 0 6px; }
   .backtest-trade-heading { flex-wrap: wrap; gap: var(--s-2); }
   .backtest-trade-filters { margin-left: auto; }
@@ -3925,7 +3941,7 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   border-left: var(--line) solid var(--c-line-strong);
 }
 
-.derivatives-quote { display: flex; align-items: baseline; gap: var(--s-4); min-width: 0; }
+.derivatives-quote { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-2) var(--s-4); flex: 0 0 auto; max-width: 100%; }
 .derivatives-quote .side { display: flex; flex-direction: column; gap: 2px; }
 .derivatives-quote .side .value { font-family: var(--f-label); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .derivatives-quote .side.bid .value { color: var(--c-up); }
@@ -4078,6 +4094,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
    row one; content and ticket share row two). The desktop column pins above
    are scoped to min-width 1081px so they never fight these rules. */
 @media (max-width: 1080px) {
+  .derivatives-plate { flex-wrap: wrap; min-height: 0; padding-block: var(--s-3); }
+  .derivatives-context { flex: 1 1 15rem; }
   .derivatives-layout { grid-template-columns: minmax(0, 1fr) 300px; }
   .derivatives-layout > .derivatives-rail { grid-column: 1 / -1; width: auto; }
   .derivatives-layout > .derivatives-panel[aria-label="Derivatives Paper ticket"] { grid-column: 2; width: auto; }
@@ -4152,6 +4170,51 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .derivatives-topbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .derivatives-topbar::-webkit-scrollbar { display: none; }
   .derivatives-topbar > * { flex-shrink: 0; }
+}
+
+@media (max-width: 520px), (min-width: 761px) and (max-width: 880px) {
+  .derivatives-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "brand title" "status engine";
+    gap: 0 var(--s-2);
+    padding-block: var(--s-1);
+    overflow: visible;
+  }
+  .derivatives-topbar .derivatives-brand { grid-area: brand; justify-self: start; min-height: 44px; }
+  .derivatives-topbar h1 { grid-area: title; justify-self: end; }
+  .derivatives-topbar .topbar-divider { display: none; }
+  .derivatives-topbar .workspace-nav { grid-area: nav; }
+  .derivatives-topbar > .flex-1 { display: none; }
+  .derivatives-topbar .topbar-status { grid-area: status; justify-self: start; }
+  .derivatives-topbar .derivatives-engine-trigger { grid-area: engine; min-height: 44px; }
+}
+
+@media (min-width: 761px) and (max-width: 880px) {
+  .derivatives-topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "brand title status" "nav nav engine";
+  }
+  .derivatives-topbar h1 { justify-self: start; }
+  .derivatives-topbar .topbar-status { justify-self: end; }
+}
+
+@media (max-width: 520px) {
+  .derivatives-kind-tabs { flex-wrap: wrap; }
+  .derivatives-kind-tabs > .flex-1 { display: none; }
+  .derivatives-kind-tabs [role="tab"] { min-height: 44px; }
+  .derivatives-kind-summary { flex-basis: 100%; }
+}
+
+@media (max-width: 360px) {
+  .mobile-mode-nav button,
+  .mobile-mode-nav a { letter-spacing: var(--track-body); }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .derivatives-topbar .derivatives-brand,
+  .derivatives-topbar .derivatives-engine-trigger,
+  .derivatives-kind-tabs [role="tab"] { min-height: 44px; }
 }
 
 /* Mobile rail drawer: below 920px the grid rails are display:none and were
@@ -4327,8 +4390,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .settings-api-list { margin: 0; padding-left: var(--s-4); color: var(--c-fg-3); font-size: var(--t-meta); line-height: 1.6; }
 .settings-api-list li + li { margin-top: var(--s-1); }
 
-@media (hover: none), (pointer: coarse) {
-  .settings-inline-button { min-height: 44px; }
+@media (max-width: 560px), (hover: none), (pointer: coarse) {
+  .settings-inline-button { min-width: 44px; min-height: 44px; }
 }
 @media (max-width: 560px) {
   .settings-option-row { grid-template-columns: minmax(0, 1fr); }

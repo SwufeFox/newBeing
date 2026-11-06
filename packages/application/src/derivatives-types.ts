@@ -60,6 +60,7 @@ export interface DerivativesAccount {
   feesPaid: string;
   positions: DerivativesPosition[];
   orders: DerivativesOrder[];
+  orderCount: number;
   policy: DerivativesPolicy;
 }
 export interface DerivativesOrderResult {

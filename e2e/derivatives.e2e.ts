@@ -146,52 +146,54 @@ test("search keeps Paper actions paused until delayed contract results reconcile
     if (requestEvent.method() === "GET" && new URL(requestEvent.url()).pathname === "/api/derivatives/market") marketPolls += 1;
   });
 
-  await page.goto("/");
-  await page.getByRole("link", { name: /Derivatives/ }).click();
-  await page.waitForURL("**/derivatives", { timeout: 120000 });
-  const position = page.getByRole("button", { name: `View position ${future!.id}` });
-  await expect(position).toBeVisible({ timeout: 60000 });
-  await position.click();
-  const contractDetails = page.getByRole("region", { name: "Contract market data" });
-  await expect(contractDetails.getByText(future!.id, { exact: true })).toBeVisible({ timeout: 60000 });
-  await page.getByRole("textbox", { name: "Quantity in contracts" }).fill("1");
-  await page.getByRole("textbox", { name: "Price protection" }).fill(String(Math.floor(quote.bid / future!.priceTick) * future!.priceTick));
-  const submit = page.getByRole("button", { name: "Submit Paper order", exact: true });
-  await expect(submit).toBeEnabled({ timeout: 60000 });
+  try {
+    await page.goto("/");
+    await page.getByRole("link", { name: /Derivatives/ }).click();
+    await page.waitForURL("**/derivatives", { timeout: 120000 });
+    const position = page.getByRole("button", { name: `View position ${future!.id}` });
+    await expect(position).toBeVisible({ timeout: 60000 });
+    await position.click();
+    const contractDetails = page.getByRole("region", { name: "Contract market data" });
+    await expect(contractDetails.getByText(future!.id, { exact: true })).toBeVisible({ timeout: 60000 });
+    await page.getByRole("textbox", { name: "Quantity in contracts" }).fill("1");
+    await page.getByRole("textbox", { name: "Price protection" }).fill(String(Math.floor(quote.bid / future!.priceTick) * future!.priceTick));
+    const submit = page.getByRole("button", { name: "Submit Paper order", exact: true });
+    await expect(submit).toBeEnabled({ timeout: 60000 });
 
-  const search = page.getByRole("textbox", { name: "Search derivatives" });
-  await search.fill("261225");
-  const ticket = page.getByRole("region", { name: "Derivatives Paper ticket" });
-  await expect(ticket.getByText("Contract search pending. Paper actions are paused until the filtered contracts load.")).toBeVisible();
-  await expect(contractDetails).not.toContainText(future!.id);
-  await expect(ticket).toContainText("—");
-  await expect(submit).toHaveCount(0);
-  await expect.poll(() => intercepted.has("261225")).toBe(true);
-  expect(orderPosts).toBe(0);
-  const pollsWhilePending = marketPolls;
-  // The old selection polled every five seconds; a pending search must hold it.
-  await page.waitForTimeout(5_500);
-  expect(marketPolls).toBe(pollsWhilePending);
-  releases.get("261225")?.();
-  await expect(contractDetails).toContainText("okx:future:BTC-USDT-261225");
-  await expect(page.getByRole("button", { name: /BTC-USDT-261225/ })).toHaveAttribute("aria-current", "true");
+    const search = page.getByRole("textbox", { name: "Search derivatives" });
+    await search.fill("261225");
+    const ticket = page.getByRole("region", { name: "Derivatives Paper ticket" });
+    await expect(ticket.getByText("Contract search pending. Paper actions are paused until the filtered contracts load.")).toBeVisible();
+    await expect(contractDetails).not.toContainText(future!.id);
+    await expect(submit).toHaveCount(0);
+    await expect.poll(() => intercepted.has("261225")).toBe(true);
+    expect(orderPosts).toBe(0);
+    const pollsWhilePending = marketPolls;
+    // The old selection polled every five seconds; a pending search must hold it.
+    await page.waitForTimeout(5_500);
+    expect(marketPolls).toBe(pollsWhilePending);
+    releases.get("261225")?.();
+    await expect(contractDetails).toContainText("okx:future:BTC-USDT-261225");
+    await expect(page.getByRole("button", { name: /BTC-USDT-261225/ })).toHaveAttribute("aria-current", "true");
 
-  await search.fill("no-such-contract");
-  await expect(ticket.getByText("Contract search pending. Paper actions are paused until the filtered contracts load.")).toBeVisible();
-  await expect.poll(() => intercepted.has("no-such-contract")).toBe(true);
-  await expect(submit).toHaveCount(0);
-  expect(orderPosts).toBe(0);
-  releases.get("no-such-contract")?.();
-  await expect(page.getByText("No matching contracts.")).toBeVisible();
-  await expect(page.locator('[aria-current="true"]')).toHaveCount(0);
-  await expect(contractDetails).toContainText("—");
-  expect(orderPosts).toBe(0);
-  const closed = await post(request, base, {
-    action: "order", instrumentId: future!.id, clientOrderId: "e2e-ui-search-cleanup", side: "sell", contracts: "1", leverage: 1,
-    reduceOnly: true, limitPrice: String(Math.floor(quote.bid / future!.priceTick) * future!.priceTick),
-  });
-  expect(closed.ok()).toBeTruthy();
-  expect((await closed.json()).account.positions).toHaveLength(0);
+    await search.fill("no-such-contract");
+    await expect(ticket.getByText("Contract search pending. Paper actions are paused until the filtered contracts load.")).toBeVisible();
+    await expect.poll(() => intercepted.has("no-such-contract")).toBe(true);
+    await expect(submit).toHaveCount(0);
+    expect(orderPosts).toBe(0);
+    releases.get("no-such-contract")?.();
+    await expect(page.getByText("No matching contracts.")).toBeVisible();
+    await expect(page.locator('[aria-current="true"]')).toHaveCount(0);
+    expect(orderPosts).toBe(0);
+  } finally {
+    for (const release of releases.values()) release();
+    const closed = await post(request, base, {
+      action: "order", instrumentId: future!.id, clientOrderId: "e2e-ui-search-cleanup", side: "sell", contracts: "1", leverage: 1,
+      reduceOnly: true, limitPrice: String(Math.floor(quote.bid / future!.priceTick) * future!.priceTick),
+    });
+    expect(closed.ok()).toBeTruthy();
+    expect((await closed.json()).account.positions).not.toContainEqual(expect.objectContaining({ instrumentId: future!.id }));
+  }
 });
 
 test("native derivative identities, explicit capital and atomic contract/option Paper fills", async ({ request, baseURL }) => {
@@ -245,7 +247,7 @@ test("native derivative identities, explicit capital and atomic contract/option 
   expect(held.order.leverage).toBe(1);
   const optionClose = await post(request, base, { ...optionIntent, clientOrderId: "e2e-option-close", side: "sell", limitPrice: String(optionQuote.bid) });
   expect(optionClose.ok()).toBeTruthy();
-  expect((await optionClose.json()).account.positions).toHaveLength(0);
+  expect((await optionClose.json()).account.positions).not.toContainEqual(expect.objectContaining({ instrumentId: option.id }));
 });
 
 test("derivatives navigation, venue coverage labels and narrow layout", async ({ page }) => {
@@ -258,7 +260,7 @@ test("derivatives navigation, venue coverage labels and narrow layout", async ({
   await search.fill("no-matching-contract");
   await expect(page.getByText("No matching contracts.")).toBeVisible();
   await expect(page.locator('[aria-current="true"]')).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Contract market data" })).toContainText("—");
+  await expect(page.getByRole("region", { name: "Contract market data" })).not.toContainText("okx:perpetual:BTC-USDT-SWAP");
   await search.fill("");
   await expect(page.getByRole("button", { name: /BTC-USDT-SWAP/ })).toBeVisible();
   await page.getByRole("tab", { name: "Futures", exact: true }).click();

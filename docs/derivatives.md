@@ -2,6 +2,8 @@
 
 `/derivatives` is a separate market and Paper execution surface. Its product IDs have the form `venue:kind:nativeId`; `BTC-USDT-SWAP`, a dated future and a BTC call can never share a spot candle-cache key or an account position merely because they refer to the same underlying asset.
 
+On narrow screens, the workspace navigation and Engine model control remain visible, while bid/ask prices and contract details wrap to avoid overlapping.
+
 ## Product coverage
 
 | Product | Public data | Paper exposure |
@@ -17,6 +19,10 @@ Unsupported inverse contracts and unsupported settlement specifications are reje
 Order size is **contracts**. The underlying size is `contracts × contractSize`. Bid/ask and premium are normalized to settlement currency per underlying unit; cost and linear PnL therefore include the multiplier. Option strike and the underlying index are in quote currency per underlying unit, which can differ from the currency used to pay the premium. Native quantity steps, minima and price ticks apply.
 
 Orders use a fresh executable ask for a buy or bid for a sell. A mark is for valuation and does not replace a missing bid/ask. Price protection is a buy ceiling or a sell floor. The client order ID binds the full order intent; a lost HTTP response can be retried without creating another fill, while reusing the ID with different fields is rejected.
+
+Order history is an append-only SQLite ledger indexed by account and client order ID. On first use, existing JSON order arrays move into that ledger in one transaction; a failed migration leaves the old data intact. Orders removed by older versions cannot be reconstructed from account balances. Stop older app or MCP processes before opening a migrated database; older versions do not understand the new ledger format.
+
+The web account endpoints return the latest 20 fills in their original order, with `orderCount` reporting the complete history size. The former `orderLimit` query parameter is no longer supported. The workspace loads older fills per account on demand, including in a read-only Replay snapshot. `GET /api/derivatives/orders` accepts `venue`, `settle`, and an optional `before` client order ID; it returns up to 20 older fills in newest-first order and a `hasMore` flag. Without `before`, it returns the latest page. Use the last returned order's `clientOrderId` as the next cursor. If native metadata is unavailable, a previously filled order can still be recovered from its exact local identity and intent, even when it is outside the recent window; an unknown order still requires live metadata and a fresh quote.
 
 Paper capital is seeded once, on an explicit account-open command. Reading an account does not open or top it up. Derivatives have independent SQLite persistence; spot/shared-spot/legacy and Replay wallets keep their existing identities and balances. Monetary arithmetic uses Decimal and wire values preserve decimal strings.
 

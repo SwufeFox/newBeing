@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AkDialog, AkSpinner, AkTag } from "@swufefox/ak-ui-react";
 import { DEFAULT_PREFERENCES, setPreferences, usePreferences, type ColorVisionMode, type UiLocale } from "@/lib/preferences";
 import { EXCHANGE_IDS, EXCHANGE_LABELS, symbolForExchange } from "@/lib/exchanges";
@@ -32,12 +32,17 @@ const SETTINGS_COPY = {
     active: "ACTIVE",
     use: "USE",
     inUse: "IN USE",
+    useConnector: (name: string) => `Use ${name}`,
+    connectorInUse: (name: string) => `${name} is in use`,
     replayLocked: "Frozen Replay owns the venue and instrument. Finish or exit Replay to switch venue.",
     probe: "PROBE",
     probing: "PROBING",
+    probeConnector: (name: string, symbol: string) => `Probe ${name} for ${symbol}`,
+    probingSymbol: (symbol: string) => `Checking ${symbol}…`,
     capabilities: "CAPABILITIES",
     paperOnly: "PAPER ONLY",
     connectorsUnavailable: "Connector metadata is unavailable.",
+    retryConnectors: "Retry connectors",
     loadingConnectors: "READING CONNECTORS",
     noConnectors: "No connector metadata returned.",
     apiTitle: "LOCAL API BOUNDARY",
@@ -69,12 +74,17 @@ const SETTINGS_COPY = {
     active: "当前",
     use: "使用",
     inUse: "使用中",
+    useConnector: (name: string) => `使用 ${name}`,
+    connectorInUse: (name: string) => `正在使用 ${name}`,
     replayLocked: "冻结回放固定了交易所与标的。结束或退出回放后才能切换。",
     probe: "探测",
     probing: "探测中",
+    probeConnector: (name: string, symbol: string) => `探测 ${name} 的 ${symbol}`,
+    probingSymbol: (symbol: string) => `正在检查 ${symbol}…`,
     capabilities: "能力",
     paperOnly: "仅模拟盘",
     connectorsUnavailable: "连接器元数据不可用。",
+    retryConnectors: "重试连接器",
     loadingConnectors: "读取连接器",
     noConnectors: "未返回任何连接器元数据。",
     apiTitle: "本地 API 边界",
@@ -93,10 +103,11 @@ interface ConnectorView {
   capabilities: Readonly<Record<string, boolean | "emulated">>;
 }
 
-type ProbeState =
+type ProbeState = { symbol: string; requestId: number } & (
   | { status: "loading" }
   | { status: "ok"; detail: string }
-  | { status: "error"; detail: string };
+  | { status: "error"; detail: string }
+);
 
 const CAPABILITY_ORDER: readonly [string, string][] = [
   ["fetchOHLCV", "OHLCV"],
@@ -139,10 +150,10 @@ interface ProbeInstrument {
   limits?: { amount?: { min?: unknown } | null; cost?: { min?: unknown } | null } | null;
 }
 
-function probeDetail(instrument: ProbeInstrument): string {
+function probeDetail(instrument: ProbeInstrument, symbol: string): string {
   const parts: string[] = [];
-  if (typeof instrument.nativeId === "string") parts.push(instrument.nativeId);
-  else if (typeof instrument.id === "string") parts.push(instrument.id);
+  const nativeId = typeof instrument.nativeId === "string" ? instrument.nativeId : instrument.id;
+  if (typeof nativeId === "string" && nativeId && nativeId !== symbol) parts.push(nativeId);
   const price = instrument.precision?.price;
   const amount = instrument.precision?.amount;
   if (typeof price === "number" && typeof amount === "number") parts.push(`P${price}·Q${amount}`);
@@ -163,7 +174,13 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const replayLocked = useWorkspaceStore((state) => state.activeWorkspace === "replay");
   const [connectors, setConnectors] = useState<ConnectorView[] | null>(null);
   const [connectorError, setConnectorError] = useState<string | null>(null);
+  const [connectorRetry, setConnectorRetry] = useState(0);
   const [probes, setProbes] = useState<Record<string, ProbeState>>({});
+  const probeRequestId = useRef(0);
+
+  useEffect(() => {
+    setProbes({});
+  }, [symbol]);
 
   useEffect(() => {
     if (!open) return;
@@ -183,7 +200,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       }
     })();
     return () => { alive = false; };
-  }, [open, copy.connectorsUnavailable]);
+  }, [open, copy.connectorsUnavailable, connectorRetry]);
 
   const resetLayout = useCallback((): void => {
     setLayout({ watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 });
@@ -191,7 +208,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
   const probe = useCallback(async (id: ExchangeId): Promise<void> => {
     const requestSymbol = symbolForExchange(symbol, id);
-    setProbes((previous) => ({ ...previous, [id]: { status: "loading" } }));
+    const requestId = ++probeRequestId.current;
+    setProbes((previous) => ({ ...previous, [id]: { status: "loading", symbol: requestSymbol, requestId } }));
     try {
       const response = await fetch(`/api/connectors?venue=${id}&symbol=${encodeURIComponent(requestSymbol)}`, { cache: "no-store" });
       const payload: unknown = await response.json();
@@ -203,12 +221,13 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         ? payload.instrument as ProbeInstrument
         : null;
       if (instrument === null) throw new Error("No instrument metadata returned.");
-      setProbes((previous) => ({ ...previous, [id]: { status: "ok", detail: probeDetail(instrument) } }));
+      setProbes((previous) => previous[id]?.requestId === requestId
+        ? { ...previous, [id]: { status: "ok", detail: probeDetail(instrument, requestSymbol), symbol: requestSymbol, requestId } }
+        : previous);
     } catch (error) {
-      setProbes((previous) => ({
-        ...previous,
-        [id]: { status: "error", detail: error instanceof Error ? error.message : "Probe failed." },
-      }));
+      setProbes((previous) => previous[id]?.requestId === requestId
+        ? { ...previous, [id]: { status: "error", detail: error instanceof Error ? error.message : "Probe failed.", symbol: requestSymbol, requestId } }
+        : previous);
     }
   }, [symbol]);
 
@@ -249,6 +268,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   return (
     <AkDialog
       open={open}
+      aria-label={copy.title}
       onOpenChange={onOpenChange}
       eyebrow={copy.eyebrow}
       title={copy.title}
@@ -297,7 +317,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           </h3>
           <p className="settings-note">{copy.connectorsHint}</p>
 
-          {connectorError !== null && <p role="alert" className="settings-note settings-note-error">{connectorError}</p>}
+          {connectorError !== null && <div className="settings-connector-actions">
+            <p role="alert" className="settings-note settings-note-error">{connectorError}</p>
+            <button type="button" className="settings-inline-button" onClick={() => setConnectorRetry((value) => value + 1)}>{copy.retryConnectors}</button>
+          </div>}
           {connectorError === null && connectors === null && (
             <p className="settings-note flex items-center gap-2"><AkSpinner color="#18d1ff" label={copy.loadingConnectors} />{copy.loadingConnectors}…</p>
           )}
@@ -305,7 +328,9 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
           <ul className="settings-connector-list">
             {(connectors ?? []).map((connector) => {
-              const probeState = probes[connector.id];
+              const requestSymbol = symbolForExchange(symbol, connector.id);
+              const savedProbe = probes[connector.id];
+              const probeState = savedProbe?.symbol === requestSymbol ? savedProbe : undefined;
               const inUse = connector.id === exchange;
               return (
                 <li key={connector.id} className="settings-connector">
@@ -335,6 +360,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                     <button
                       type="button"
                       className="settings-inline-button"
+                      aria-label={inUse ? copy.connectorInUse(connector.name) : copy.useConnector(connector.name)}
                       disabled={inUse || replayLocked}
                       title={replayLocked && !inUse ? copy.replayLocked : undefined}
                       onClick={() => setExchange(connector.id)}
@@ -344,6 +370,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                     <button
                       type="button"
                       className="settings-inline-button"
+                      aria-label={copy.probeConnector(connector.name, requestSymbol)}
                       disabled={probeState?.status === "loading"}
                       onClick={() => void probe(connector.id)}
                     >
@@ -353,7 +380,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                       role="status"
                       className={`settings-probe-result ${probeState?.status === "error" ? "is-error" : probeState?.status === "ok" ? "is-ok" : ""}`}
                     >
-                      {probeState?.status === "ok" || probeState?.status === "error" ? probeState.detail : ""}
+                      {probeState?.status === "loading" ? copy.probingSymbol(requestSymbol)
+                        : probeState ? `${requestSymbol} · ${probeState.detail}` : ""}
                     </span>
                   </div>
                 </li>

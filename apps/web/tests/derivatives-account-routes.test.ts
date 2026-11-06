@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ workspace: "terminal", instrument: vi.fn(), quote: vi.fn(), read: vi.fn(), open: vi.fn(), execute: vi.fn() }));
+const fixture = vi.hoisted(() => ({ workspace: "terminal", instrument: vi.fn(), quote: vi.fn(), read: vi.fn(), order: vi.fn(), findOrders: vi.fn(), recover: vi.fn(), open: vi.fn(), execute: vi.fn() }));
 vi.mock("@newbeing/storage", () => ({ getWorkspaceState: () => ({ state: { activeWorkspace: fixture.workspace } }) }));
 vi.mock("@newbeing/market-data/derivatives", () => ({ getDerivativeInstrument: fixture.instrument, getDerivativeQuote: fixture.quote }));
-vi.mock("@newbeing/application/derivatives", () => ({ getDerivativesAccount: fixture.read, openDerivativesAccount: fixture.open, executeDerivativesOrder: fixture.execute }));
+vi.mock("@newbeing/application/derivatives", () => ({ DERIVATIVES_ORDER_PAGE_SIZE: 20, getDerivativesAccount: fixture.read, getDerivativesOrder: fixture.order, findDerivativesOrders: fixture.findOrders, recoverDerivativesOrder: fixture.recover, openDerivativesAccount: fixture.open, executeDerivativesOrder: fixture.execute }));
 import { GET, POST } from "../src/app/api/derivatives/account/route.js";
 
 const id = "okx:perpetual:BTC-USDT-SWAP";
@@ -21,24 +21,19 @@ beforeEach(() => {
 afterEach(() => vi.resetAllMocks());
 
 describe("derivatives Paper HTTP intent mapping", () => {
-  it("reading never seeds and explicit open takes settlement currency from native metadata", async () => {
+  it("does not seed on read and rejects client-supplied seed overrides", async () => {
     const read = await GET(new Request(`http://localhost/api/derivatives/account?instrumentId=${id}`));
     expect(read.status).toBe(200);
     expect((await read.json()).account).toBeNull();
     expect(fixture.open).not.toHaveBeenCalled();
     expect((await POST(request({ action: "open", instrumentId: id }))).status).toBe(200);
-    expect(fixture.open).toHaveBeenCalledWith("okx", "USDT", "10000");
+    expect(fixture.open).toHaveBeenCalledWith("okx", "USDT", "10000", undefined, 20);
     expect((await POST(request({ action: "open", instrumentId: id, initialBalance: "100000000" }))).status).toBe(400);
-  });
-
-  it("uses a coin-denominated seed for a coin-settled option account", async () => {
-    fixture.instrument.mockResolvedValueOnce({ ...native, id: optionId, venue: "deribit", kind: "option", settle: "BTC" });
-    expect((await POST(request({ action: "open", instrumentId: optionId }))).status).toBe(200);
-    expect(fixture.open).toHaveBeenCalledWith("deribit", "BTC", "1");
   });
 
   it("separates opening a short contract from buying to close it", async () => {
     expect((await POST(request({ ...order, side: "sell" }))).status).toBe(200);
+    expect(fixture.execute.mock.calls[0]![3]).toBe(20);
     expect(fixture.execute.mock.calls[0]![0]).toMatchObject({ action: "open", side: "short", reduceOnly: false, quantity: "1", maximumPrice: "80001", leverage: 5 });
     expect((await POST(request({ ...order, reduceOnly: true }))).status).toBe(200);
     expect(fixture.execute.mock.calls[1]![0]).toMatchObject({ action: "close", side: "short", reduceOnly: true });
@@ -71,7 +66,8 @@ describe("derivatives Paper HTTP intent mapping", () => {
 
   it("reports a persisted outcome when an acknowledgement fails instead of suggesting a new intent", async () => {
     fixture.execute.mockRejectedValueOnce(new Error("Acknowledgement unavailable."));
-    fixture.read.mockReturnValueOnce({ id: "derivatives:okx:USDT", orders: [{ clientOrderId: order.clientOrderId, status: "filled" }] });
+    fixture.read.mockReturnValueOnce({ id: "derivatives:okx:USDT", orders: [] });
+    fixture.order.mockReturnValueOnce({ clientOrderId: order.clientOrderId, status: "filled" });
     const response = await POST(request(order));
     expect(response.status).toBe(422);
     const body = await response.json();

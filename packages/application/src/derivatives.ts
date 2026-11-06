@@ -1,13 +1,14 @@
 import { Decimal } from "decimal.js";
 import {
-  assertDerivativesPaperWorkspace, derivativesAccountId, getDerivativesAccountRow, listDerivativesAccountRows,
-  mutateDerivativesAccountRow, openDerivativesAccountRow,
+  assertDerivativesPaperWorkspace, derivativesAccountId, findDerivativesOrderRows, getDerivativesAccountRow,
+  getDerivativesAccountState, getDerivativesOrderRow, listDerivativesAccountRows, listDerivativesOrderPage, mutateDerivativesAccountRow, openDerivativesAccountRow,
 } from "@newbeing/storage/derivatives";
 import {
   DERIVATIVES_POLICY, type DerivativesAccount, type DerivativesKind, type DerivativesOrder,
   type DerivativesOrderRequest, type DerivativesOrderResult, type DerivativesPosition,
   type DerivativesValuation, type DerivativesVenue,
 } from "./derivatives-types.js";
+export { DERIVATIVES_ORDER_PAGE_SIZE, DerivativesOrderPageError } from "@newbeing/storage/derivatives";
 
 const D = Decimal.clone({ precision: 200, rounding: Decimal.ROUND_HALF_EVEN, toExpNeg: -1000, toExpPos: 1000 });
 /** Structural subset of the market-data connector; no storage -> application dependency. */
@@ -41,24 +42,28 @@ function positiveNative(value: number | null, name: string): Decimal {
 function validateAccount(venue: DerivativesVenue, settle: string): void {
   if (!["okx", "deribit"].includes(venue) || !/^[A-Z0-9]{1,20}$/.test(settle)) throw new Error("Invalid derivatives venue or settle currency.");
 }
-export function listDerivativesAccounts(): DerivativesAccount[] {
-  return listDerivativesAccountRows<DerivativesAccount>();
+export function listDerivativesAccounts(orderLimit?: number): DerivativesAccount[] {
+  return listDerivativesAccountRows<DerivativesAccount>(orderLimit);
 }
 
-export function getDerivativesAccount(venue: DerivativesVenue, settle: string): DerivativesAccount | undefined {
+export function getDerivativesAccount(venue: DerivativesVenue, settle: string, orderLimit?: number): DerivativesAccount | undefined {
   validateAccount(venue, settle);
-  return getDerivativesAccountRow<DerivativesAccount>(derivativesAccountId(venue, settle));
+  return getDerivativesAccountRow<DerivativesAccount>(derivativesAccountId(venue, settle), orderLimit);
+}
+export function getDerivativesOrderPage(venue: DerivativesVenue, settle: string, before?: string): { orders: DerivativesOrder[]; hasMore: boolean } {
+  validateAccount(venue, settle);
+  return listDerivativesOrderPage<DerivativesOrder>(derivativesAccountId(venue, settle), before);
 }
 /** Explicit local seed denominated in settle currency; reopening never credits again. */
-export function openDerivativesAccount(venue: DerivativesVenue, settle: string, initialBalance = "10000", feeRate = "0.001"): DerivativesAccount {
+export function openDerivativesAccount(venue: DerivativesVenue, settle: string, initialBalance = "10000", feeRate = "0.001", orderLimit?: number): DerivativesAccount {
   validateAccount(venue, settle);
   const balance = decimal(initialBalance, "initial balance");
   const fee = decimal(feeRate, "fee rate", true);
   if (fee.gt("0.1")) throw new Error("Fee rate must be at most 0.1.");
   return openDerivativesAccountRow<DerivativesAccount>({
     id: derivativesAccountId(venue, settle), venue, settle, initialBalance: balance.toString(), available: balance.toString(),
-    feeRate: fee.toString(), realizedPnl: "0", feesPaid: "0", positions: [], orders: [], policy: { ...DERIVATIVES_POLICY },
-  });
+    feeRate: fee.toString(), realizedPnl: "0", feesPaid: "0", positions: [], orders: [], orderCount: 0, policy: { ...DERIVATIVES_POLICY },
+  }, orderLimit);
 }
 function validateRequest(r: DerivativesOrderRequest): void {
   validateAccount(r.venue, r.settle);
@@ -69,10 +74,28 @@ function validateRequest(r: DerivativesOrderRequest): void {
   decimal(r.quantity, "quantity"); decimal(r.maximumPrice, "maximum price");
 }
 const requestKeys = ["venue", "settle", "instrumentId", "clientOrderId", "action", "side", "quantity", "leverage", "reduceOnly", "maximumPrice"] as const;
-function previousOrder(account: DerivativesAccount, request: DerivativesOrderRequest): DerivativesOrder | undefined {
-  const order = account.orders.find((o) => o.clientOrderId === request.clientOrderId);
+export function getDerivativesOrder(venue: DerivativesVenue, settle: string, clientOrderId: string): DerivativesOrder | undefined {
+  validateAccount(venue, settle);
+  return getDerivativesOrderRow<DerivativesOrder>(derivativesAccountId(venue, settle), clientOrderId);
+}
+export function findDerivativesOrders(clientOrderId: string, instrumentId: string): DerivativesOrder[] {
+  return findDerivativesOrderRows<DerivativesOrder>(clientOrderId, instrumentId).map(({ accountId, order }) => {
+    if (accountId !== derivativesAccountId(order.venue, order.settle)) throw new Error("Stored derivatives order account identity does not match its ledger.");
+    return order;
+  });
+}
+function previousOrder(order: DerivativesOrder | undefined, request: DerivativesOrderRequest): DerivativesOrder | undefined {
   if (order && requestKeys.some((key) => order[key] !== request[key])) throw new Error("Client order ID already used with different parameters.");
   return order;
+}
+/** Resolve a recorded intent without market access or creating a new fill. */
+export function recoverDerivativesOrder(request: DerivativesOrderRequest, orderLimit?: number): DerivativesOrderResult | undefined {
+  assertDerivativesPaperWorkspace();
+  validateRequest(request);
+  const order = previousOrder(getDerivativesOrder(request.venue, request.settle, request.clientOrderId), request);
+  if (!order) return undefined;
+  const account = getDerivativesAccount(request.venue, request.settle, orderLimit);
+  return account ? { account, order, deduplicated: true } : undefined;
 }
 function acceptedSource(source: "native-api" | "fixture"): boolean {
   return source === "native-api" || (source === "fixture" && process.env.NEWBEING_E2E_FIXTURES === "1" && process.env.NODE_ENV !== "production");
@@ -111,7 +134,7 @@ function fillPrice(i: DerivativesInstrument, q: DerivativesQuote, r: Derivatives
   if (buy ? price.gt(limit) : price.lt(limit)) throw new Error("Maximum price protection exceeded.");
   return price;
 }
-function applyFill(account: DerivativesAccount, r: DerivativesOrderRequest, i: DerivativesInstrument, price: Decimal, now: number): DerivativesOrder {
+function applyFill(account: Omit<DerivativesAccount, "orders" | "orderCount">, r: DerivativesOrderRequest, i: DerivativesInstrument, price: Decimal, now: number): DerivativesOrder {
   const qty = decimal(r.quantity, "quantity"), size = positiveNative(i.contractSize, "contract size");
   const notional = qty.mul(size).mul(price), fee = notional.mul(account.feeRate);
   let position = account.positions.find((p) => p.instrumentId === i.id && p.side === r.side);
@@ -144,30 +167,31 @@ function applyFill(account: DerivativesAccount, r: DerivativesOrderRequest, i: D
   }
   const order: DerivativesOrder = { ...r, status: "filled", fillPrice: price.toString(), fee: fee.toString(), realizedPnl: pnl.toString(), createdAt: now };
   account.available = available.toString(); account.realizedPnl = new D(account.realizedPnl).add(pnl).toString();
-  account.feesPaid = new D(account.feesPaid).add(fee).toString(); account.orders = [...account.orders, order].slice(-100);
+  account.feesPaid = new D(account.feesPaid).add(fee).toString();
   return order;
 }
 /** Atomic immediate local fill. No venue order is submitted, and failed validation moves no money. */
-export async function executeDerivativesOrder(request: DerivativesOrderRequest, marketData: DerivativesMarketData, now: () => number = Date.now): Promise<DerivativesOrderResult> {
+export async function executeDerivativesOrder(request: DerivativesOrderRequest, marketData: DerivativesMarketData, now: () => number = Date.now, orderLimit?: number): Promise<DerivativesOrderResult> {
   // Snapshot caller input before awaiting a connector.
   const r = { ...request };
   assertDerivativesPaperWorkspace(); validateRequest(r);
-  const account = getDerivativesAccount(r.venue, r.settle);
-  if (!account) throw new Error("Explicitly open a derivatives Paper account first.");
-  const prior = previousOrder(account, r);
-  if (prior) return { account, order: prior, deduplicated: true };
+  const accountId = derivativesAccountId(r.venue, r.settle);
+  if (!getDerivativesAccountState<DerivativesAccount>(accountId)) throw new Error("Explicitly open a derivatives Paper account first.");
+  const prior = previousOrder(getDerivativesOrderRow<DerivativesOrder>(accountId, r.clientOrderId), r);
+  if (prior) return { account: getDerivativesAccountRow<DerivativesAccount>(accountId, orderLimit)!, order: prior, deduplicated: true };
   const instrument = await marketData.getDerivativeInstrument(r.instrumentId);
   assertDerivativesPaperWorkspace(); validateInstrument(instrument, r, now());
   const quote = await marketData.getDerivativeQuote(r.instrumentId);
   assertDerivativesPaperWorkspace();
-  const committed = mutateDerivativesAccountRow<DerivativesAccount, { order: DerivativesOrder; deduplicated: boolean }>(account.id, (current) => {
-    const existing = previousOrder(current, r);
-    if (existing) return { order: existing, deduplicated: true };
+  const committed = mutateDerivativesAccountRow<DerivativesAccount, DerivativesOrder, { order: DerivativesOrder; deduplicated: boolean }>(accountId, r.clientOrderId, (current, recorded) => {
+    const existing = previousOrder(recorded, r);
+    if (existing) return { result: { order: existing, deduplicated: true } };
     const timestamp = now();
     validateInstrument(instrument, r, timestamp);
     const price = fillPrice(instrument, quote, r, timestamp);
-    return { order: applyFill(current, r, instrument, price, timestamp), deduplicated: false };
-  });
+    const order = applyFill(current, r, instrument, price, timestamp);
+    return { order, result: { order, deduplicated: false } };
+  }, orderLimit);
   return { account: committed.account, ...committed.result };
 }
 /** Pure mark estimate. Never acts as an expiry settlement or an execution quote. */

@@ -830,6 +830,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.sma20 ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, sma20: !prev.sma20 }))}
+              aria-pressed={indicators.sma20}
               title={copy.toggleSma20}
             >
               SMA20
@@ -838,6 +839,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.sma50 ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, sma50: !prev.sma50 }))}
+              aria-pressed={indicators.sma50}
               title={copy.toggleSma50}
             >
               SMA50
@@ -846,6 +848,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.ema20 ? "bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, ema20: !prev.ema20 }))}
+              aria-pressed={indicators.ema20}
               title={copy.toggleEma20}
             >
               EMA20
@@ -854,6 +857,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.bb ? "bg-sky-500/20 text-sky-300 border-sky-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, bb: !prev.bb }))}
+              aria-pressed={indicators.bb}
               title={copy.toggleBb}
             >
               BB
@@ -862,6 +866,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               type="button"
               className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.volume ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-border-strong)] font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
               onClick={() => setIndicators((prev) => ({ ...prev, volume: !prev.volume }))}
+              aria-pressed={indicators.volume}
               title={copy.toggleVolume}
             >
               VOL

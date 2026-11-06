@@ -93,6 +93,7 @@ export function WorkspaceSync(): null {
       const stateJson = JSON.stringify(sentState);
       const sentIdentity = replayIdentity(sentState);
       const sentIdentityRevision = identityRevision;
+      const sentRevision = revision;
       /* Optimistic concurrency: commit only if the server row is still at the
          version this tab last read. A stale request that hung in the browser
          and lands later is rejected instead of overwriting newer state, so a
@@ -123,9 +124,10 @@ export function WorkspaceSync(): null {
             // version. No waiting on the losing request is required.
             try {
               const conflict = (await response.json()) as WorkspaceEnvelope & { error: string };
+              if (stopped) return;
               lastServerTime = Math.max(lastServerTime, conflict.updatedAt);
               lastSyncedJson = JSON.stringify(conflict.state);
-              if (sentIdentityRevision === identityRevision) {
+              if (sentRevision === revision && sentIdentityRevision === identityRevision) {
                 const store = useWorkspaceStore.getState();
                 if (store.activeWorkspace !== "replay" || replayIdentity(store) === replayIdentity(conflict.state)) {
                   store.setFromRemote(conflict.state, conflict.updatedAt);

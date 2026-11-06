@@ -577,6 +577,7 @@ function EquityChart({ result }: { result: BacktestResult }): React.JSX.Element 
 interface PaperPayload {
   portfolio: PaperPortfolio;
   orders: PaperOrder[];
+  hasPendingOrders: boolean;
 }
 function isPaperOrder(value: unknown): value is PaperOrder {
   if (typeof value !== "object" || value === null) return false;
@@ -622,10 +623,10 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
         const accountResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
         const account: unknown = await accountResponse.json();
         if (disposed || refreshAttempt !== closeAttemptRef.current || closeInFlightRef.current) return;
-        if (!accountResponse.ok || typeof account !== "object" || account === null || !("portfolio" in account) || !("orders" in account)) throw new Error(translate(DOCK_COPY).accountUnavailable);
+        if (!accountResponse.ok || typeof account !== "object" || account === null || !("portfolio" in account) || !("orders" in account) || !Array.isArray(account.orders) || !("hasPendingOrders" in account) || typeof account.hasPendingOrders !== "boolean") throw new Error(translate(DOCK_COPY).accountUnavailable);
         const freshPayload = account as PaperPayload;
         setPayload(freshPayload);
-        if (!freshPayload.orders.some((order) => order.status === "created" || order.status === "submitted" || order.status === "unknown")) closeClientOrderIdRef.current = null;
+        if (!freshPayload.hasPendingOrders) closeClientOrderIdRef.current = null;
         setCloseNeedsRefresh(false);
         setAccountStale(false);
       } catch {
@@ -705,6 +706,7 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
         setPayload((current) => current ? {
           portfolio: savedPortfolio,
           orders: [savedOrder, ...current.orders.filter((currentOrder) => currentOrder.clientOrderId !== savedOrder.clientOrderId)].slice(0, 30),
+          hasPendingOrders: current.hasPendingOrders || ["created", "submitted", "unknown"].includes(savedOrder.status),
         } : current);
       }
       if (savedOrder?.status === "filled" && savedPortfolio) {
@@ -714,7 +716,7 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
         setCloseError(responseError);
         const refreshResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
         const account: unknown = await refreshResponse.json();
-        if (refreshResponse.ok && typeof account === "object" && account !== null && "portfolio" in account && "orders" in account) {
+        if (refreshResponse.ok && typeof account === "object" && account !== null && "portfolio" in account && "orders" in account && Array.isArray(account.orders) && "hasPendingOrders" in account && typeof account.hasPendingOrders === "boolean") {
           setPayload(account as PaperPayload);
           setCloseNeedsRefresh(false);
           setCloseError(responseError);
@@ -760,7 +762,7 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
     ? (markPrice - portfolio.averageEntryPrice) * portfolio.baseBalance
     : 0;
   const quoteCurrency = symbol.split("/")[1] ?? "USDT";
-  const hasUnresolvedPaperOrder = payload.orders.some((order) => order.status === "created" || order.status === "submitted" || order.status === "unknown");
+  const hasUnresolvedPaperOrder = payload.hasPendingOrders;
 
   return (
     <div className="position-table-wrap p-2 font-mono text-xs">
@@ -1591,7 +1593,7 @@ export const BottomDock = memo(function BottomDock({
         const response = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
         const payload: unknown = await response.json();
         if (!response.ok) throw new Error(translate(DOCK_COPY).paperLoadFailed);
-        if (typeof payload === "object" && payload !== null && "portfolio" in payload && "orders" in payload && !disposed) {
+        if (typeof payload === "object" && payload !== null && "portfolio" in payload && "orders" in payload && Array.isArray(payload.orders) && "hasPendingOrders" in payload && typeof payload.hasPendingOrders === "boolean" && !disposed) {
           setPaper(payload as PaperPayload);
           setPaperError(null);
         }

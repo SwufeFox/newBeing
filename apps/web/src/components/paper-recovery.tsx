@@ -94,8 +94,8 @@ function PendingIntent({ order, onRecovered }: { order: PaperOrder; onRecovered:
       if (!response.ok) throw new Error(result.error ?? translate(PAPER_RECOVERY_COPY).recoveryFailed);
       /* The server committed the terminal state; show it now instead of leaving
          the card claiming "submitted" until the next poll catches up. */
-      if (result.order && result.recovery) onRecovered({ order: result.order, recovery: result.recovery });
-      else onRecovered({ order: { ...order, status: "cancelled" }, recovery: { clientOrderId: order.clientOrderId, accountId: order.accountId ?? null, reason: saved.reason, previousStatus: order.status, requiresReview: false } });
+      if (!result.order || !result.recovery) throw new Error(translate(PAPER_RECOVERY_COPY).recoveryLost);
+      onRecovered({ order: result.order, recovery: result.recovery });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : translate(PAPER_RECOVERY_COPY).recoveryLost);
     } finally { setBusy(false); }
@@ -106,7 +106,7 @@ function PendingIntent({ order, onRecovered }: { order: PaperOrder; onRecovered:
     <small>{copy.account} {order.accountId ?? copy.unboundLegacyReview}</small>
     <label className="ticket-field"><span>{copy.cancellationReason}</span><input aria-label={copy.reasonLabel(order.clientOrderId)} maxLength={2000} value={reason} disabled={!!attempt} onChange={(event) => setReason(event.target.value)} /></label>
     <Button size="sm" variant="ghost" disabled={busy || !reason.trim()} onClick={() => void cancel()}>{attempt ? copy.retryCancellation : copy.cancelPending}</Button>
-    {error && <div className="error-inline">{error}</div>}
+    {error && <div role="alert" className="error-inline">{error}</div>}
   </div>;
 }
 
@@ -130,7 +130,7 @@ export function PaperRecoveryPanel(): React.JSX.Element {
         if (!Array.isArray(payload.pending) || !Array.isArray(payload.recoveries)) throw new Error(translate(PAPER_RECOVERY_COPY).statusUnavailable);
         if (!disposed) { setPending(payload.pending); setRecoveries(payload.recoveries); setError(null); setLoaded(true); }
       } catch (failure) {
-        if (!disposed) setError(failure instanceof Error ? failure.message : translate(PAPER_RECOVERY_COPY).readFailed);
+        if (!disposed) { setLoaded(false); setError(failure instanceof Error ? failure.message : translate(PAPER_RECOVERY_COPY).readFailed); }
       }
     };
     void refresh();
@@ -173,6 +173,6 @@ export function PaperRecoveryPanel(): React.JSX.Element {
       <small>{recovery.accountId ?? copy.unboundLegacy} · {recovery.reason}</small>
       {recovery.requiresReview && <strong>{copy.reviewRequired}</strong>}
     </div>)}
-    {error && <div className="error-inline">{error}</div>}
+    {error && <div role="alert" className="error-inline">{error}</div>}
   </div>;
 }

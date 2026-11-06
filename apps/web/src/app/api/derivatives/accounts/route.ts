@@ -1,14 +1,16 @@
-import { listDerivativesAccounts } from "@newbeing/application/derivatives";
-import { derivativeJson } from "@/lib/derivatives-http";
+import { DERIVATIVES_ORDER_PAGE_SIZE, listDerivativesAccounts } from "@newbeing/application/derivatives";
+import { derivativeFailure, derivativeJson, validateDerivativeQuery } from "@/lib/derivatives-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const rejected = validateDerivativeQuery(request, []);
+  if (rejected) return rejected;
   try {
-    const accounts = listDerivativesAccounts();
+    const accounts = listDerivativesAccounts(DERIVATIVES_ORDER_PAGE_SIZE);
     return derivativeJson({ accounts });
   } catch (error) {
-    return derivativeJson({ error: error instanceof Error ? error.message : "Account ledger unavailable." }, 500);
+    return derivativeFailure(error, 500);
   }
 }

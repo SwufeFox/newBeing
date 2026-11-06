@@ -6,6 +6,13 @@ export const derivativeIdSchema = z.string().min(8).max(240).regex(/^(okx|deribi
 export const derivativeKindSchema = z.enum(["perpetual", "future", "option"]);
 export const derivativeTimeframeSchema = z.enum(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]);
 
+export function validateDerivativeQuery(request: Request, allowed: readonly string[]): NextResponse | null {
+  for (const key of new URL(request.url).searchParams.keys()) {
+    if (!allowed.includes(key)) return derivativeJson({ error: `Unsupported derivatives query parameter: ${key}.` }, 400);
+  }
+  return null;
+}
+
 export function derivativeJson(body: unknown, status = 200): NextResponse {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }

@@ -35,15 +35,12 @@ export async function POST(request: Request) {
     // A validation/metadata failure can occur before an intent exists. Report the
     // persisted outcome so the ticket can distinguish that from an unknown fill.
     let outcome: Record<string, unknown> = {};
-    if (input?.action === "order" && typeof input.symbol === "string") {
+    if (input?.action === "order") {
       try {
-        const quoteAsset = input.symbol.split("/")[1];
-        if (quoteAsset) {
-          const account = getSpotAccount(input.exchange, quoteAsset);
-          const clientOrderId = input.clientOrderId;
-          const order = account?.orders.find((item) => item.clientOrderId === clientOrderId);
-          outcome = { account: account ?? null, order: order ?? null, intentRecorded: Boolean(order) };
-        }
+        const account = getSpotAccount(input.exchange, input.symbol.split("/")[1]!);
+        const clientOrderId = input.clientOrderId;
+        const order = account?.orders.find((item) => item.clientOrderId === clientOrderId);
+        outcome = { account: account ?? null, order: order ?? null, intentRecorded: Boolean(order) };
       } catch {
         // Storage could not be read: the outcome remains unconfirmed.
       }

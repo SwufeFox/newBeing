@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { executeDerivativesOrder, getDerivativesAccount, openDerivativesAccount } from "@newbeing/application/derivatives";
-import { DERIVATIVES_POLICY } from "@newbeing/application/derivatives-types";
+import { DERIVATIVES_ORDER_PAGE_SIZE, executeDerivativesOrder, findDerivativesOrders, getDerivativesAccount, getDerivativesOrder, openDerivativesAccount, recoverDerivativesOrder } from "@newbeing/application/derivatives";
+import { DERIVATIVES_POLICY, type DerivativesOrderRequest, type DerivativesVenue } from "@newbeing/application/derivatives-types";
 import { getDerivativeInstrument, getDerivativeQuote } from "@newbeing/market-data/derivatives";
 import type { DerivativeInstrument } from "@newbeing/market-data/derivatives";
-import { derivativeFailure, derivativeIdSchema, derivativeJson, derivativeReplayRejection } from "@/lib/derivatives-http";
+import { derivativeFailure, derivativeIdSchema, derivativeJson, derivativeReplayRejection, validateDerivativeQuery } from "@/lib/derivatives-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +32,21 @@ const schema = z.discriminatedUnion("action", [
   }).strict(),
 ]);
 
+type OrderInput = Extract<z.infer<typeof schema>, { action: "order" }>;
+function orderRequest(input: OrderInput, venue: DerivativesVenue, settle: string, kind: string): DerivativesOrderRequest {
+  // Buy/sell alone must not imply a naked option short or close a hedge by accident.
+  const close = input.reduceOnly || (kind === "option" && input.side === "sell");
+  const side = close ? (input.side === "sell" ? "long" : "short") : (input.side === "buy" ? "long" : "short");
+  return {
+    instrumentId: input.instrumentId, venue, settle, clientOrderId: input.clientOrderId,
+    action: close ? "close" : "open", side, quantity: input.contracts, leverage: input.leverage,
+    reduceOnly: close, maximumPrice: input.limitPrice,
+  };
+}
+
 export async function GET(request: Request) {
+  const rejected = validateDerivativeQuery(request, ["instrumentId"]);
+  if (rejected) return rejected;
   try {
     const id = derivativeIdSchema.parse(new URL(request.url).searchParams.get("instrumentId"));
     // The account namespace is venue:settle, and every supported product's
@@ -43,7 +57,7 @@ export async function GET(request: Request) {
     if (!match) throw new Error("Invalid derivative identity.");
     const [, venue = "", kind = "", nativeId = ""] = match;
     const settle = venue === "okx" ? "USDT" : kind === "option" && nativeId.startsWith("BTC-") ? "BTC" : kind === "option" && nativeId.startsWith("ETH-") ? "ETH" : "USDC";
-    const account = getDerivativesAccount(venue as "okx" | "deribit", settle);
+    const account = getDerivativesAccount(venue as "okx" | "deribit", settle, DERIVATIVES_ORDER_PAGE_SIZE);
     return derivativeJson({ account: account ?? null, policy: DERIVATIVES_POLICY });
   } catch (error) {
     return derivativeFailure(error);
@@ -51,28 +65,37 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const rejected = validateDerivativeQuery(request, []);
+  if (rejected) return rejected;
   const blocked = derivativeReplayRejection();
   if (blocked) return blocked;
   let instrument: DerivativeInstrument | undefined;
   let input: z.infer<typeof schema> | undefined;
   try {
     input = schema.parse(await request.json());
-    instrument = await getDerivativeInstrument(input.instrumentId);
+    try {
+      instrument = await getDerivativeInstrument(input.instrumentId);
+    } catch (metadataError) {
+      if (input.action !== "order") throw metadataError;
+      const orderInput = input;
+      const matches = findDerivativesOrders(orderInput.clientOrderId, orderInput.instrumentId);
+      if (matches.length === 0) throw metadataError;
+      if (matches.length !== 1) throw new Error("Order identity is ambiguous across derivatives accounts.");
+      const prior = matches[0]!;
+      const result = recoverDerivativesOrder(orderRequest(orderInput, prior.venue, prior.settle, orderInput.instrumentId.split(":")[1] ?? ""), DERIVATIVES_ORDER_PAGE_SIZE);
+      if (!result) throw metadataError;
+      return derivativeJson({ ...result, policy: DERIVATIVES_POLICY });
+    }
     const lateBlock = derivativeReplayRejection();
     if (lateBlock) return lateBlock;
     if (input.action === "open") {
       const initialBalance = instrument.settle === "BTC" ? "1" : instrument.settle === "ETH" ? "10" : "10000";
-      return derivativeJson({ account: openDerivativesAccount(instrument.venue, instrument.settle, initialBalance), policy: DERIVATIVES_POLICY });
+      return derivativeJson({ account: openDerivativesAccount(instrument.venue, instrument.settle, initialBalance, undefined, DERIVATIVES_ORDER_PAGE_SIZE), policy: DERIVATIVES_POLICY });
     }
-    // Buy/sell alone must not imply a naked option short or close a hedge by accident.
-    const close = input.reduceOnly || (instrument.kind === "option" && input.side === "sell");
-    const side = close ? (input.side === "sell" ? "long" : "short") : (input.side === "buy" ? "long" : "short");
-    const result = await executeDerivativesOrder({
-      instrumentId: instrument.id, venue: instrument.venue, settle: instrument.settle,
-      clientOrderId: input.clientOrderId, action: close ? "close" : "open", side,
-      quantity: input.contracts, leverage: input.leverage,
-      reduceOnly: close, maximumPrice: input.limitPrice,
-    }, { getDerivativeInstrument, getDerivativeQuote });
+    const result = await executeDerivativesOrder(
+      orderRequest(input, instrument.venue, instrument.settle, instrument.kind),
+      { getDerivativeInstrument, getDerivativeQuote }, undefined, DERIVATIVES_ORDER_PAGE_SIZE,
+    );
     return derivativeJson({ ...result, policy: DERIVATIVES_POLICY });
   } catch (error) {
     const lateBlock = derivativeReplayRejection();
@@ -80,9 +103,8 @@ export async function POST(request: Request) {
     let outcome: Record<string, unknown> = {};
     if (instrument && input?.action === "order") {
       try {
-        const account = getDerivativesAccount(instrument.venue, instrument.settle);
-        const clientOrderId = input.clientOrderId;
-        const order = account?.orders.find((entry) => entry.clientOrderId === clientOrderId);
+        const account = getDerivativesAccount(instrument.venue, instrument.settle, DERIVATIVES_ORDER_PAGE_SIZE);
+        const order = getDerivativesOrder(instrument.venue, instrument.settle, input.clientOrderId);
         outcome = { account: account ?? null, order: order ?? null, intentRecorded: Boolean(order) };
       } catch { /* Do not claim a known outcome if storage cannot be read. */ }
     }

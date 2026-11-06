@@ -448,6 +448,12 @@ export function listPendingPaperOrders(): PaperOrder[] {
     });
 }
 
+export function hasPendingPaperOrders(accountId: string): boolean {
+  return getDatabase().select({ clientOrderId: paperOrders.clientOrderId }).from(paperOrders)
+    .where(and(sql`${paperOrders.status} IN ('created', 'submitted', 'unknown')`, eq(paperOrders.accountId, accountId)))
+    .limit(1).get() !== undefined;
+}
+
 export function listPaperRecoveries(): PaperRecovery[] {
   return getDatabase().select().from(paperRecoveries).orderBy(desc(paperRecoveries.createdAt)).all();
 }

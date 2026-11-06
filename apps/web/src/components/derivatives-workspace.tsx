@@ -129,8 +129,11 @@ interface DerivativesCopy {
   positions: string;
   positionsWithCount: (count: number) => string;
   noOpenPositions: string;
-  orderHistory: string;
   orderHistoryWithCount: (count: number) => string;
+  orderHistoryShowing: (shown: number, total: number) => string;
+  loadOlder: string;
+  loadingOlder: string;
+  loadOlderFailed: string;
   noPaperFills: string;
   positionColumns: readonly string[];
   ledgerPositionColumns: readonly string[];
@@ -152,9 +155,6 @@ interface DerivativesCopy {
   pausedDelisted: string;
   pausedListLoading: string;
   pausedGeneric: string;
-  venueTelemetry: string;
-  okxDerivatives: string;
-  isolatedMargin: string;
   accountUnavailable: string;
   loadingPaperAccount: string;
   initialBalance: string;
@@ -340,8 +340,11 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
     positions: "Positions",
     positionsWithCount: (count) => `Positions · ${count}`,
     noOpenPositions: "No open positions.",
-    orderHistory: "Order history",
     orderHistoryWithCount: (count) => `Order history · ${count}`,
+    orderHistoryShowing: (shown, total) => `Showing ${shown} of ${total} fills.`,
+    loadOlder: "Load older",
+    loadingOlder: "Loading older fills…",
+    loadOlderFailed: "Could not load older fills. Try again.",
     noPaperFills: "No Paper fills.",
     positionColumns: ["Instrument", "Side", "Qty", "Entry", "Margin", "uPnL", "Action"],
     ledgerPositionColumns: ["Instrument", "Side", "Qty", "Entry", "Margin"],
@@ -362,9 +365,6 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
     pausedDelisted: "This contract is not in the current contract list. The local position remains readable, but no live metadata or quote is available for Paper execution.",
     pausedListLoading: "Contract search pending. Paper actions are paused until the filtered contracts load.",
     pausedGeneric: "Order entry is paused until exchange metadata and a fresh quote are available. Existing balances, positions, and history remain readable in the local ledger.",
-    venueTelemetry: "VENUE TELEMETRY",
-    okxDerivatives: "OKX DERIVATIVES",
-    isolatedMargin: "ISOLATED MARGIN",
     accountUnavailable: "Local Paper account unavailable. Refresh the local ledger before trading.",
     loadingPaperAccount: "Loading local Paper account…",
     initialBalance: "Initial balance",
@@ -550,8 +550,11 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
     positions: "持仓",
     positionsWithCount: (count) => `持仓 · ${count}`,
     noOpenPositions: "暂无持仓。",
-    orderHistory: "委托历史",
     orderHistoryWithCount: (count) => `委托历史 · ${count}`,
+    orderHistoryShowing: (shown, total) => `显示 ${shown} 笔，共 ${total} 笔成交。`,
+    loadOlder: "加载更早成交",
+    loadingOlder: "正在加载更早成交…",
+    loadOlderFailed: "无法加载更早成交，请重试。",
     noPaperFills: "暂无模拟盘成交。",
     positionColumns: ["标的", "方向", "数量", "开仓价", "保证金", "未实现盈亏", "操作"],
     ledgerPositionColumns: ["标的", "方向", "数量", "开仓价", "保证金"],
@@ -572,9 +575,6 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
     pausedDelisted: "该合约不在当前合约列表中。持仓仍可查看，但没有可用于模拟盘执行的实时元数据或报价。",
     pausedListLoading: "合约搜索进行中。筛选后的合约加载完成前，模拟盘操作已暂停。",
     pausedGeneric: "在交易所元数据与新鲜报价可用前，委托录入已暂停。现有余额、持仓与历史仍可在本地账本中查看。",
-    venueTelemetry: "交易所遥测",
-    okxDerivatives: "OKX 衍生品",
-    isolatedMargin: "逐仓保证金",
     accountUnavailable: "本地模拟盘账户不可用。交易前请刷新本地账本。",
     loadingPaperAccount: "正在加载本地模拟盘账户…",
     initialBalance: "初始资金",
@@ -748,6 +748,58 @@ function PositionRow({ position, quote, busy, onClose, onView }: { position: Der
   </tr>;
 }
 
+function OrderHistory({ account }: { account: DerivativesAccount }): React.JSX.Element {
+  const copy = useCopy(DERIVATIVES_COPY);
+  const [orders, setOrders] = useState(() => [...account.orders].reverse());
+  const [hasMore, setHasMore] = useState(() => account.orderCount > account.orders.length);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const request = useRef<AbortController | null>(null);
+
+  useEffect(() => () => { request.current?.abort(); }, []);
+
+  async function loadOlder() {
+    const oldest = orders[orders.length - 1];
+    if (!oldest || request.current) return;
+    const controller = new AbortController();
+    request.current = controller;
+    setLoading(true);
+    setError(false);
+    const params = new URLSearchParams({ venue: account.venue, settle: account.settle, before: oldest.clientOrderId });
+    try {
+      const page = await readJson<{ orders: DerivativesAccount["orders"]; hasMore: boolean }>(`/api/derivatives/orders?${params}`, { signal: controller.signal });
+      if (!controller.signal.aborted) {
+        setOrders((current) => [...current, ...page.orders]);
+        setHasMore(page.hasMore);
+      }
+    } catch {
+      if (!controller.signal.aborted) setError(true);
+    } finally {
+      if (!controller.signal.aborted) {
+        request.current = null;
+        setLoading(false);
+      }
+    }
+  }
+
+  return <div aria-busy={loading}>
+    <p className="meta mt-1" aria-live="polite">{copy.orderHistoryShowing(orders.length, account.orderCount)}</p>
+    {!orders.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">{copy.noPaperFills}</p>
+      : <div className="derivatives-table-scroll mt-1 border border-[var(--c-line)]">
+        <table className="derivatives-table">
+          <thead><tr>{copy.orderColumns.map((label) => <th key={label}>{label}</th>)}</tr></thead>
+          <tbody>{orders.map((order) => <tr key={order.clientOrderId}>
+            <td>{derivativeDate(order.createdAt)}</td><td className="max-w-0 truncate" title={order.instrumentId}>{order.instrumentId}</td>
+            <td>{order.action} {order.side}</td><td>{order.quantity}</td><td>{order.fillPrice}</td><td>{order.fee}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>}
+    {error && <p role="alert" className="mt-1 text-[var(--c-down)] text-[11px]">{copy.loadOlderFailed}</p>}
+    {hasMore && <Button type="button" size="sm" variant="outline" className="mt-1 min-h-[44px] min-w-[44px]" disabled={loading} onClick={loadOlder}>{loading ? copy.loadingOlder : error ? copy.retry : copy.loadOlder}</Button>}
+    {loading && <span role="status" className="sr-only">{copy.loadingOlder}</span>}
+  </div>;
+}
+
 function LocalAccountLedger({ accounts, readOnly = false, onSelectPosition }: {
   accounts: DerivativesAccount[];
   readOnly?: boolean;
@@ -786,17 +838,8 @@ function LocalAccountLedger({ accounts, readOnly = false, onSelectPosition }: {
             </div>}
         </div>
         <details className="derivatives-details" open={accounts.length === 1 && entry.orders.length > 0}>
-          <summary>{copy.orderHistoryWithCount(entry.orders.length)}</summary>
-          {!entry.orders.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">{copy.noPaperFills}</p>
-            : <div className="derivatives-table-scroll mt-1 border border-[var(--c-line)]">
-              <table className="derivatives-table">
-                <thead><tr>{copy.orderColumns.map((label) => <th key={label}>{label}</th>)}</tr></thead>
-                <tbody>{entry.orders.slice(-20).reverse().map((order) => <tr key={order.clientOrderId}>
-                  <td>{derivativeDate(order.createdAt)}</td><td className="max-w-0 truncate" title={order.instrumentId}>{order.instrumentId}</td>
-                  <td>{order.action} {order.side}</td><td>{order.quantity}</td><td>{order.fillPrice}</td><td>{order.fee}</td>
-                </tr>)}</tbody>
-              </table>
-            </div>}
+          <summary>{copy.orderHistoryWithCount(entry.orderCount)}</summary>
+          <OrderHistory key={`${entry.id}:${entry.orderCount}`} account={entry} />
         </details>
       </div>
     </details>)}
@@ -806,7 +849,7 @@ function LocalAccountLedger({ accounts, readOnly = false, onSelectPosition }: {
 
 function EngineModel(): React.JSX.Element {
   const copy = useCopy(DERIVATIVES_COPY);
-  return <AkPopover trigger={<Button size="sm" variant="outline">{copy.engineModel}</Button>} title={copy.engineTitle} eyebrow={copy.engineEyebrow}>
+  return <AkPopover trigger={<Button className="derivatives-engine-trigger" size="sm" variant="outline">{copy.engineModel}</Button>} title={copy.engineTitle} eyebrow={copy.engineEyebrow}>
     <div className="space-y-2 text-xs">
       <p>{copy.engineFill}</p>
       <p>{copy.engineMargin}</p>
@@ -955,6 +998,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
      than flashing a boundary banner that usually resolves to "available". */
   const blocked = globalWorkspace === "replay" || remoteReplay === true;
   const instrument = !blocked && !listLoading && market?.instrument.id === selectedId ? market.instrument : null;
+  const selectedSettlement = instrument?.settle ?? (!blocked && !listLoading ? items.find((item) => item.id === selectedId)?.settle : undefined);
   const quote = !blocked && !listLoading && market?.quote.instrumentId === selectedId && !marketError ? market.quote : null;
   const initialBalance = instrument?.settle === "BTC" ? "1" : instrument?.settle === "ETH" ? "10" : "10000";
   const account = instrument && !blocked ? ledgerAccounts?.find((entry) => entry.venue === instrument.venue && entry.settle === instrument.settle) ?? null : null;
@@ -1347,7 +1391,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
         </span>
         <span className="title">
           <span className="truncate" title={instrument?.nativeId ?? selectedId ?? undefined}>{instrument ? instrument.nativeId : selectedId ? (selectedId.split(":")[2] ?? selectedId) : <span className="text-[var(--c-fg-4)]">—</span>}</span>
-          {instrument ? <small>{instrument.settle}</small> : selectedId ? <small className="opacity-70">{selectedId.split(":")[2]?.split("-")[1] ?? ""}</small> : null}
+          {selectedSettlement && <small>{selectedSettlement}</small>}
         </span>
       </div>
       {instrument && quote && <>
@@ -1381,7 +1425,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
     </div>}
 
     {/* kind switch: the workspace-tab grammar from the main terminal nav */}
-    <div role="tablist" aria-label={copy.marketsAria} className="flex items-center gap-1 px-4 py-2 bg-[var(--ak-surface-sunken)] border-b border-[var(--c-line)]">
+    <div role="tablist" aria-label={copy.marketsAria} className="derivatives-kind-tabs flex items-center gap-1 px-4 py-2 bg-[var(--ak-surface-sunken)] border-b border-[var(--c-line)]">
       {KINDS.map((value) => (
         <button
           key={value}
@@ -1398,7 +1442,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
         </button>
       ))}
       <div className="flex-1" />
-      <span className="text-[11px] text-[var(--c-fg-4)] font-mono">{kind === "option" ? copy.longOptionsOnly : copy.linearContractsLine(marketVenues || copy.noVenues)}</span>
+      <span className="derivatives-kind-summary text-[11px] text-[var(--c-fg-4)] font-mono">{kind === "option" ? copy.longOptionsOnly : copy.linearContractsLine(marketVenues || copy.noVenues)}</span>
     </div>
     <div id="derivatives-panel" role="tabpanel" aria-labelledby={'derivatives-' + kind} className="flex flex-col flex-1">
     <main className="derivatives-layout" style={{ ["--mode" as string]: kind === "option" ? "var(--c-up)" : "var(--c-accent)" }}>
@@ -1565,23 +1609,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
                           </div>}
                       </div>
                       <div>
-                        <span className="meta">{copy.orderHistory}</span>
-                        {!account.orders.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">{copy.noPaperFills}</p>
-                          : <div className="derivatives-table-scroll mt-2 border border-[var(--c-line)]">
-                            <table className="derivatives-table">
-                              <thead><tr>{copy.orderColumns.map((label) => <th key={label}>{label}</th>)}</tr></thead>
-                              <tbody>{account.orders.slice(-20).reverse().map((order) => (
-                                <tr key={order.clientOrderId}>
-                                  <td>{derivativeDate(order.createdAt)}</td>
-                                  <td className="max-w-0 truncate" title={order.instrumentId}>{order.instrumentId}</td>
-                                  <td>{order.action} {order.side}</td>
-                                  <td>{order.quantity}</td>
-                                  <td>{order.fillPrice}</td>
-                                  <td>{order.fee}</td>
-                                </tr>
-                              ))}</tbody>
-                            </table>
-                          </div>}
+                        <span className="meta">{copy.orderHistoryWithCount(account.orderCount)}</span>
+                        <OrderHistory key={`${account.id}:${account.orderCount}`} account={account} />
                       </div>
                     </> : accountReady && instrument ? <p className="text-[var(--c-fg-4)] text-[11px]">{copy.noAccountForSettlement}</p> : null}
           </div>
@@ -1595,25 +1624,16 @@ export function DerivativesWorkspace(): React.JSX.Element {
           {instrument && quote && <p className="derivatives-ticket-note">{copy.separateAccount}</p>}
           {blocked ? <p role="status" className="derivatives-ticket-note">{copy.entryHidden}</p>
             : !instrument || !quote ? (
-              <div className="space-y-3">
-                <div className="p-3 bg-amber-500/10 border border-amber-500/30 space-y-1.5 font-mono">
-                  <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[10px] tracking-wider uppercase">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none shrink-0" />
-                    <span>{copy.orderEntryPaused}</span>
-                  </div>
-                  <p role="status" className="derivatives-ticket-note alert m-0 text-[11px] leading-relaxed">
-                    {focusedLocalOnly
-                      ? focusedExpired ? copy.pausedExpired : copy.pausedDelisted
-                      : listLoading ? copy.pausedListLoading : copy.pausedGeneric}
-                  </p>
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 space-y-1.5 font-mono">
+                <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[10px] tracking-wider uppercase">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none shrink-0" />
+                  <span>{copy.orderEntryPaused}</span>
                 </div>
-                <div className="p-3 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] space-y-1 font-mono text-[10px]">
-                  <span className="text-[var(--ak-text-secondary)] opacity-70 uppercase tracking-wider block font-bold">{copy.venueTelemetry}</span>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-[var(--ak-text-secondary)]">{copy.okxDerivatives}</span>
-                    <span className="text-[var(--ak-signal-info)]">{copy.isolatedMargin}</span>
-                  </div>
-                </div>
+                <p role="status" className="derivatives-ticket-note alert m-0 text-[11px] leading-relaxed">
+                  {focusedLocalOnly
+                    ? focusedExpired ? copy.pausedExpired : copy.pausedDelisted
+                    : listLoading ? copy.pausedListLoading : copy.pausedGeneric}
+                </p>
               </div>
             )
               : !accountReady ? <p role="status" className="derivatives-ticket-note">{ledgerError ? copy.accountUnavailable : copy.loadingPaperAccount}</p>

@@ -112,10 +112,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
      The symbols do have to follow the venue, though: BTC/USDT is not listed on
      Coinbase or Kraken, so the pair is re-denominated or the app would sit on a
      market the venue has never heard of. */
-  setExchange: (exchange) => set((state) => ({
+  setExchange: (exchange) => set((state) => state.exchange === exchange ? state : ({
     exchange,
     symbol: symbolForExchange(state.symbol, exchange),
-    watchlist: state.watchlist.map((item) => symbolForExchange(item, exchange)),
+    watchlist: [...new Set(state.watchlist.map((item) => symbolForExchange(item, exchange)))],
     timeframe: EXCHANGE_TIMEFRAMES[exchange].includes(state.timeframe) ? state.timeframe : "15m",
     visibleRange: { from: null, to: null },
   })),
@@ -139,7 +139,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
        row in it is a market that venue does not have. */
     watchlist: state.exchange === current.exchange
       ? current.watchlist
-      : current.watchlist.map((item) => symbolForExchange(item, state.exchange)),
+      : [...new Set(current.watchlist.map((item) => symbolForExchange(item, state.exchange)))],
     inspectorTab: current.inspectorTab,
     dockTab: current.dockTab,
     strategyParameters: current.selectedStrategyId === state.selectedStrategyId
