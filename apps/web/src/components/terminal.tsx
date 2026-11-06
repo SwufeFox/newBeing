@@ -376,7 +376,7 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     feedConnecting: "CONNECTING",
     activeWorkspace: "Active workspace",
     railClose: "Close",
-    signals: (count) => `${count} SIGNALS`,
+    signals: (count) => `${count} SIGNAL${count === 1 ? "" : "S"}`,
     openRun: (strategy) => `Open saved run · ${strategy}`,
     runLoading: "Loading saved run…",
     runLoadFailed: "Could not load this run.",
@@ -753,25 +753,25 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
   }, [currentPrice]);
 
   return (
-    <div className={`summary-strip flex items-center gap-4 text-xs font-mono ${error && summary ? "stale opacity-75" : ""}`}>
+    <div className={`summary-strip flex items-center gap-4 text-xs font-mono ${error && summary ? "stale" : ""}`}>
       <div className="summary-price flex items-baseline gap-2">
-        <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">{replayMode ? "CURSOR" : "LAST"}</span>
+        <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider">{replayMode ? "CURSOR" : "LAST"}</span>
         {typeof currentPrice === "number" && Number.isFinite(currentPrice) ? (
           <strong className={`text-2xl font-extrabold text-[var(--ak-text-primary)] tabular-nums tracking-tight transition-all duration-150 ${flash === "up" ? "price-flash-up" : flash === "down" ? "price-flash-down" : ""}`}>
             <Decoded className="decoded-price" value={last} trigger={subject} />
           </strong>
         ) : (
-          <span className="text-2xl font-extrabold font-mono text-[var(--ak-text-secondary)] opacity-30 tabular-nums tracking-tight animate-pulse motion-reduce:animate-none select-none">
+          <span className="summary-placeholder animate-pulse motion-reduce:animate-none select-none">
             --.---
           </span>
         )}
         {!replayMode && (
           changeValid ? (
-            <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold tabular-nums rounded-[2px] transition-all ${isPositive ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-[0_0_8px_rgba(70,196,124,0.15)]" : "bg-rose-500/15 text-rose-400 border border-rose-500/30 shadow-[0_0_8px_rgba(227,59,59,0.15)]"}`}>
+            <span className="summary-change" data-direction={isPositive ? "up" : "down"}>
               <Decoded value={changeText} trigger={`${subject}|chg`} />
             </span>
           ) : (
-            <span className="text-[10px] font-mono font-bold text-[var(--ak-text-secondary)] opacity-30 select-none">
+            <span className="summary-change-placeholder select-none">
               --.--%
             </span>
           )
@@ -781,29 +781,29 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
       {!replayMode && (
         <div className="summary-stats hidden lg:flex items-center gap-2 pl-3">
           <div className="summary-pod">
-            <span className="uppercase tracking-wider block opacity-70">{copy.high24h}</span>
+            <span className="uppercase tracking-wider block">{copy.high24h}</span>
             {summary?.high24h != null && Number.isFinite(summary.high24h) ? (
               <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatPrice(summary.high24h)} trigger={`${subject}|hi`} /></strong>
             ) : (
-              <span className="text-xs font-mono text-[var(--ak-text-secondary)] opacity-30 select-none">--</span>
+              <span className="text-xs font-mono text-[var(--c-fg-4)] select-none">--</span>
             )}
           </div>
           <div className="summary-pod">
-            <span className="uppercase tracking-wider block opacity-70">{copy.low24h}</span>
+            <span className="uppercase tracking-wider block">{copy.low24h}</span>
             {summary?.low24h != null && Number.isFinite(summary.low24h) ? (
               <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatPrice(summary.low24h)} trigger={`${subject}|lo`} /></strong>
             ) : (
-              <span className="text-xs font-mono text-[var(--ak-text-secondary)] opacity-30 select-none">--</span>
+              <span className="text-xs font-mono text-[var(--c-fg-4)] select-none">--</span>
             )}
           </div>
           <div className="summary-pod">
-            <span className="uppercase tracking-wider block opacity-70">{copy.vol24h}</span>
+            <span className="uppercase tracking-wider block">{copy.vol24h}</span>
             {summary?.quoteVolume24h != null && Number.isFinite(summary.quoteVolume24h) ? (
               <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs">
                 <Decoded value={`${(summary.quoteVolume24h / 1_000_000).toFixed(2)}M`} trigger={`${subject}|vol`} />
               </strong>
             ) : (
-              <span className="text-xs font-mono text-[var(--ak-text-secondary)] opacity-30 select-none">--</span>
+              <span className="text-xs font-mono text-[var(--c-fg-4)] select-none">--</span>
             )}
           </div>
         </div>
@@ -1710,7 +1710,7 @@ export function Terminal(): React.JSX.Element {
             </select>
             <div className="market-title flex items-baseline gap-1 text-xl font-bold">
               <Decoded className="base-symbol text-[var(--ak-text-primary)] font-extrabold tracking-tight" value={symbol.split("/")[0] ?? symbol} trigger={`sym|${symbol}`} />
-              <span className="quote-symbol text-[var(--ak-text-secondary)] opacity-70 text-sm">
+              <span className="quote-symbol text-[var(--ak-text-secondary)] text-sm">
                 / <Decoded value={symbol.split("/")[1] ?? ""} trigger={`quote|${symbol}`} />
               </span>
               <select

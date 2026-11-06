@@ -5,7 +5,7 @@ import { BookmarkCheck, Check, LoaderCircle, Plus, Trash2, WifiOff, X } from "lu
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
 import type { MarketSummary } from "@newbeing/market-data/types";
-import { EXCHANGE_QUOTE } from "@/lib/exchanges";
+import { EXCHANGE_LABELS, EXCHANGE_QUOTE } from "@/lib/exchanges";
 import { AkTag, AkCorner, AkInput } from "@swufefox/ak-ui-react";
 import { Decoded } from "@/components/decoded";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
@@ -197,7 +197,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
     try {
       const response = await fetch(`/api/market?kind=tickers&exchange=${exchange}&symbols=${encodeURIComponent(symbolsKey)}`, { cache: "no-store", signal });
       const payload: unknown = await response.json();
-      if (!response.ok) throw new Error(translate(WATCHLIST_COPY).quotesUnavailable(exchange));
+      if (!response.ok) throw new Error(translate(WATCHLIST_COPY).quotesUnavailable(EXCHANGE_LABELS[exchange]));
       if (requestId !== refreshRequestRef.current || signal.aborted) return;
       const next = Object.fromEntries(readSummaries(payload).map((summary) => [summary.symbol, summary]));
       setSnapshot({ key, summaries: next, error: null });
@@ -376,14 +376,19 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
               >
                 <span className="watch-symbol">
                   <strong className="group-hover:text-[var(--ak-signal-info)] transition-colors">{base}</strong>
-                  <small className="opacity-70">/{quote}</small>
+                  <small>/{quote}</small>
                 </span>
                 <span className="watch-quote">
                   <strong className="tabular-nums font-mono">
                     {summary ? (
                       <Decoded value={quotePrice(summary.last)} trigger={`${symbol}|${summary.last}`} />
+                    ) : error ? (
+                      /* The request failed: a pulsing placeholder would promise
+                         data that is not coming, so the cell settles on the same
+                         em dash every other unavailable number uses. */
+                      <span className="watch-quote-empty">—</span>
                     ) : (
-                      <span className="inline-block w-14 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px] animate-pulse motion-reduce:animate-none" />
+                      <span className="watch-skeleton" aria-hidden="true" />
                     )}
                   </strong>
                   {summary ? (
@@ -393,8 +398,8 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
                     >
                       {changeFormatted}
                     </AkTag>
-                  ) : (
-                    <span className="inline-block w-10 h-3.5 bg-[var(--ak-surface-raised)] rounded-[2px] opacity-60 animate-pulse motion-reduce:animate-none" />
+                  ) : error ? null : (
+                    <span className="watch-skeleton watch-skeleton-short" aria-hidden="true" />
                   )}
                 </span>
               </button>

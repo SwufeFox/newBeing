@@ -42,7 +42,6 @@ interface MarketChartCopy {
   legendLow: string;
   legendClose: string;
   legendVolume: string;
-  awaiting: string;
   indicatorToolbar: string;
   toggleSma20: string;
   toggleSma50: string;
@@ -81,7 +80,6 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     legendLow: "L",
     legendClose: "C",
     legendVolume: "V",
-    awaiting: "Awaiting market data",
     indicatorToolbar: "Chart indicators",
     toggleSma20: "Toggle Simple Moving Average (SMA 20)",
     toggleSma50: "Toggle Simple Moving Average (SMA 50)",
@@ -116,7 +114,6 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     legendLow: "低",
     legendClose: "收",
     legendVolume: "量",
-    awaiting: "等待行情数据",
     indicatorToolbar: "图表指标",
     toggleSma20: "切换简单移动平均线（SMA 20）",
     toggleSma50: "切换简单移动平均线（SMA 50）",
@@ -260,6 +257,8 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
   const replayBarsRef = useRef<Candle[] | null>(null);
   const [symbol, timeframe, exchange] = useWorkspaceStore(useShallow((state) => [state.symbol, state.timeframe, state.exchange]));
   const dataKey = `${exchange}|${symbol}|${timeframe}`;
+  /* One spelling of the venue, used by the overlays and the attribution row. */
+  const venueLabel = exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase();
 
   /* Canvas series read plain colour strings, so the ramp lives in a ref that
      the long-lived chart callbacks can read without taking a dependency on the
@@ -821,14 +820,19 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
               )}
             </>
           ) : (
-            <span className="muted text-[var(--ak-text-secondary)] opacity-60">{copy.awaiting}</span>
+            /* No bar yet: the empty legend prints the same ledger a populated one
+               would, with the values missing, instead of restating the overlay's
+               sentence a second time. */
+            <span className="text-[var(--ak-text-secondary)] tabular-nums">
+              {copy.legendOpen} — · {copy.legendHigh} — · {copy.legendLow} — · {copy.legendClose} —
+            </span>
           )}
         </div>
         <div className="chart-meta-right flex items-center gap-3 shrink-0">
-          <div className="indicator-toggles flex items-center gap-1 font-mono text-[9px]" role="toolbar" aria-label={copy.indicatorToolbar}>
+          <div className="indicator-toggles flex items-center gap-1" role="toolbar" aria-label={copy.indicatorToolbar}>
             <button
               type="button"
-              className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.sma20 ? "bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
+              className="chart-toggle"
               onClick={() => setIndicators((prev) => ({ ...prev, sma20: !prev.sma20 }))}
               aria-pressed={indicators.sma20}
               title={copy.toggleSma20}
@@ -837,7 +841,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
             </button>
             <button
               type="button"
-              className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.sma50 ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
+              className="chart-toggle"
               onClick={() => setIndicators((prev) => ({ ...prev, sma50: !prev.sma50 }))}
               aria-pressed={indicators.sma50}
               title={copy.toggleSma50}
@@ -846,7 +850,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
             </button>
             <button
               type="button"
-              className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.ema20 ? "bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
+              className="chart-toggle"
               onClick={() => setIndicators((prev) => ({ ...prev, ema20: !prev.ema20 }))}
               aria-pressed={indicators.ema20}
               title={copy.toggleEma20}
@@ -855,7 +859,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
             </button>
             <button
               type="button"
-              className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.bb ? "bg-sky-500/20 text-sky-300 border-sky-500/50 font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
+              className="chart-toggle"
               onClick={() => setIndicators((prev) => ({ ...prev, bb: !prev.bb }))}
               aria-pressed={indicators.bb}
               title={copy.toggleBb}
@@ -864,7 +868,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
             </button>
             <button
               type="button"
-              className={`px-1.5 py-0.5 border cursor-pointer uppercase transition-all ${indicators.volume ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-border-strong)] font-bold" : "border-[var(--ak-border-subtle)] text-[var(--ak-text-secondary)] hover:text-white"}`}
+              className="chart-toggle"
               onClick={() => setIndicators((prev) => ({ ...prev, volume: !prev.volume }))}
               aria-pressed={indicators.volume}
               title={copy.toggleVolume}
@@ -883,7 +887,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
         {loading && (
           <div className="chart-overlay">
             <AkSpinner color="#18d1ff" label={copy.loadingHistory} />
-            <span>{copy.loadVenueHistory(exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase())}</span>
+            <span>{copy.loadVenueHistory(venueLabel)}</span>
           </div>
         )}
         {error && (
@@ -916,7 +920,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       <div className="chart-footer">
         <span>{!replayMode && cacheInfo.fallback
           ? <><AlertTriangle size={11} /> {copy.localCache(cacheInfo.cachedAt ? new Date(cacheInfo.cachedAt).toLocaleString() : copy.timeUnavailable)}</>
-          : gapCount > 0 ? <><AlertTriangle size={11} /> {copy.gapsDetected(gapCount)}</> : replayMode ? copy.futureNotLoaded : copy.publicSpot(exchange === "coinbaseexchange" ? "Coinbase Exchange" : exchange.toUpperCase())}</span>
+          : gapCount > 0 ? <><AlertTriangle size={11} /> {copy.gapsDetected(gapCount)}</> : replayMode ? copy.futureNotLoaded : copy.publicSpot(venueLabel)}</span>
         <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noreferrer">Charts by TradingView · Lightweight Charts™</a>
       </div>
     </section>

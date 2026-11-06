@@ -687,8 +687,8 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
         <span>{copy.priceWithQuote(quote)}</span>
         <span>{copy.size}</span>
       </div>
-      {error && !book && <div className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{error}</div>}
-      {stale && book && <div role="alert" className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{copy.staleNotice}</div>}
+      {error && !book && <div role="status" className="stripe-edge book-state">{error}</div>}
+      {stale && book && <div role="alert" className="stripe-edge book-state">{copy.staleNotice}</div>}
 
       {!book && !error && (
         <div className="book-skeleton py-1 space-y-1 opacity-40 animate-pulse motion-reduce:animate-none">
@@ -780,7 +780,7 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
           <span>{copy.loadingPublicDepth}</span>
         </div>
       )}
-      <div className="data-stamp text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-2 text-right">
+      <div className={`data-stamp mt-2 text-right${error ? " is-stale" : ""}`}>
         {error ? copy.depthStampStale(exchangeLabel(exchange)) : copy.depthStamp(exchangeLabel(exchange))}
       </div>
     </div>
@@ -876,7 +876,7 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
           <span>{copy.loadingLatestTrades}</span>
         </div>
       )}
-      <div className="data-stamp text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-2 text-right">
+      <div className={`data-stamp mt-2 text-right${error ? " is-stale" : ""}`}>
         {error ? copy.tradesStampStale(exchangeLabel(exchange)) : copy.tradesStamp(exchangeLabel(exchange))}
       </div>
     </div>
@@ -1766,11 +1766,14 @@ function PaperTicket({
           <strong className="kpi-val text-[var(--ak-text-primary)]">
             {activePortfolio ? `$${activePortfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
           </strong>
-          <small className="text-[9px] text-[var(--ak-text-secondary)] opacity-60 mt-1">{copy.collateral}</small>
+          <small className="text-[10px] text-[var(--ak-text-secondary)] mt-1">{copy.collateral}</small>
         </div>
         <div className="telemetry-kpi-card">
-          <div className="flex items-center justify-between">
-            <span className="kpi-label">{copy.position(base)}</span>
+          <span className="kpi-label">{copy.position(base)}</span>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-1.5 gap-y-1">
+            <strong className="kpi-val text-[var(--ak-text-primary)]">
+              {activePortfolio ? `${activePortfolio.baseBalance.toFixed(5)} ${base}` : "—"}
+            </strong>
             {activePortfolio && activePortfolio.baseBalance > 0 && (
               <button
                 type="button"
@@ -1779,16 +1782,13 @@ function PaperTicket({
                   setQuantity(activePortfolio.baseBalance.toString());
                   void submit("sell", activePortfolio.baseBalance);
                 }}
-                className="ticket-close-full text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
+                className="ticket-close-full ml-auto text-[10px] px-1.5 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
                 title={copy.closeFullHint}
               >
                 {copy.closeFull}
               </button>
             )}
           </div>
-          <strong className="kpi-val text-[var(--ak-text-primary)]">
-            {activePortfolio ? `${activePortfolio.baseBalance.toFixed(5)} ${base}` : "—"}
-          </strong>
           <small className={`text-[10px] font-bold tabular-nums mt-1 ${pnl >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
             {copy.unrealizedPnl(`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} ${quote}`)}
           </small>
@@ -1951,7 +1951,7 @@ function PaperTicket({
 
       {error && <div role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">{error}</div>}
       {notice && <div className="success-inline text-xs text-[var(--ak-signal-success)] p-1.5 bg-emerald-950/20 border border-emerald-800/40">{notice}</div>}
-      <div className="ticket-disclaimer flex items-center justify-between text-[8px] text-[var(--ak-text-secondary)] opacity-60 font-mono tracking-wider pt-0.5">
+      <div className="ticket-disclaimer flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] font-mono tracking-wider pt-0.5">
         <div className="flex items-center gap-1">
           <span className="w-1 h-1 rounded-full bg-[var(--ak-signal-info)]" />
           <span>{copy.prtsSimulation}</span>
