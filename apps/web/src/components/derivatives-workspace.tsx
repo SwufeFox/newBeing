@@ -721,7 +721,7 @@ function OptionSnapshot({ quote, stale }: { quote: DerivativeQuote | undefined; 
     return () => window.clearTimeout(timer);
   }, [quote]);
   const isStale = stale || (now > 0 && !!quote && derivativeQuoteSnapshotIsStale(quote, now));
-  return <span className="num block truncate text-[9px] leading-tight" title={quote ? copy.snapshotTitle(derivativeDate(quote.timestamp)) : copy.noBookSnapshot}>
+  return <span className="num block truncate text-[10px] leading-tight" title={quote ? copy.snapshotTitle(derivativeDate(quote.timestamp)) : copy.noBookSnapshot}>
     {isStale && <b className="text-[var(--c-down)]">{copy.stalePrefix}</b>}
     B {optionQuoteNumber(quote?.bid ?? null)} · M {optionQuoteNumber(quote?.mark ?? null)} · A {optionQuoteNumber(quote?.ask ?? null)}
   </span>;
@@ -1337,7 +1337,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
         </div>
         <div className="font-bold text-xs tracking-wide flex items-center gap-1.5 font-mono">
           <span className="text-[var(--ak-text-primary)] font-semibold">newBeing</span>
-          <span className="text-[var(--c-fg-4)] text-[9px] px-1 py-0.2 bg-[var(--c-surface-2)] border border-[var(--c-line)] rounded-xs">PRTS</span>
+          <span className="text-[var(--c-fg-4)] text-[10px] px-1 py-0.2 bg-[var(--c-surface-2)] border border-[var(--c-line)] rounded-xs">PRTS</span>
         </div>
       </Link>
       <h1 className="meta">{copy.title}</h1>
@@ -1689,7 +1689,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                 </div>
                 {account && (
                   <div className="flex items-center gap-1 mt-1">
-                    <span className="text-[9px] text-[var(--c-fg-4)] uppercase mr-1">{copy.size}</span>
+                    <span className="text-[10px] text-[var(--c-fg-4)] uppercase mr-1">{copy.size}</span>
                     {[0.25, 0.5, 0.75, 1].map((fraction) => (
                       <button
                         key={fraction}
@@ -1711,7 +1711,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                 </AkSelect>
                 {kind !== "option" && (
                   <div className="flex items-center gap-1 mt-1">
-                    <span className="text-[9px] text-[var(--c-fg-4)] mr-1">{copy.preset}</span>
+                    <span className="text-[10px] text-[var(--c-fg-4)] mr-1">{copy.preset}</span>
                     {[1, 2, 5, 10, 20].map((lev) => (
                       <button
                         key={lev}
@@ -1731,7 +1731,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                 <AkInput aria-label={copy.priceProtectionAria} inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} />
                 {quote && (
                   <div className="flex items-center gap-1 mt-1 text-[10px]">
-                    <span className="text-[9px] text-[var(--c-fg-4)] mr-1">{copy.fill}</span>
+                    <span className="text-[10px] text-[var(--c-fg-4)] mr-1">{copy.fill}</span>
                     <button
                       type="button"
                       disabled={busy || blocked || typeof quote.bid !== "number" || !Number.isFinite(quote.bid) || quote.bid <= 0}

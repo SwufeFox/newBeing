@@ -370,7 +370,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
             type="button"
             onClick={resetDefaults}
             disabled={isDefault}
-            className="text-[9px] font-mono text-[var(--ak-text-secondary)] hover:text-white underline cursor-pointer disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed transition-colors"
+            className="text-[10px] font-mono text-[var(--ak-text-secondary)] hover:text-white underline cursor-pointer disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed transition-colors"
             title={copy.resetDefaultsTitle}
           >
             {copy.resetDefaults}
@@ -379,7 +379,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
 
         <div className="preset-bar space-y-1.5 py-0.5">
           <div className="flex items-center justify-between text-[10px] text-[var(--c-fg-3)]">
-            <span className="font-semibold text-[9px] uppercase tracking-wider text-[var(--c-fg-4)]">{copy.presetBar}</span>
+            <span className="font-semibold text-[10px] uppercase tracking-wider text-[var(--c-fg-4)]">{copy.presetBar}</span>
             {!showSaveInput && (
               <button
                 type="button"
@@ -399,7 +399,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
             <button
               type="button"
               onClick={resetDefaults}
-              className={`px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all cursor-pointer ${
+              className={`px-2 py-0.5 text-[10px] font-mono border rounded-xs transition-all cursor-pointer ${
                 selectedPresetName === "default"
                   ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-signal-info)] font-semibold shadow-xs"
                   : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white hover:border-[var(--ak-border-strong)]"
@@ -412,7 +412,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                 key={preset.name}
                 type="button"
                 onClick={() => applyPreset(preset.name, preset.params)}
-                className={`px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all cursor-pointer ${
+                className={`px-2 py-0.5 text-[10px] font-mono border rounded-xs transition-all cursor-pointer ${
                   selectedPresetName === preset.name
                     ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--ak-signal-info)] font-semibold shadow-xs"
                     : "bg-transparent text-[var(--ak-text-secondary)] border-[var(--ak-border-subtle)] hover:text-white hover:border-[var(--ak-border-strong)]"
@@ -426,7 +426,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
                 key={preset.name}
                 role="group"
                 aria-label={copy.customPresetGroup(copy.presetLabels[preset.name] ?? preset.name)}
-                className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-mono border rounded-xs transition-all ${
+                className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono border rounded-xs transition-all ${
                   selectedPresetName === preset.name
                     ? "bg-[var(--ak-surface-raised)] text-[var(--ak-text-primary)] border-[var(--c-accent)] font-semibold shadow-xs"
                     : "bg-[var(--ak-surface-sunken)] text-[var(--ak-text-primary)] border-[var(--ak-border-subtle)] hover:border-[var(--ak-border-strong)]"
@@ -543,11 +543,11 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
 
       <div className="assumptions-heading text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase tracking-wider pt-1 flex items-center justify-between border-b border-[var(--ak-border-subtle)] pb-1">
         <span>{copy.assumptions}</span>
-        <span className="text-[9px] font-mono text-[var(--ak-signal-info)]">{copy.deterministic}</span>
+        <span className="text-[10px] font-mono text-[var(--ak-signal-info)]">{copy.deterministic}</span>
       </div>
       <div className="assumption-grid grid grid-cols-2 gap-2 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
         <label className="flex flex-col gap-1">
-          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.initialCapital}</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.initialCapital}</span>
           <AkInput
             className="compact-input h-7 text-xs font-mono"
             type="number"
@@ -563,7 +563,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           />
         </label>
         <div className="flex flex-col gap-1">
-          <label htmlFor="position-fraction-input" className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.positionFraction}</label>
+          <label htmlFor="position-fraction-input" className="text-[10px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.positionFraction}</label>
           <AkInput
             className="compact-input h-7 text-xs font-mono"
             id="position-fraction-input"
@@ -582,7 +582,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           />
           <span
             id="position-allocation-description"
-            className={`text-[9px] leading-tight ${config.positionFraction >= 0.9 ? "text-[var(--ak-signal-action)]" : "text-[var(--ak-text-secondary)]"}`}
+            className={`text-[10px] leading-tight ${config.positionFraction >= 0.9 ? "text-[var(--ak-signal-action)]" : "text-[var(--ak-text-secondary)]"}`}
           >
             {config.positionFraction >= 0.9
               ? copy.highAllocation(Math.round(config.positionFraction * 100))
@@ -590,7 +590,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           </span>
         </div>
         <label className="flex flex-col gap-1">
-          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.fee}</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.fee}</span>
           <AkInput
             className="compact-input h-7 text-xs font-mono"
             type="number"
@@ -607,7 +607,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[9px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.slippage}</span>
+          <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.slippage}</span>
           <AkInput
             className="compact-input h-7 text-xs font-mono"
             type="number"

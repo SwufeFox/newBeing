@@ -2,7 +2,7 @@
 
 import { compileFactor, replayReport, type ReplayExecution, type ReplayOrderInput, type ReplayReport } from "@newbeing/core";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Braces, Check, Clock3, Copy, History, Layers3, TrendingDown, TrendingUp, Wallet, ArrowDownRight, ArrowUpRight, Sparkles, FlaskConical, Code2, Activity, AlertCircle } from "lucide-react";
+import { BookOpen, Braces, Check, Clock3, Copy, History, Layers3, LoaderCircle, TrendingDown, TrendingUp, Wallet, ArrowDownRight, ArrowUpRight, Sparkles, FlaskConical, Code2, Activity, AlertCircle } from "lucide-react";
 import type { BacktestResult, BacktestSweepResult, ExchangeId, OrderPreview, PaperOrder, PaperPortfolio, ReplaySession } from "@newbeing/core";
 import type { ResearchEvaluationResult } from "@newbeing/application";
 import type { MarketSummary, OrderBookSnapshot, RecentTrade } from "@newbeing/market-data/types";
@@ -14,7 +14,7 @@ import { StrategyLab } from "@/components/strategy-lab";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import { floorToDecimals } from "@/lib/indicators";
-import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress, AkSpinner } from "@swufefox/ak-ui-react";
+import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress } from "@swufefox/ak-ui-react";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
 
 type SegmentNature =
@@ -776,7 +776,7 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
 
       {!book && !error && (
         <div className="book-loading p-4 text-center text-xs text-[var(--ak-text-secondary)] flex items-center justify-center gap-2">
-          <AkSpinner color="#18d1ff" label={copy.loadingDepth} />
+          <LoaderCircle className="spin" size={12} aria-hidden="true" />
           <span>{copy.loadingPublicDepth}</span>
         </div>
       )}
@@ -872,7 +872,7 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
 
       {trades.length === 0 && !error && (
         <div className="book-loading p-4 text-center text-xs text-[var(--ak-text-secondary)] flex items-center justify-center gap-2">
-          <AkSpinner color="#18d1ff" label={copy.loadingTrades} />
+          <LoaderCircle className="spin" size={12} aria-hidden="true" />
           <span>{copy.loadingLatestTrades}</span>
         </div>
       )}
@@ -1333,25 +1333,25 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
                   <p className="m-0 text-[10px] text-[var(--ak-text-secondary)]">{copy.backtestEvidenceNote}</p>
                   <div className="grid grid-cols-4 gap-1 text-center font-mono py-1">
                     <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                      <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.sharpeLabel}</span>
+                      <span className="text-[10px] text-[var(--ak-text-secondary)]">{copy.sharpeLabel}</span>
                       <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
                         {backtest.metrics.sharpeRatio?.toFixed(2) ?? "—"}
                       </strong>
                     </div>
                     <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                      <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.maxDdLabel}</span>
+                      <span className="text-[10px] text-[var(--ak-text-secondary)]">{copy.maxDdLabel}</span>
                       <strong className="text-xs font-bold text-[var(--ak-signal-danger)]">
                         {(backtest.metrics.maxDrawdown * 100).toFixed(1)}%
                       </strong>
                     </div>
                     <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                      <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.winRateLabel}</span>
+                      <span className="text-[10px] text-[var(--ak-text-secondary)]">{copy.winRateLabel}</span>
                       <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
                         {(backtest.metrics.winRate * 100).toFixed(0)}%
                       </strong>
                     </div>
                     <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-                      <span className="text-[8px] text-[var(--ak-text-secondary)]">{copy.tradesLabel}</span>
+                      <span className="text-[10px] text-[var(--ak-text-secondary)]">{copy.tradesLabel}</span>
                       <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
                         {backtest.metrics.tradeCount}
                       </strong>
@@ -1429,7 +1429,7 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
             <div className="flex items-center justify-between text-[10px]">
               <span className="font-bold text-[var(--ak-text-primary)] uppercase tracking-wider">{copy.factorTitle}</span>
               {factorCompilation && (
-                <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase border ${
+                <span className={`px-1.5 py-0.5 text-[10px] font-bold uppercase border ${
                   factorCompilation.ok
                     ? "bg-emerald-950/60 border-emerald-500/60 text-emerald-400"
                     : "bg-rose-950/60 border-rose-500/60 text-rose-400"
@@ -1444,7 +1444,7 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
           </div>
 
           <div className="space-y-1">
-            <span className="text-[9px] text-[var(--ak-text-secondary)] font-bold uppercase">{copy.factorPresets}</span>
+            <span className="text-[10px] text-[var(--ak-text-secondary)] font-bold uppercase">{copy.factorPresets}</span>
             <div className="grid grid-cols-2 gap-1 text-[10px]">
               <button
                 type="button"
@@ -1563,7 +1563,7 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
 function ContextField({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div className="context-field flex flex-col p-1">
-      <span className="text-[9px] text-[var(--ak-text-secondary)] opacity-70 uppercase tracking-wider">{label}</span>
+      <span className="text-[10px] text-[var(--ak-text-secondary)] opacity-70 uppercase tracking-wider">{label}</span>
       <strong className="text-xs text-[var(--ak-text-primary)] truncate font-mono">{value}</strong>
     </div>
   );
@@ -1840,7 +1840,7 @@ function PaperTicket({
             type="button"
             aria-label={copy.toggleSizingSide}
             onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
-            className="ticket-sizing-toggle text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
+            className="ticket-sizing-toggle text-[10px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
             title={copy.sizingHint}
           >
             {sizingSide === "buy" ? copy.sizingBuy : copy.sizingSell}
@@ -1929,7 +1929,7 @@ function PaperTicket({
         <div className="order-preview-card p-2 bg-[var(--ak-surface-sunken-2)] border-l-2 border-[var(--ak-signal-action)] space-y-1.5" key={preview.id}>
           <div className="preview-topline flex items-center justify-between">
             <span className="text-[10px] font-bold text-[var(--ak-signal-info)]">{copy.aiOrderPreview}</span>
-            <AkTag variant="advanced" className="text-[9px]">{preview.status.toUpperCase()}</AkTag>
+            <AkTag variant="advanced" className="text-[10px]">{preview.status.toUpperCase()}</AkTag>
           </div>
           <strong className={`block text-xs font-bold ${preview.side === "buy" ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
             {copy.previewSide(preview.side, String(preview.quantity), base)}
@@ -2134,14 +2134,14 @@ function ReplayTicket({
 
       <div className="grid grid-cols-2 gap-2 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
         <div className="flex flex-col">
-          <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{copy.available(quote)}</span>
+          <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">{copy.available(quote)}</span>
           <strong className="text-xs text-[var(--ak-text-primary)] font-bold tabular-nums">
             ${portfolio.quoteBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </strong>
         </div>
         <div className="flex flex-col">
           <div className="flex items-center justify-between">
-            <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase">{copy.position(base)}</span>
+            <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase">{copy.position(base)}</span>
             {portfolio.baseBalance > 0 && (
               <button
                 type="button"
@@ -2152,7 +2152,7 @@ function ReplayTicket({
                     window.setTimeout(() => setTicketNotice(null), 3000);
                   });
                 }}
-                className="ticket-close-full text-[9px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
+                className="ticket-close-full text-[10px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
                 title={copy.queueCloseHint}
               >
                 {copy.closeFull}
@@ -2210,7 +2210,7 @@ function ReplayTicket({
               type="button"
               aria-label={copy.toggleReplaySizingSide}
               onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
-              className="ticket-sizing-toggle text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
+              className="ticket-sizing-toggle text-[10px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
               title={copy.sizingHint}
             >
               {sizingSide === "buy" ? copy.sizingBuy : copy.sizingSell}
@@ -2344,7 +2344,7 @@ function ReplayTicket({
               </span>
               <span className="text-[var(--ak-text-secondary)] tabular-nums">{order.fillPrice === null ? "—" : price(order.fillPrice)}</span>
               {order.status === "submitted" && (
-                <Button size="sm" variant="ghost" className="h-5 text-[9px] px-1" disabled={busy} onClick={() => void onCommand({ action: "cancel", clientOrderId: order.clientOrderId }).catch(() => undefined)}>
+                <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1" disabled={busy} onClick={() => void onCommand({ action: "cancel", clientOrderId: order.clientOrderId }).catch(() => undefined)}>
                   {copy.cancel}
                 </Button>
               )}

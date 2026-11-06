@@ -348,7 +348,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
                         setSizingSide("sell");
                         setQuantity(String(avail));
                       }}
-                      className="ml-1 text-[8px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
+                      className="ml-1 text-[10px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
                       title={copy.closeFullTitle}
                     >
                       {copy.closeFull}
@@ -368,7 +368,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
                   aria-pressed={sizingSide === "buy"}
                   aria-label={copy.toggleSide}
                   onClick={() => setSizingSide((prev) => (prev === "buy" ? "sell" : "buy"))}
-                  className="text-[9px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
+                  className="text-[10px] px-1.5 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] text-[var(--ak-signal-info)] hover:text-white uppercase font-bold transition-all cursor-pointer"
                   title={copy.toggleSideTitle}
                 >
                   {sizingSide === "buy" ? copy.sizingBuy : copy.sizingSell}
@@ -422,7 +422,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
               />
             </label>
             {referencePrice && referencePrice > 0 && (
-              <div className="flex gap-1 items-center text-[9px] text-[var(--ak-text-secondary)]">
+              <div className="flex gap-1 items-center text-[10px] text-[var(--ak-text-secondary)]">
                 <span>{copy.refLabel}</span>
                 <button
                   type="button"
@@ -444,7 +444,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
                   <button
                     type="button"
                     onClick={() => setPriceDraft(null)}
-                    className="ml-auto px-1 py-0.5 opacity-60 hover:opacity-100 underline text-[9px]"
+                    className="ml-auto px-1 py-0.5 opacity-60 hover:opacity-100 underline text-[10px]"
                   >
                     {copy.reset}
                   </button>
@@ -454,7 +454,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
           </div>
 
           <div className="flex items-center gap-1 pt-0.5">
-            <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase tracking-wider mr-1">
+            <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-wider mr-1">
               {sizingSide === "buy" ? copy.quotePct : copy.inventoryPct}
             </span>
             {[0.25, 0.5, 0.75, 1].map((fraction) => (
@@ -492,12 +492,12 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
 
           {account.orders.length > 0 && (
             <div className="space-y-1 pt-1 border-t border-[var(--ak-border-subtle)]">
-              <span className="text-[9px] text-[var(--ak-text-secondary)] uppercase tracking-wider font-bold">{copy.recentOrders}</span>
+              <span className="text-[10px] text-[var(--ak-text-secondary)] uppercase tracking-wider font-bold">{copy.recentOrders}</span>
               {account.orders.slice(-5).reverse().map((order) => (
                 <div key={order.clientOrderId} className="flex justify-between items-center p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] text-[10px]">
                   <span>{order.symbol} {order.side} {order.quantity} · <span className="text-[var(--ak-signal-info)]">{order.status}</span></span>
                   {["unknown", "submitted"].includes(order.status) && (
-                    <Button size="sm" variant="outline" disabled={unavailable} onClick={() => void command("cancel", undefined, order.clientOrderId)} className="h-5 text-[9px] px-1.5">
+                    <Button size="sm" variant="outline" disabled={unavailable} onClick={() => void command("cancel", undefined, order.clientOrderId)} className="h-5 text-[10px] px-1.5">
                       {copy.cancelRelease}
                     </Button>
                   )}

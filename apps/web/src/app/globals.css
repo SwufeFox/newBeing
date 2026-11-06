@@ -26,6 +26,17 @@
 @import "@swufefox/ak-ui-react/style.css" layer(ak-ui);
 @import "tailwindcss";
 
+/* One type stack for the whole workstation. Tailwind's default `font-mono` and
+   `font-sans` are the OS stacks (ui-monospace / SFMono / Consolas), so the ~240
+   `font-mono` utilities in components were rendering a different face from the
+   one this file declares — the HUD's tabular data lost its engineered widths
+   wherever a component used the utility instead of `--f-mono`. Point the theme
+   at the design tokens once, here. */
+@theme {
+  --font-mono: var(--f-mono);
+  --font-sans: var(--f-body);
+}
+
 /* ak-ui ships its own near-black ramp (#111315 canvas, #171a1d sunken) that is a
    different hue family from the app's PRTS ramp (#0f0f10 / #141516 / #1a1b1c).
    Both rendered on the same screen, so every ak-ui surface read as "slightly the
@@ -114,7 +125,9 @@
   --s-6: 32px;
 
   /* ---- geometry: one radius, one line, one ring ---- */
-  --r: 0px;
+  --r: 0px;            /* panels, fields, tables — the only structural radius */
+  --r-chip: 2px;       /* tags, skeleton bars, inline chips */
+  --r-dot: 9999px;     /* status dots, and nothing else */
   --line: 1px;
   --ring: 2px;
   --bar: 4px;          /* accent bar on panel heads */
@@ -2249,9 +2262,19 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .dock-tabs {
   display: flex;
   align-items: center;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: var(--s-1);
-  overflow: visible;
+  /* Five research tabs measure 481px inside a 415px dock: with `visible` the
+     last one was clipped and could not be reached at all. Scroll it instead. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+  /* The edge tab fades instead of being sliced by the panel border, so a
+     crowded dock reads as scrollable rather than broken. Invisible when the
+     tabs already fit. */
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent 100%);
 }
 .dock-tabs .tab-trigger {
   justify-content: center;
@@ -2595,15 +2618,21 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 }
 .metric-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  /* 104px is the smallest track that keeps "MAX DRAWDOWN" on one line at
+     --t-meta. Measured against the default dock width it yields three columns,
+     so six cells occupy two rows and the strip ends on a row boundary instead
+     of being cut mid-cell by the dock's scroll viewport. */
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: var(--line);
+  min-height: 96px;
   background: var(--c-line);
   border: var(--line) solid var(--c-line);
 }
 .metric-cell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  justify-content: center;
+  gap: 4px;
   padding: var(--s-2) var(--s-3);
   background: var(--c-surface);
 }
@@ -2614,13 +2643,15 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 .metric-cell strong {
   color: var(--c-fg);
   font-family: var(--f-label);
-  font-size: var(--t-label);
+  font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .result-provenance {
   padding: var(--s-2) var(--s-3);
@@ -2688,7 +2719,7 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   height: 26px;
   min-width: 0;
   padding: 0 0.55rem;
-  font-size: 10.5px;
+  font-size: var(--t-meta);
   letter-spacing: 0.06em;
   gap: 0.3rem;
 }
@@ -3286,10 +3317,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 
 /* 2. Metric cells measured 98px, so two-word labels wrapped to three lines
       and every cell grew to 81px. Floor the column and keep labels on one line. */
-.metric-strip { grid-template-columns: repeat(auto-fit, minmax(116px, 1fr)); min-height: 96px; }
-.metric-cell { justify-content: center; gap: 4px; padding: 10px 12px; }
-.metric-cell span { white-space: nowrap; letter-spacing: 0.06em; }
-.metric-cell strong { white-space: nowrap; font-size: 15px; }
 .backtest-summary-row { align-items: stretch; }
 
 /* 3. The equity chart rendered into a 152x2 canvas: the wrapper had collapsed
@@ -3442,9 +3469,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   gap: var(--s-1);
   white-space: nowrap;
 }
-
-/* the metric strip must never squeeze its labels onto three lines */
-.metric-strip { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
 
 /* ========== backtest meta row ========== */
 

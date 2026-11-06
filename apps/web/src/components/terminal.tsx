@@ -52,7 +52,7 @@ import {
   type WorkspaceState,
 } from "@newbeing/core";
 import type { MarketSummary, MarketSymbol } from "@newbeing/market-data/types";
-import { AkBrackets, AkCorner, AkTag, AkStatus, AkDisplay, AkBilingual, AkNum, AkDialog, AkNotice, AkSpinner, AkGlow } from "@swufefox/ak-ui-react";
+import { AkBrackets, AkCorner, AkTag, AkStatus, AkDisplay, AkBilingual, AkNum, AkDialog, AkNotice, AkGlow } from "@swufefox/ak-ui-react";
 
 const TIMEFRAMES: readonly Timeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
 const EMPTY_REPLAY_BARS: readonly Candle[] = [];
@@ -686,9 +686,9 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
           <div ref={resultsListRef} className="symbol-results absolute left-0 top-full mt-1 w-64 max-h-72 overflow-auto bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] z-50 shadow-2xl p-1 font-mono text-xs">
             <div className="popover-title text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase p-1.5 border-b border-[var(--ak-border-subtle)] flex items-center justify-between">
               <span>{copy.spotMarkets(EXCHANGE_LABELS[exchange].toUpperCase())}</span>
-              <span className="text-[9px] opacity-60">{copy.navHint}</span>
+              <span className="text-[10px] opacity-60">{copy.navHint}</span>
             </div>
-            {showLoading && <div className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><AkSpinner color="#18d1ff" label={copy.searching} /><span>{copy.searching}…</span></div>}
+            {showLoading && <div className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><LoaderCircle className="spin" size={12} aria-hidden="true" /><span>{copy.searching}…</span></div>}
             {error && <div className="popover-error p-2 text-xs text-[var(--ak-signal-danger)]">{error}</div>}
             {!showLoading && !error && items.map((item, idx) => {
               const isSelected = idx === selectedIndex;
@@ -981,7 +981,7 @@ function RailStrategyRosterContent(): React.JSX.Element {
             onClick={() => { setStrategy(s.id, {}); setInspectorTab("strategy"); }}
           >
             <div className="rail-item-main truncate">{strategyNames[s.id] ?? s.name ?? s.id}</div>
-            <div className="rail-item-sub text-[9px] text-[var(--ak-text-secondary)] opacity-70 truncate">{s.id}</div>
+            <div className="rail-item-sub text-[10px] text-[var(--ak-text-secondary)] opacity-70 truncate">{s.id}</div>
           </button>
         ))}
       </div>
@@ -1572,7 +1572,7 @@ export function Terminal(): React.JSX.Element {
                 </div>
                 <div className="font-bold text-xs tracking-wide flex items-center gap-1.5 font-mono">
                   <span className="text-[var(--ak-text-primary)] font-semibold">newBeing</span>
-                  <span className="text-[var(--c-fg-4)] text-[9px] px-1 py-0.2 bg-[var(--c-surface-2)] border border-[var(--c-line)] rounded-xs">PRTS</span>
+                  <span className="text-[var(--c-fg-4)] text-[10px] px-1 py-0.2 bg-[var(--c-surface-2)] border border-[var(--c-line)] rounded-xs">PRTS</span>
                 </div>
               </div>
 
@@ -1741,13 +1741,17 @@ export function Terminal(): React.JSX.Element {
 
         <div className="market-heading-right flex items-center gap-3 text-xs font-mono text-[var(--ak-text-secondary)]">
           {/* Replay already prints the cursor in the price slot; a second
-              "awaiting feed" timestamp would describe a feed that is not coming. */}
-          {workspace !== "replay" && (
+              "awaiting feed" timestamp would describe a feed that is not coming.
+              The same holds for a failed ticker: the error slot above and the
+              feed chip to the right already state it, so the timestamp slot stays
+              empty instead of adding a third sentence for one condition. */}
+          {workspace !== "replay" && summary?.timestamp && (
             <span className="exchange-time text-[10px]">
-              {summary?.timestamp
-                ? copy.feedUpdated(new Date(summary.timestamp).toLocaleTimeString())
-                : copy.feedAwaiting}
+              {copy.feedUpdated(new Date(summary.timestamp).toLocaleTimeString())}
             </span>
+          )}
+          {workspace !== "replay" && !summaryError && !summary?.timestamp && (
+            <span className="exchange-time text-[10px]">{copy.feedAwaiting}</span>
           )}
           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)] rounded-xs text-[10px] font-mono">
             <span className={`inline-block rounded-full h-1.5 w-1.5 shrink-0 ${summaryError ? "bg-[var(--c-down)]" : workspace === "replay" ? "bg-[var(--c-accent)]" : summary ? "bg-[var(--c-up)]" : "bg-[var(--c-warn)]"}`} />
@@ -1803,7 +1807,7 @@ export function Terminal(): React.JSX.Element {
                 <div className="chart-toolbar-right flex items-center gap-2">
                   {running ? (
                     <span role="status" className="run-status text-xs text-[var(--ak-signal-action)] flex items-center gap-1.5">
-                      <AkSpinner color="#ffd800" label={copy.executing} /> {lastAction ?? `${copy.executing}…`}
+                      <LoaderCircle className="spin" size={12} aria-hidden="true" /> {lastAction ?? `${copy.executing}…`}
                     </span>
                   ) : lastAction ? (
                     <span role="status" className="run-status text-xs text-[var(--ak-text-secondary)]">{lastAction}</span>

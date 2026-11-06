@@ -15,7 +15,7 @@ import { buildResearchReport, researchReportFilename } from "@/lib/research-repo
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
-import { AkTag, AkNotice, AkNum, AkButton, AkProgress, AkSpinner, AkCountUp } from "@swufefox/ak-ui-react";
+import { AkTag, AkNotice, AkNum, AkButton, AkProgress, AkCountUp } from "@swufefox/ak-ui-react";
 
 /** Format an amount in the symbol's own quote currency */
 function money(value: number, currency = "USDT"): string {
@@ -941,7 +941,7 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
                   >
                     <span>{order.clientOrderId}</span>
                     {copiedId === order.clientOrderId && (
-                      <span className="text-[9px] text-[var(--ak-signal-success)] font-bold">{copy.copied}</span>
+                      <span className="text-[10px] text-[var(--ak-signal-success)] font-bold">{copy.copied}</span>
                     )}
                   </button>
                 </td>
@@ -1202,7 +1202,7 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
                   <tr key={trade.id} className="border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors">
                     <td className="p-1.5 text-[var(--ak-text-secondary)]">{index + 1}</td>
                     <td className="p-1.5">
-                      <AkTag variant={trade.side === "long" ? "default" : "danger"} className="text-[9px] px-1 py-0">
+                      <AkTag variant={trade.side === "long" ? "default" : "danger"} className="text-[10px] px-1 py-0">
                         {copy.tradeSide[trade.side]}
                       </AkTag>
                     </td>
@@ -1236,7 +1236,7 @@ function Metric({ label, value, tone, title }: { label: string; value: string; t
   const Icon = tone === "positive" ? ArrowUpRight : tone === "negative" ? ArrowDownRight : null;
   return (
     <div className="metric-cell flex flex-col p-1.5" title={title}>
-      <span className="text-[9px] text-[var(--ak-text-secondary)] font-mono uppercase tracking-wider">{label}</span>
+      <span className="text-[10px] text-[var(--ak-text-secondary)] font-mono uppercase tracking-wider">{label}</span>
       <strong className={`text-sm font-mono font-bold flex items-center gap-1 ${tone === "positive" ? "text-[var(--ak-signal-success)]" : tone === "negative" ? "text-[var(--ak-signal-danger)]" : "text-[var(--ak-text-primary)]"}`}>
         {Icon && <Icon size={12} />}
         {value}
@@ -1477,7 +1477,7 @@ function ExperimentHistoryContent({ onSelect, refreshKey }: { onSelect: (id: str
                     <tr key={item.resultId} className="border-b border-[var(--ak-border-subtle)]">
                       <td className="p-1.5 font-bold">
                         <div>{item.strategyId}</div>
-                        <small className="mono text-[9px] text-[var(--ak-text-secondary)]">{item.resultId.slice(0, 10)}…</small>
+                        <small className="mono text-[10px] text-[var(--ak-text-secondary)]">{item.resultId.slice(0, 10)}…</small>
                       </td>
                       <td className={`p-1.5 font-mono font-bold ${item.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                         {percentage(item.metrics.totalReturn)}
@@ -1710,19 +1710,19 @@ export const BottomDock = memo(function BottomDock({
         {activeTab === "logs" && workspace === "research" && (
           <div className="execution-log p-3 font-mono text-xs space-y-1.5">
             <div className="log-line flex items-center gap-2 text-[var(--ak-text-secondary)]">
-              <AkTag variant="neutral" className="text-[9px]">{copy.logLocal}</AkTag>
+              <AkTag variant="neutral" className="text-[10px]">{copy.logLocal}</AkTag>
               <span className="text-[var(--ak-signal-info)]">{copy.logSafetyBoundary}</span>
               <span>{copy.logSafetyBody}</span>
             </div>
             <div className="log-line flex items-center gap-2 text-[var(--ak-text-secondary)]">
-              <AkTag variant="advanced" className="text-[9px]">{copy.logData}</AkTag>
+              <AkTag variant="advanced" className="text-[10px]">{copy.logData}</AkTag>
               <span className="text-[var(--ak-signal-action)]">{copy.logMarketData}</span>
               <span>{copy.logMarketDataBody(EXCHANGE_LABELS[exchange])}</span>
             </div>
             {paper?.orders.slice(0, 10).map((order) => (
               <div className="log-line flex items-center gap-2 text-xs" key={order.clientOrderId}>
                 <span className="text-[10px] text-[var(--ak-text-secondary)]">{new Date(order.createdAt).toLocaleTimeString()}</span>
-                <AkTag variant={order.status === "filled" ? "default" : "danger"} className="text-[9px]">
+                <AkTag variant={order.status === "filled" ? "default" : "danger"} className="text-[10px]">
                   {copy.orderStatus[order.status].toUpperCase()}
                 </AkTag>
                 <span className="font-bold">{copy.orderSide[order.side]} {order.quantity} {order.symbol}</span>

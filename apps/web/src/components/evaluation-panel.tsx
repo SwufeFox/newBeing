@@ -669,16 +669,16 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                 <button
                   type="button"
                   onClick={() => setDatasetOverride(null)}
-                  className="text-[9px] font-mono text-[var(--ak-signal-info)] hover:underline cursor-pointer"
+                  className="text-[10px] font-mono text-[var(--ak-signal-info)] hover:underline cursor-pointer"
                   title={copy.useActiveBacktestTitle}
                 >
                   {copy.useActiveBacktest}
                 </button>
               )}
               {validDataset ? (
-                <span className="text-[9px] font-mono text-[var(--ak-signal-success)] font-bold">{copy.ready}</span>
+                <span className="text-[10px] font-mono text-[var(--ak-signal-success)] font-bold">{copy.ready}</span>
               ) : (
-                <span className="text-[9px] font-mono text-[var(--ak-signal-action)]">{copy.needBacktest}</span>
+                <span className="text-[10px] font-mono text-[var(--ak-signal-action)]">{copy.needBacktest}</span>
               )}
             </div>
           </div>
@@ -690,7 +690,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             onChange={(event) => setDatasetOverride({ source: sourceDataset, value: event.target.value })}
           />
           {recentDatasets.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap pt-0.5 text-[9px] font-mono text-[var(--ak-text-secondary)]">
+            <div className="flex items-center gap-1 flex-wrap pt-0.5 text-[10px] font-mono text-[var(--ak-text-secondary)]">
               <span className="opacity-60">{copy.quickPick}</span>
               {DATASET_ID.test(sourceDataset) && (
                 <button
@@ -741,9 +741,9 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             value={splitIndex}
             onChange={(event) => setSplitIndex(event.target.value)}
           />
-          {datasetMetadataLoading && <span id="holdout-split-help" className="text-[9px] text-[var(--ak-text-secondary)]" role="status">{copy.checkingLength}</span>}
+          {datasetMetadataLoading && <span id="holdout-split-help" className="text-[10px] text-[var(--ak-text-secondary)]" role="status">{copy.checkingLength}</span>}
           {currentDatasetMetadataError && (
-            <div id="holdout-split-help" className="flex flex-wrap items-center gap-1 text-[9px] text-[var(--ak-signal-danger)]" role="alert">
+            <div id="holdout-split-help" className="flex flex-wrap items-center gap-1 text-[10px] text-[var(--ak-signal-danger)]" role="alert">
               <span>{copy.verifyFailed}</span>
               <button
                 type="button"
@@ -758,7 +758,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             </div>
           )}
           {currentDatasetMetadata && !splitValid && (
-            <div id="holdout-split-help" className="flex flex-wrap items-center gap-1 text-[9px] text-[var(--ak-signal-action)]" role="status">
+            <div id="holdout-split-help" className="flex flex-wrap items-center gap-1 text-[10px] text-[var(--ak-signal-action)]" role="status">
               <span>
                 {currentDatasetMetadata.bars < 4
                   ? copy.splitTooShort
@@ -768,7 +768,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-5 px-1 text-[9px]"
+                  className="h-5 px-1 text-[10px]"
                   onClick={() => setSplitIndex(String(Math.floor(currentDatasetMetadata.bars / 2)))}
                 >
                   {copy.midpoint(Math.floor(currentDatasetMetadata.bars / 2))}
@@ -867,7 +867,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
           <div className="evaluation-verdict grid grid-cols-2 md:grid-cols-4 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
             <div className="evaluation-verdict-cell flex flex-col justify-between">
               <div>
-                <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.selectedOnTrain}</span>
+                <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.selectedOnTrain}</span>
                 <strong className="text-xs text-[var(--ak-signal-success)] font-mono font-bold block tabular-nums">
                   {reportKey ? `${parameterName(reportKey, copy)} = ${String(report.selectedParameters[reportKey])}` : formatParameters(report.selectedParameters, copy)}
                 </strong>
@@ -875,7 +875,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
               <Button
                 size="sm"
                 variant="outline"
-                className="mt-1 h-5 text-[9px] px-1.5 font-bold self-start active:scale-95 transition-transform"
+                className="mt-1 h-5 text-[10px] px-1.5 font-bold self-start active:scale-95 transition-transform"
                 onClick={applySelected}
                 disabled={!canApplyReport || replayLocked}
                 aria-describedby={!canApplyReport || replayLocked ? "evaluation-apply-help" : undefined}
@@ -886,27 +886,27 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
               {(!canApplyReport || replayLocked) && <span id="evaluation-apply-help" className="text-xs text-[var(--ak-text-secondary)]">{replayLocked ? copy.replayLocked : copy.reportIncompatible}</span>}
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
-              <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.trainReturnColumn}</span>
+              <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.trainReturnColumn}</span>
               <strong className={`text-xs font-mono font-bold tabular-nums ${(bestTraining?.result.metrics.totalReturn ?? 0) >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
                 {bestTraining ? pct(bestTraining.result.metrics.totalReturn) : "—"}
               </strong>
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
-              <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.holdoutReturn}</span>
+              <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.holdoutReturn}</span>
               <strong className={`text-xs font-mono font-bold tabular-nums ${report.holdout.metrics.totalReturn >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
                 {pct(report.holdout.metrics.totalReturn)}
               </strong>
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
-              <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.holdoutFinalEquity}</span>
+              <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.holdoutFinalEquity}</span>
               <strong className="text-xs font-mono font-bold tabular-nums">{report.holdout.metrics.finalEquity.toFixed(2)}</strong>
             </div>
           </div>
 
           <div className="evaluation-bounds flex flex-wrap items-center gap-2 p-2 text-[10px] font-mono text-[var(--ak-text-secondary)] bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-            <AkTag variant="neutral" className="text-[9px]">{copy.trainTag}</AkTag>
+            <AkTag variant="neutral" className="text-[10px]">{copy.trainTag}</AkTag>
             <span>{copy.span(report.trainingBoundary.bars, new Date(report.trainingBoundary.startTime).toLocaleString(), new Date(report.trainingBoundary.endTimeExclusive).toLocaleString())}</span>
-            <AkTag variant="neutral" className="text-[9px]">{copy.holdoutTag}</AkTag>
+            <AkTag variant="neutral" className="text-[10px]">{copy.holdoutTag}</AkTag>
             <span>{copy.span(report.holdoutBoundary.bars, new Date(report.holdoutBoundary.startTime).toLocaleString(), new Date(report.holdoutBoundary.endTimeExclusive).toLocaleString())}</span>
             <span className="opacity-70">{report.evaluation} · {report.initialization}</span>
           </div>
@@ -930,7 +930,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                     <tr key={candidate.result.resultId} className={`border-b border-[var(--ak-border-subtle)] hover:bg-[var(--ak-surface-sunken)] transition-colors ${isSelected ? "is-best bg-[var(--ak-surface-raised)]" : ""}`}>
                       <td className="mono p-1.5 font-bold flex items-center gap-1.5">
                         <span className="tabular-nums">{reportKey ? String(candidate.parameters[reportKey]) : formatParameters(candidate.parameters, copy)}</span>
-                        {isSelected && <AkTag variant="advanced" className="text-[9px] px-1 py-0 h-3.5 leading-none">{copy.pickedTag}</AkTag>}
+                        {isSelected && <AkTag variant="advanced" className="text-[10px] px-1 py-0 h-3.5 leading-none">{copy.pickedTag}</AkTag>}
                       </td>
                       <td className={`p-1.5 font-mono tabular-nums font-bold ${candidate.result.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                         {candidate.result.metrics.totalReturn >= 0 ? <TrendingUp size={11} className="inline mr-1" /> : <TrendingDown size={11} className="inline mr-1" />}

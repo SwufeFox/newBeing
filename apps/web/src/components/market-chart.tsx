@@ -17,12 +17,11 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { AlertTriangle, Clock3, Radio, Wifi, WifiOff } from "lucide-react";
+import { AlertTriangle, Clock3, LoaderCircle, Radio, Wifi, WifiOff } from "lucide-react";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import type { BacktestResult, Candle } from "@newbeing/core";
 import { findCandleGaps, reconnectDelayMs, timeframeMilliseconds } from "@newbeing/market-data/utils";
-import { AkSpinner } from "@swufefox/ak-ui-react";
 import { chartPalette, type ChartPalette } from "@/lib/chart-palette";
 import { usePreferences } from "@/lib/preferences";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
@@ -885,8 +884,8 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       <div className="chart-stage">
         <div ref={containerRef} className="chart-canvas" />
         {loading && (
-          <div className="chart-overlay">
-            <AkSpinner color="#18d1ff" label={copy.loadingHistory} />
+          <div className="chart-overlay" role="status">
+            <LoaderCircle className="spin" size={14} aria-hidden="true" />
             <span>{copy.loadVenueHistory(venueLabel)}</span>
           </div>
         )}
@@ -911,7 +910,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
           </div>
         )}
         {replayMode && replayBars.length === 0 && (
-          <div className="chart-overlay">
+          <div className="chart-overlay" role="status">
             <Clock3 size={16} />
             <span>{copy.replayEmpty}</span>
           </div>

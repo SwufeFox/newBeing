@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AkDialog, AkSpinner, AkTag } from "@swufefox/ak-ui-react";
+import { LoaderCircle } from "lucide-react";
+import { AkDialog, AkTag } from "@swufefox/ak-ui-react";
 import { DEFAULT_PREFERENCES, setPreferences, usePreferences, type ColorVisionMode, type UiLocale } from "@/lib/preferences";
 import { EXCHANGE_IDS, EXCHANGE_LABELS, symbolForExchange } from "@/lib/exchanges";
 import { CHART_PALETTES } from "@/lib/chart-palette";
@@ -322,7 +323,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <button type="button" className="settings-inline-button" onClick={() => setConnectorRetry((value) => value + 1)}>{copy.retryConnectors}</button>
           </div>}
           {connectorError === null && connectors === null && (
-            <p className="settings-note flex items-center gap-2"><AkSpinner color="#18d1ff" label={copy.loadingConnectors} />{copy.loadingConnectors}…</p>
+            <p className="settings-note flex items-center gap-2"><LoaderCircle className="spin" size={12} aria-hidden="true" />{copy.loadingConnectors}…</p>
           )}
           {connectorError === null && connectors !== null && connectors.length === 0 && <p className="settings-note">{copy.noConnectors}</p>}
 
@@ -336,7 +337,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                 <li key={connector.id} className="settings-connector">
                   <div className="settings-connector-head">
                     <span className="settings-connector-name">{connector.name}</span>
-                    {inUse && <AkTag variant="default" className="text-[9px]">{copy.active}</AkTag>}
+                    {inUse && <AkTag variant="default" className="text-[10px]">{copy.active}</AkTag>}
                     <span className="settings-connector-id">{connector.id}</span>
                   </div>
                   <div className="settings-capabilities">

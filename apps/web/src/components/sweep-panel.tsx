@@ -787,7 +787,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
                   {finalTest ? copy.finalTestSummary(pct(finalTest.totalReturn), pct(-finalTest.maxDrawdown), finalTest.sharpeRatio === null ? copy.notAvailable : finalTest.sharpeRatio.toFixed(3), finalTest.tradeCount) : copy.candidateRuns(sweep.runs.length)}
                   {sweep.createdAt && ` · ${new Date(sweep.createdAt).toLocaleString()}`}
                 </span>
-                <span className="break-all font-mono text-[9px] text-[var(--ak-text-secondary)]">{sweep.sweepId}</span>
+                <span className="break-all font-mono text-[10px] text-[var(--ak-text-secondary)]">{sweep.sweepId}</span>
               </button>;
             })}
           </div>
@@ -826,7 +826,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
               <summary className="cursor-pointer font-semibold">{copy.foldSummary({ index: index + 1, trainEnd: fold.trainEnd, validationStart: fold.validationStart, validationEnd: fold.validationEnd, parameter: parameterName(result!.parameter, copy), value: fold.candidateValue, validationReturn: pct(fold.validationMetrics.totalReturn) })}</summary>
               <p className="my-1">{copy.foldBars(timeRange(fold.trainStartTimestamp, fold.trainEndTimestamp), timeRange(fold.validationStartTimestamp, fold.validationEndTimestamp))}</p>
               <p className="m-0">{copy.foldMetrics(pct(fold.trainingMetrics.totalReturn), fold.trainingMetrics.sharpeRatio === null ? copy.notAvailable : fold.trainingMetrics.sharpeRatio.toFixed(3), pct(-fold.validationMetrics.maxDrawdown), fold.validationMetrics.tradeCount, fold.validationMetrics.totalFees.toFixed(2))}</p>
-              <p className="m-0 font-mono text-[9px]">{copy.foldIds(fold.trainingResultId, fold.validationResultId)}</p>
+              <p className="m-0 font-mono text-[10px]">{copy.foldIds(fold.trainingResultId, fold.validationResultId)}</p>
               <div className="mt-1 max-h-40 overflow-auto">
                 <table className="data-table w-full text-[10px]">
                   <thead><tr><th>{copy.trainCandidate}</th><th>{copy.returnColumn}</th><th>{copy.sharpeColumn}</th><th>{copy.maxDdColumn}</th><th>{copy.tradesColumn}</th><th>{copy.feesColumn}</th><th>{copy.resultColumn}</th></tr></thead>
@@ -873,29 +873,29 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
       {result && stats && (
         <div className="sweep-verdict grid grid-cols-2 md:grid-cols-5 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
           <div className="sweep-verdict-cell flex flex-col">
-            <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.bestValue}</span>
+            <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.bestValue}</span>
             <strong className="text-xs text-[var(--ak-signal-success)] font-mono font-bold tabular-nums">
               {parameterName(result.parameter, copy)} = {stats.best.value} ({pct(stats.best.metrics.totalReturn)})
             </strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
-            <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.worstValue}</span>
+            <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.worstValue}</span>
             <strong className="text-xs text-[var(--ak-signal-danger)] font-mono font-bold tabular-nums">
               {parameterName(result.parameter, copy)} = {stats.worst.value} ({pct(stats.worst.metrics.totalReturn)})
             </strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
-            <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.spread}</span>
+            <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.spread}</span>
             <strong className="text-xs font-mono font-bold tabular-nums">{copy.spreadValue((stats.spread * 100).toFixed(2))}</strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
-            <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.profitableRuns}</span>
+            <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.profitableRuns}</span>
             <strong className={`text-xs font-mono font-bold tabular-nums ${stats.profitable > 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-text-secondary)]"}`}>
               {stats.profitable} / {stats.total}
             </strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
-            <span className="text-[9px] font-mono text-[var(--ak-text-secondary)]">{copy.distinctOutcomes}</span>
+            <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.distinctOutcomes}</span>
             <strong className={`text-xs font-mono font-bold tabular-nums ${stats.collapsed > 0 ? "text-[var(--ak-text-secondary)]" : ""}`}>
               {stats.distinct} / {stats.total}
             </strong>
@@ -921,7 +921,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
             <Check size={11} className="text-[var(--ak-signal-success)]" />
             {notice}
           </span>
-          <span className="text-[9px] text-[var(--ak-text-secondary)] opacity-70">{copy.strategyLabUpdated}</span>
+          <span className="text-[10px] text-[var(--ak-text-secondary)] opacity-70">{copy.strategyLabUpdated}</span>
         </div>
       )}
 
@@ -952,7 +952,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
                   >
                     <td className="mono p-1.5 font-bold flex items-center gap-1.5">
                       <span className="tabular-nums">{entry.value}</span>
-                      {isBest && <AkTag variant="advanced" className="text-[9px] px-1 py-0 h-3.5 leading-none">{copy.bestTag}</AkTag>}
+                      {isBest && <AkTag variant="advanced" className="text-[10px] px-1 py-0 h-3.5 leading-none">{copy.bestTag}</AkTag>}
                     </td>
                     <td className={`p-1.5 font-mono tabular-nums font-bold ${entry.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                       {entry.metrics.totalReturn >= 0 ? <TrendingUp size={11} className="inline mr-1" /> : <TrendingDown size={11} className="inline mr-1" />}
