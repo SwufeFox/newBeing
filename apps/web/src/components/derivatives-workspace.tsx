@@ -958,7 +958,9 @@ const CandleSeries = memo(function CandleSeries({ bars }: { bars: Candle[] }): R
     }
   }, [bars]);
 
-  return <div ref={containerRef} className="h-48 w-full" role="img" aria-label={copy.candleImageAria} />;
+  /* 192px read as a sparkline beside the contract details above it; the chart
+     now carries its panel at roughly half again the height. */
+  return <div ref={containerRef} className="h-56 w-full sm:h-72" role="img" aria-label={copy.candleImageAria} />;
 });
 export function DerivativesWorkspace(): React.JSX.Element {
   const copy = useCopy(DERIVATIVES_COPY);
@@ -1408,7 +1410,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
           {instrument.kind === "option" && <div className="kv"><dt>{copy.strike}</dt><dd>{derivativeNumber(instrument.strike)} {instrument.quote}</dd></div>}
           {instrument.kind === "option" && quote.iv != null && <div className="kv"><dt>{copy.iv}</dt><dd>{(quote.iv * 100).toFixed(1)}%</dd></div>}
           {instrument.kind === "option" && quote.delta != null && <div className="kv"><dt>{copy.delta}</dt><dd>{derivativeNumber(quote.delta)}</dd></div>}
-          {instrument.kind !== "option" && <div className="kv"><dt>{copy.expiry}</dt><dd>{instrument.kind === "perpetual" ? copy.perpetual : derivativeDate(instrument.expiry)}</dd></div>}
+          {/* A perpetual has no expiry; printing "Expiry: Perpetual" filled a
+              labelled column with a category name instead of a date. */}
+          {instrument.kind === "future" && <div className="kv"><dt>{copy.expiry}</dt><dd>{derivativeDate(instrument.expiry)}</dd></div>}
           {quote.fundingRate != null && <div className="kv"><dt>{copy.funding}</dt><dd>{(quote.fundingRate * 100).toFixed(4)}%</dd></div>}
           {quote.openInterest != null && <div className="kv"><dt>{copy.openInterest}</dt><dd>{derivativeNumber(quote.openInterest)}</dd></div>}
         </dl>

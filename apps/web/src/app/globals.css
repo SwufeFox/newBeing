@@ -1432,7 +1432,7 @@ input[type="number"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--s-3);
+  gap: var(--s-1) var(--s-3);
   padding: var(--s-2) var(--s-3);
   border-top: var(--line) solid var(--c-line);
   color: var(--c-fg-4);
@@ -1442,7 +1442,10 @@ input[type="number"] {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
-  overflow: hidden;
+  /* The attribution is a licence term, so the row wraps instead of truncating
+     both of its items into "CHARTS BY TRADINGVIEW · LIG…" on a phone. */
+  flex-wrap: wrap;
+  row-gap: 2px;
 }
 .chart-footer > * {
   min-width: 0;
@@ -1962,7 +1965,10 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   padding: var(--s-3);
   border-top: var(--line) solid var(--c-line);
 }
-.strategy-actions button { flex: 1; }
+/* The action row is a column (the note sits above the button), so `flex: 1`
+   made the button's basis zero and a constrained panel squashed the primary
+   action to 15px on a phone. The button keeps its own height. */
+.strategy-actions button { flex: 0 0 auto; }
 
 /* ══════════════════════════════════════════════════════════════
    13. CONTEXT PANEL
@@ -3377,6 +3383,10 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .chart-toolbar { flex: 0 0 auto; height: auto; min-height: var(--head-h); }
   .chart-toolbar-right button { min-height: 44px; height: auto; white-space: nowrap; }
   .indicator-toggles button { min-width: 44px; min-height: 44px; padding: 0 6px; }
+  /* Every control inside the strategy panel, including the text links in its
+     header ("Reset Defaults", "+ Save Preset") and the venue chip, measured
+     15–21px tall on a phone. */
+  .strategy-lab button, .strategy-lab [role="button"] { min-height: 44px; }
   .backtest-trade-heading { flex-wrap: wrap; gap: var(--s-2); }
   .backtest-trade-filters { margin-left: auto; }
   .backtest-trade-filters button { min-width: 44px; min-height: 44px; }
