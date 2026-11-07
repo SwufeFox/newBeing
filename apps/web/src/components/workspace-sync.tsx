@@ -28,27 +28,6 @@ function sharedWorkspaceEqual(current: WorkspaceState, prior: WorkspaceState): b
     current.layout.bottomHeight === prior.layout.bottomHeight;
 }
 
-const PENDING_WORKSPACE_NAVIGATION_KEY = "newbeing:pending-workspace-navigation";
-type WorkspaceNavigationTarget = "terminal" | "research" | "replay";
-
-export function queueWorkspaceNavigation(target: WorkspaceNavigationTarget): void {
-  try {
-    window.sessionStorage.setItem(PENDING_WORKSPACE_NAVIGATION_KEY, target);
-  } catch {
-    // Navigation still proceeds if session storage is unavailable.
-  }
-}
-
-function consumeWorkspaceNavigation(): WorkspaceNavigationTarget | null {
-  try {
-    const target = window.sessionStorage.getItem(PENDING_WORKSPACE_NAVIGATION_KEY);
-    window.sessionStorage.removeItem(PENDING_WORKSPACE_NAVIGATION_KEY);
-    return target === "terminal" || target === "research" || target === "replay" ? target : null;
-  } catch {
-    return null;
-  }
-}
-
 async function readRemote(): Promise<WorkspaceEnvelope | null> {
   try {
     const response = await fetch("/api/workspace", { cache: "no-store", signal: AbortSignal.timeout(10_000) });
@@ -229,15 +208,6 @@ export function WorkspaceSync(): null {
       }
       ready = true;
       useWorkspaceStore.getState().setWorkspaceReady(true);
-      const pendingWorkspace = consumeWorkspaceNavigation();
-      if (pendingWorkspace) {
-        const store = useWorkspaceStore.getState();
-        store.setWorkspace(pendingWorkspace);
-        if (pendingWorkspace === "research") {
-          store.setInspectorTab("strategy");
-          store.setDockTab("backtest");
-        }
-      }
       poll = window.setInterval(() => { void pollRemote(); }, 3_000);
       document.addEventListener("visibilitychange", refreshWhenVisible);
       window.addEventListener("focus", refreshWhenVisible);

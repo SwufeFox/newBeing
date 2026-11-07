@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { useCopy, useLocale, type CopyTable } from "@/lib/i18n";
+import { isWorkspaceSlug, SLUG_WORKSPACE, WORKSPACE_PATH, type WorkspaceId } from "@/lib/workspace-routes";
 import { formatQuotePrice } from "@/lib/price-format";
 import { STRATEGY_NAMES } from "@/lib/strategy-labels";
 
@@ -1196,7 +1197,9 @@ function RailStrategyRosterContent(): React.JSX.Element {
 
 const RailStrategyRoster = memo(RailStrategyRosterContent);
 
-export function Terminal(): React.JSX.Element {
+/** `routeWorkspace` is the view named by the URL. The store remains the runtime
+ *  source for everything else; the URL only decides which view is on screen. */
+export function Terminal({ routeWorkspace }: { routeWorkspace?: WorkspaceId }): React.JSX.Element {
   const router = useRouter();
   const replayConfirmed = useWorkspaceStore((state) => state.replayConfirmedJson === replayIdentity(state));
   const replaySyncError = useWorkspaceStore((state) => state.replaySyncError);
@@ -1244,7 +1247,15 @@ export function Terminal(): React.JSX.Element {
   const mobileRailReturnFocus = useRef<HTMLElement | null>(null);
   const mobileRailWasOpen = useRef(false);
 
-  const setPage = useCallback((next: WorkspaceState["activeWorkspace"]): void => {
+  const setPage = useCallback((next: WorkspaceState["activeWorkspace"], options?: { push?: boolean }): void => {
+    /* Write the URL through the History API rather than `router.push`: a route
+       change keys the page subtree by segment, which remounted the whole shell
+       and rebuilt the chart on every tab click. A history entry keeps that
+       instance alive and still gives the view a real URL and a back button. */
+    if (options?.push !== false) {
+      const path = WORKSPACE_PATH[next];
+      if (window.location.pathname !== path) window.history.pushState({ workspace: next }, "", path);
+    }
     setMobileRailOpen(false);
     if (next !== "replay") setReplayPlaying(false);
     const current = useWorkspaceStore.getState();
@@ -1256,6 +1267,36 @@ export function Terminal(): React.JSX.Element {
     if (current.activeWorkspace === next) return;
     setWorkspace(next);
   }, [setWorkspace]);
+
+  /* A pasted link or the back button names the view; the shell follows it. The
+     URL is already correct here, so this never pushes again.
+     `appliedRouteRef` scopes the reconciliation to one URL value: without it a
+     tab click that updates the store before the router commits would be undone
+     by this effect, and the shell would bounce back to the old view. */
+  const appliedRouteRef = useRef<string | null>(null);
+  /* The URL is the external system here: this reads it once per route value and
+     writes the result into the store. The ref guard makes it a single write,
+     not a render cascade, which is what the rule is aimed at. */
+  useEffect(() => {
+    if (!routeWorkspace || !workspaceReady) return;
+    if (appliedRouteRef.current === routeWorkspace) return;
+    appliedRouteRef.current = routeWorkspace;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (useWorkspaceStore.getState().activeWorkspace !== routeWorkspace) setPage(routeWorkspace, { push: false });
+  }, [routeWorkspace, workspaceReady, setPage]);
+
+  /* Back and forward move the History API entries written above; the shell
+     reads the slug back out of the URL and applies it in place. */
+  useEffect(() => {
+    const applyLocation = (): void => {
+      const slug = window.location.pathname.split("/")[2] ?? "";
+      if (!isWorkspaceSlug(slug)) return;
+      const target = SLUG_WORKSPACE[slug];
+      if (useWorkspaceStore.getState().activeWorkspace !== target) setPage(target, { push: false });
+    };
+    window.addEventListener("popstate", applyLocation);
+    return () => window.removeEventListener("popstate", applyLocation);
+  }, [setPage]);
 
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);

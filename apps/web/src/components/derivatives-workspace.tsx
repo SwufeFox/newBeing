@@ -10,7 +10,7 @@ import { CandlestickSeries, ColorType, createChart, type IChartApi, type ISeries
 import type { DerivativeInstrument, DerivativeKind, DerivativeQuote } from "@newbeing/market-data/derivatives";
 import type { DerivativesAccount, DerivativesOrderRequest, DerivativesPosition } from "@newbeing/application/derivatives-types";
 import { Button } from "@/components/ui/button";
-import { queueWorkspaceNavigation } from "@/components/workspace-sync";
+import { WORKSPACE_PATH } from "@/lib/workspace-routes";
 import { useWorkspaceStore } from "@/store/workspace";
 import { derivativeNumber, derivativeDate, derivativeBlockCode, derivativePositionIsExpired, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale, type DerivativeBlockCode } from "@/lib/derivatives-ui";
 import { chartPalette, type ChartPalette } from "@/lib/chart-palette";
@@ -1136,14 +1136,11 @@ export function DerivativesWorkspace(): React.JSX.Element {
         changeKindRef.current("option");
       } else if (!event.altKey && !event.ctrlKey && !event.metaKey) {
         if (event.key === "1") {
-          queueWorkspaceNavigation("terminal");
-          router.push("/");
+          router.push(WORKSPACE_PATH.terminal);
         } else if (event.key === "2") {
-          queueWorkspaceNavigation("research");
-          router.push("/");
+          router.push(WORKSPACE_PATH.research);
         } else if (event.key === "3") {
-          queueWorkspaceNavigation("replay");
-          router.push("/");
+          router.push(WORKSPACE_PATH.replay);
         }
       }
     };
@@ -1350,22 +1347,19 @@ export function DerivativesWorkspace(): React.JSX.Element {
       <nav className="workspace-nav flex items-center gap-1 shrink-0" aria-label={copy.navLabel}>
         <div className="workspace-flow-sequence flex items-center gap-1" role="group" aria-label={copy.workflowLabel}>
           <Link
-            href="/"
-            onClick={() => queueWorkspaceNavigation("terminal")}
+            href={WORKSPACE_PATH.terminal}
             className="workspace-tab px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
             aria-label={copy.workspaceShortcut(copy.markets, "1")}
             title={copy.switchShortcut(copy.markets, "1")}
           >{copy.markets}</Link>
           <Link
-            href="/"
-            onClick={() => queueWorkspaceNavigation("research")}
+            href={WORKSPACE_PATH.research}
             className="workspace-tab px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
             aria-label={copy.workspaceShortcut(copy.research, "2")}
             title={copy.switchShortcut(copy.research, "2")}
           >{copy.research}</Link>
           <Link
-            href="/"
-            onClick={() => queueWorkspaceNavigation("replay")}
+            href={WORKSPACE_PATH.replay}
             className="workspace-tab px-3 py-1 text-xs font-sans font-medium text-[var(--ak-text-secondary)] hover:text-white transition-all shrink-0"
             aria-label={copy.workspaceShortcut(copy.replay, "3")}
             title={copy.switchShortcut(copy.replay, "3")}
@@ -1800,9 +1794,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
       <span>{copy.statusbar}</span>
     </footer>
     <nav className="mobile-mode-nav derivatives-mobile-nav" aria-label={copy.navLabel}>
-      <Link href="/" onClick={() => queueWorkspaceNavigation("terminal")}>{copy.markets}</Link>
-      <Link href="/" onClick={() => queueWorkspaceNavigation("research")}>{copy.research}</Link>
-      <Link href="/" onClick={() => queueWorkspaceNavigation("replay")}>{copy.replay}</Link>
+      <Link href={WORKSPACE_PATH.terminal}>{copy.markets}</Link>
+      <Link href={WORKSPACE_PATH.research}>{copy.research}</Link>
+      <Link href={WORKSPACE_PATH.replay}>{copy.replay}</Link>
       <Link href="/derivatives" aria-current="page" className="active">{copy.derivatives}</Link>
     </nav>
   </div>;

@@ -48,8 +48,10 @@ export interface WorkspaceStore extends WorkspaceState {
 const firstStrategy = STRATEGIES[0];
 
 /** Exactly the client-local slice written to localStorage. */
+/* `activeWorkspace` is absent on purpose: the route owns which view is on
+   screen, and a stored copy would fight it on every rehydrate. */
 type PersistedWorkspaceState = Pick<WorkspaceStore,
-  "symbol" | "timeframe" | "exchange" | "mode" | "activeWorkspace" | "selectedStrategyId" |
+  "symbol" | "timeframe" | "exchange" | "mode" | "selectedStrategyId" |
   "activeBacktestId" | "activeReplayId" | "visibleRange" | "layout" | "watchlist" |
   "inspectorTab" | "dockTab" | "strategyParameters" | "backtestConfig" | "syncUpdatedAt">;
 
@@ -139,6 +141,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   setActiveReplayId: (activeReplayId) => set({ activeReplayId }),
   setFromRemote: (state, updatedAt) => set((current) => ({
     ...state,
+    /* The URL owns which view is on screen, so a server snapshot can never pull
+       the shell back to another workspace. Two tabs on different routes each keep
+       their own view; the next write tells the server which one is current. */
+    activeWorkspace: current.activeWorkspace,
     /* The watchlist is client-only, but its pairs are not venue-neutral, so it
        is re-denominated whenever the incoming venue differs. Otherwise the list
        keeps quoting BTC/USDT after the app has switched to Kraken, and every
@@ -174,19 +180,17 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   name: "newbeing-workspace-v1",
   storage: createDeferredStorage<PersistedWorkspaceState>(),
   skipHydration: true,
-  version: 3,
+  version: 4,
   migrate: (persisted) => {
     const state = persisted as Partial<WorkspaceStore> & { layout?: { watchlistWidth: number; inspectorWidth: number; bottomHeight: number } };
     // v2: recomposed workstation defaults — old persisted layout values predate
     // the ak-ui system rewrite and overflow the canvas; reset them to v2 defaults.
-    // v3: "backtest" is no longer a workspace (Research absorbed it), so a stored
-    // snapshot pointing at it would resolve to no tab at all.
-    const activeWorkspace = (state.activeWorkspace as string | undefined) === "backtest"
-      ? "research"
-      : state.activeWorkspace;
+    // v3: "backtest" is no longer a workspace (Research absorbed it). v4: the
+    // view moved into the URL, so a persisted `activeWorkspace` is dropped
+    // rather than migrated — restoring it would override the current route.
+    const { activeWorkspace: _dropped, ...rest } = state;
     return {
-      ...state,
-      activeWorkspace,
+      ...rest,
       layout: { watchlistWidth: 210, inspectorWidth: 320, bottomHeight: 190 },
     } as unknown as WorkspaceStore;
   },
@@ -195,7 +199,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
     timeframe: state.timeframe,
     exchange: state.exchange,
     mode: state.mode,
-    activeWorkspace: state.activeWorkspace,
     selectedStrategyId: state.selectedStrategyId,
     activeBacktestId: state.activeBacktestId,
     activeReplayId: state.activeReplayId,
