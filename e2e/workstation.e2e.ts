@@ -948,6 +948,10 @@ test("Paper shows an interrupted intent from its original account and persists m
   if (serverDirectory !== undefined) {
     expect(serverDirectory, "The dev server must use the same fixture database as this test.").toBe(directory);
   }
+  /* The workspace row is shared by every test in this file. Seeding the intent
+     runs against that row, and Paper writes are refused while Replay owns the
+     workspace — so reset it before the write, not after. */
+  await setTrainingWorkspace(page.request);
   const clientOrderId = `interrupted-${randomUUID()}`;
   const moduleUrl = pathToFileURL(resolve("packages/storage/dist/index.js")).href;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
@@ -963,7 +967,6 @@ test("Paper shows an interrupted intent from its original account and persists m
   const seeded = await readJson<{ pending: { clientOrderId: string }[] }>(await page.request.get("/api/paper/recovery"));
   expect(seeded.pending.some((order) => order.clientOrderId === clientOrderId),
     `Server did not see the seeded intent in ${directory}. The dev server and this test must share NEWBEING_DATA_DIR.`).toBe(true);
-  await setTrainingWorkspace(page.request);
   const before = await readJson<{ portfolio: unknown }>(await page.request.get("/api/paper?symbol=BTC/USD&exchange=kraken"));
   await page.goto("/");
   const panel = page.getByTestId("paper-recovery");

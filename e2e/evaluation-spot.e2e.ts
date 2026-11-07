@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type APIResponse, type Page, type Request, type Route } from "@playwright/test";
 import type { BacktestResult, Candle, SpotAccount } from "@newbeing/core";
-import { readJson, REPLAY_INTERVAL, REPLAY_MARKET, setTrainingWorkspace, trainingCandles, type ReplaySeed, type ReplaySnapshot } from "./replay-api.js";
+import { readJson, VIEW, REPLAY_INTERVAL, REPLAY_MARKET, setTrainingWorkspace, trainingCandles, type ReplaySeed, type ReplaySnapshot } from "./replay-api.js";
 
 const config = {
   accountMode: "spot", initialCapital: 10_000, positionFraction: 0.25,
@@ -147,7 +147,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
     await prepareWorkspace(request, "research");
     const startup = await gateResponse(page, "**/api/workspace", (req) => req.method() === "GET");
     try {
-      await page.goto("/", { waitUntil: "domcontentloaded" });
+      await page.goto(VIEW.research, { waitUntil: "domcontentloaded" });
       const response = await startup.response();
       expect(response.ok()).toBeTruthy();
       await expect(page.getByRole("status")).toHaveText("Loading local workspace…");
@@ -170,7 +170,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
     await prepareWorkspace(request, "research");
     const startup = await gateResponse(page, "**/api/workspace", (req) => req.method() === "GET");
     try {
-      await page.goto("/", { waitUntil: "domcontentloaded" });
+      await page.goto(VIEW.research, { waitUntil: "domcontentloaded" });
       await startup.response();
       await expect(page.getByRole("status")).toHaveText("Loading local workspace…");
       await expect(page.getByTestId("workspace-research")).toBeVisible({ timeout: 15_000 });
@@ -187,7 +187,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
       data: { ...REPLAY_MARKET, strategyId: "sma-crossover", parameters, config, limit: 500 },
     }), 201);
     expect(backtest.datasetId).toMatch(/^sha256:[a-f0-9]{64}$/);
-    await page.goto("/");
+    await page.goto(VIEW.research);
     await configureStrategy(page);
     await page.getByRole("tab", { name: "Evaluate", exact: true }).click();
     await page.getByLabel("Evaluation dataset id").fill(backtest.datasetId);
@@ -375,7 +375,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
   test("UI backtest hands its canonical dataset to frozen Replay with the correct seed and one future-free step", async ({ page, request }) => {
     const candles = await trainingCandles(request);
     await prepareWorkspace(request, "research");
-    await page.goto("/");
+    await page.goto(VIEW.research);
     const result = await runUiBacktest(page);
     // The selected result retains its own provenance when the draft changes.
     await page.getByRole("tab", { name: "Strategy lab", exact: true }).click();
@@ -516,7 +516,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
       data: { ...REPLAY_MARKET, strategyId: "sma-crossover", parameters, config, parameter: "fastPeriod", from: 20, to: 20, step: 1, mode: "walk-forward", limit: 500 },
     }), 201);
 
-    await page.goto("/");
+    await page.goto(VIEW.research);
     await page.getByRole("tab", { name: "AI context", exact: true }).click();
     const panel = page.locator(".context-panel");
     const evidence = panel.getByTestId("ai-backtest-evidence");
@@ -556,7 +556,7 @@ test.describe("evaluation and shared spot browser regressions", () => {
   test("late Replay creation cannot hijack the user's new research workspace", async ({ page, request }) => {
     const candles = await trainingCandles(request);
     await prepareWorkspace(request, "research");
-    await page.goto("/");
+    await page.goto(VIEW.research);
     await runUiBacktest(page);
     await page.getByTestId("workspace-replay").click();
     const endAt = candles[600]!.timestamp + REPLAY_INTERVAL;

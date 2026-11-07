@@ -1491,15 +1491,18 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
             />
           </div>
 
+          {/* AkNotice renders its message slot inside a <p>, so the details have to
+              be phrasing content: a nested <div> produced invalid HTML and a
+              hydration mismatch that remounted this panel. */}
           {factorCompilation && !factorCompilation.ok && factorCompilation.errors.length > 0 && (
             <AkNotice title={copy.factorInvalid} code="PRTS.AST" variant="danger" size="sm" role="alert">
-              <div className="text-[10px] space-y-0.5 mt-0.5 font-mono">
+              <span className="block text-[10px] mt-0.5 font-mono">
                 {factorCompilation.errors.map((err, i) => (
-                  <div key={i}>
+                  <span key={i} className="block">
                     [{err.code.toUpperCase()} L{err.line}:{err.column}] {err.message}
-                  </div>
+                  </span>
                 ))}
-              </div>
+              </span>
             </AkNotice>
           )}
 

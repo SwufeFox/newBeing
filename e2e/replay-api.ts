@@ -38,6 +38,11 @@ export async function readJson<T>(response: APIResponse, status = 200): Promise<
   return body as T;
 }
 
+/** The shell's views are addressed by URL; `/` is only an alias for markets.
+ *  A test that prepares a non-markets workspace must open that view's address,
+ *  because the route — not the stored snapshot — decides which view renders. */
+export const VIEW = { markets: "/w/markets", research: "/w/research", replay: "/w/replay" } as const;
+
 export async function setTrainingWorkspace(request: APIRequestContext): Promise<void> {
   const response = await request.get("/api/workspace");
   const { state } = await readJson<{ state: Record<string, unknown> }>(response);

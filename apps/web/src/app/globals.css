@@ -1442,10 +1442,13 @@ input[type="number"] {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
-  /* The attribution is a licence term, so the row wraps instead of truncating
-     both of its items into "CHARTS BY TRADINGVIEW · LIG…" on a phone. */
   flex-wrap: wrap;
   row-gap: 2px;
+}
+/* Only a genuinely narrow chart needs the second line. Everywhere else the wrap
+   cost 26px of plot height, which is the scarce resource here. */
+@container chart (min-width: 561px) {
+  .chart-footer { flex-wrap: nowrap; }
 }
 .chart-footer > * {
   min-width: 0;

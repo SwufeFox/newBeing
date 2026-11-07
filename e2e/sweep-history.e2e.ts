@@ -1,5 +1,5 @@
 import { expect, test, type Response } from "@playwright/test";
-import { readJson } from "./replay-api.js";
+import { readJson, VIEW } from "./replay-api.js";
 
 test("walk-forward sweep history opens and deterministically reruns saved fixture results", async ({ page, request }) => {
   test.skip(process.env.PLAYWRIGHT_API_STUBS === "1", "This regression requires the fixture-backed real API.");
@@ -13,7 +13,7 @@ test("walk-forward sweep history opens and deterministically reruns saved fixtur
   const candles = await readJson<{ source: string }>(await request.get("/api/market", { params: { exchange: "binance", symbol: "BTC/USDT", timeframe: "15m", kind: "candles", limit: "80" } }));
   expect(candles.source).toBe("Deterministic test fixture");
 
-  await page.goto("/");
+  await page.goto(VIEW.research);
   await expect(page.locator("main.mode-layout-research")).toBeVisible();
   await page.getByRole("tab", { name: "Sweep", exact: true }).click();
 

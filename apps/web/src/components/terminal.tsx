@@ -1841,6 +1841,11 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
     ? { rail: 1, railDrag: 2, chart: 3, inspectorDrag: 4, inspector: 5 }
     : { rail: 0, railDrag: 0, chart: 1, inspectorDrag: 2, inspector: 3 };
 
+  /* What the chart column keeps before the dock may take the rest. Research
+     stacks a toolbar, a wrapping OHLC/indicator strip and a wrapped attribution
+     row above the canvas, so 265px left a 53px plot area at 1024×700 — the chart
+     looked collapsed. */
+  const chartFloor = workspace === "research" ? 360 : 265;
   const dockHeight = workspace === "research" ? Math.max(layout.bottomHeight, 320)
     : workspace === "replay" ? Math.max(layout.bottomHeight, 210)
     : layout.bottomHeight;
@@ -2071,7 +2076,7 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
         )}
 
         <section className="market-canvas" aria-label={shell.marketAria(workspaceName)}>
-          <div className="workspace-grid" style={{ gridTemplateColumns: gridColumns, gridTemplateRows: `minmax(0, 1fr) 5px min(${dockHeight}px, max(150px, calc(100% - 265px)))` }}>
+          <div className="workspace-grid" style={{ gridTemplateColumns: gridColumns, gridTemplateRows: `minmax(0, 1fr) 5px min(${dockHeight}px, max(150px, calc(100% - ${chartFloor}px)))` }}>
             {workspace !== "replay" && (showsWatchlist || watchlistVisited || mobileWatchlistOpen) && (
               <div className={`left-rail${mobileWatchlistOpen ? " is-mobile-open" : ""}`} style={{ gridColumn: col.rail, gridRow: "1 / 4" }} hidden={!showsWatchlist && !mobileWatchlistOpen}>
                 {mobileWatchlistOpen && <div className="mobile-rail-backdrop" onClick={() => setMobileRailOpen(false)} aria-hidden="true" />}

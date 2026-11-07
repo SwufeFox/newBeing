@@ -1,5 +1,5 @@
 import { expect, test, type Response } from "@playwright/test";
-import { readJson, setTrainingWorkspace } from "./replay-api.js";
+import { readJson, setTrainingWorkspace, VIEW } from "./replay-api.js";
 
 test("research run history refreshes when a backtest completes", async ({ page, request }) => {
   test.skip(process.env.PLAYWRIGHT_API_STUBS === "1", "This regression requires the fixture-backed real API.");
@@ -20,7 +20,7 @@ test("research run history refreshes when a backtest completes", async ({ page, 
       && url.searchParams.get("limit") === "16";
   };
   const initialHistory = page.waitForResponse(isRunHistoryResponse);
-  await page.goto("/");
+  await page.goto(VIEW.research);
   const initialHistoryResponse = await initialHistory;
   expect(initialHistoryResponse.ok()).toBeTruthy();
   const initialPayload = await initialHistoryResponse.json() as { items: Array<{ resultId: string }> };
@@ -46,6 +46,6 @@ test("research run history refreshes when a backtest completes", async ({ page, 
   expect(refreshedPayload.items.some((item) => item.resultId === result.resultId)).toBe(true);
 
   await expect(savedRuns).toHaveCount(Math.min(savedRunCount + 1, 16));
-  await expect(savedRuns.first().locator(".rail-item-main")).toContainText("sma crossover");
+  await expect(savedRuns.first()).toContainText("sma crossover");
   await expect(page.getByText("No saved runs yet.", { exact: true })).toHaveCount(0);
 });
