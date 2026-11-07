@@ -28,7 +28,7 @@ import { WorkspaceSync } from "@/components/workspace-sync";
 import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { SettingsDialog } from "@/components/settings-dialog";
-import { useCopy, type CopyTable } from "@/lib/i18n";
+import { useCopy, useLocale, type CopyTable } from "@/lib/i18n";
 import { formatQuotePrice } from "@/lib/price-format";
 import { STRATEGY_NAMES } from "@/lib/strategy-labels";
 
@@ -177,6 +177,9 @@ interface HotkeyRow {
   keys: string;
   /** Rendered as a coloured instruction instead of a key cap. */
   tone?: "danger" | "info";
+  /** The workspace a binding only works in. `B` runs a backtest in Research and
+   *  buys in Markets, so the sheet has to say which one it means. */
+  scope?: "Markets" | "Research" | "Replay";
 }
 
 interface HotkeysCopy {
@@ -201,7 +204,7 @@ const HOTKEYS_COPY: CopyTable<HotkeysCopy> = {
           { label: "Markets / Research / Replay / Deriv", keys: "1 / 2 / 3 / 4" },
           { label: "Cycle Bottom Dock", keys: "D / Shift+D" },
           { label: "Cycle Inspector", keys: "I / Shift+I" },
-          { label: "Run Backtest (Research)", keys: "B or ⌘↵" },
+          { label: "Run Backtest", keys: "B / ⌘↵", scope: "Research" },
         ],
       },
       {
@@ -215,15 +218,15 @@ const HOTKEYS_COPY: CopyTable<HotkeysCopy> = {
       {
         title: "REPLAY CONTROLS",
         rows: [
-          { label: "Play / Pause", keys: "Space" },
-          { label: "Step Next Bar", keys: "→ or N" },
-          { label: "Adjust Speed", keys: "< / >" },
+          { label: "Play / Pause", keys: "Space", scope: "Replay" },
+          { label: "Step Next Bar", keys: "→ or N", scope: "Replay" },
+          { label: "Adjust Speed", keys: "< / >", scope: "Replay" },
         ],
       },
       {
         title: "MANUAL TRADING & TICKETS",
         rows: [
-          { label: "Quick Buy / Sell", keys: "B / S" },
+          { label: "Quick Buy / Sell", keys: "B / S", scope: "Markets" },
           { label: "Sizing Chips / Stepper", keys: "Chips · - / +" },
           { label: "One-Click Flatten", keys: "Close 100% button", tone: "danger" },
         ],
@@ -250,7 +253,7 @@ const HOTKEYS_COPY: CopyTable<HotkeysCopy> = {
           { label: "行情 / 研究 / 回放 / 衍生品", keys: "1 / 2 / 3 / 4" },
           { label: "切换底部面板", keys: "D / Shift+D" },
           { label: "切换检查器", keys: "I / Shift+I" },
-          { label: "运行回测（研究）", keys: "B 或 ⌘↵" },
+          { label: "运行回测", keys: "B / ⌘↵", scope: "Research" },
         ],
       },
       {
@@ -264,15 +267,15 @@ const HOTKEYS_COPY: CopyTable<HotkeysCopy> = {
       {
         title: "回放控制",
         rows: [
-          { label: "播放 / 暂停", keys: "空格" },
-          { label: "单步推进", keys: "→ 或 N" },
-          { label: "调整速度", keys: "< / >" },
+          { label: "播放 / 暂停", keys: "空格", scope: "Replay" },
+          { label: "单步推进", keys: "→ 或 N", scope: "Replay" },
+          { label: "调整速度", keys: "< / >", scope: "Replay" },
         ],
       },
       {
         title: "手动交易与订单",
         rows: [
-          { label: "快速买入 / 卖出", keys: "B / S" },
+          { label: "快速买入 / 卖出", keys: "B / S", scope: "Markets" },
           { label: "仓位比例 / 步进", keys: "比例键 · - / +" },
           { label: "一键平仓", keys: "“Close 100%”按钮", tone: "danger" },
         ],
@@ -295,6 +298,10 @@ interface PanelCopy {
   resultHint: string;
   spotMarkets: (venue: string) => string;
   navHint: string;
+  paletteTitle: string;
+  paletteRuns: string;
+  paletteStrategies: string;
+  noCommands: string;
   searching: string;
   searchUnavailable: (venue: string) => string;
   searchFailed: string;
@@ -306,9 +313,12 @@ interface PanelCopy {
   tickerOffline: string;
   retry: string;
   runHistory: string;
+  filterRuns: string;
+  noMatchingRuns: string;
   loadingRuns: string;
   historySuppressed: string;
   noRuns: string;
+  runsUnavailable: string;
   strategies: string;
   buildStrategy: string;
   buildStrategyHint: (symbol: string, timeframe: string) => string;
@@ -344,6 +354,10 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     resultHint: "Click or Enter to select · drag into the watchlist to add",
     spotMarkets: (venue) => `${venue} · SPOT MARKETS`,
     navHint: "↑/↓ NAV · ↵ CHOOSE",
+    paletteTitle: "COMMAND PALETTE",
+    paletteRuns: "Saved runs",
+    paletteStrategies: "Strategies",
+    noCommands: "Nothing matches that search yet.",
     searching: "Searching",
     searchUnavailable: (venue) => `${venue} symbol search is unavailable.`,
     searchFailed: "Search failed.",
@@ -355,9 +369,12 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     tickerOffline: "TICKER OFFLINE",
     retry: "Retry",
     runHistory: "RUN HISTORY",
+    filterRuns: "Filter runs",
+    noMatchingRuns: "No run matches that filter.",
     loadingRuns: "Loading runs…",
     historySuppressed: "History suppressed during Replay.",
     noRuns: "No saved runs yet.",
+    runsUnavailable: "Run history is unavailable. Reopen the rail to retry.",
     strategies: "STRATEGIES",
     buildStrategy: "Build strategy",
     buildStrategyHint: (symbol, timeframe) => `Continue to Research with ${symbol} on ${timeframe}`,
@@ -389,6 +406,10 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     resultHint: "点击或回车选中 · 拖入自选即可添加",
     spotMarkets: (venue) => `${venue} · 现货市场`,
     navHint: "↑/↓ 移动 · ↵ 选择",
+    paletteTitle: "命令面板",
+    paletteRuns: "已保存的运行",
+    paletteStrategies: "策略",
+    noCommands: "没有匹配的条目。",
     searching: "搜索中",
     searchUnavailable: (venue) => `${venue} 标的搜索不可用。`,
     searchFailed: "搜索失败。",
@@ -400,9 +421,12 @@ const PANEL_COPY: CopyTable<PanelCopy> = {
     tickerOffline: "行情离线",
     retry: "重试",
     runHistory: "运行历史",
+    filterRuns: "筛选运行",
+    noMatchingRuns: "没有匹配的运行记录。",
     loadingRuns: "正在加载运行记录…",
     historySuppressed: "回放期间不显示历史。",
     noRuns: "暂无保存的运行。",
+    runsUnavailable: "运行历史不可用。重新打开侧栏可重试。",
     strategies: "策略",
     buildStrategy: "构建策略",
     buildStrategyHint: (symbol, timeframe) => `以 ${symbol} 的 ${timeframe} 周期进入研究`,
@@ -561,15 +585,56 @@ function isTypingActive(event: KeyboardEvent): boolean {
   );
 }
 
+/** Fetch a saved run and assert the shape the dock renders. The rail and the
+ *  command palette both open runs, so both reject a malformed payload the same
+ *  way instead of each carrying its own copy of the checks. */
+async function loadSavedRun(resultId: string, messages: { failed: string; unreadable: string }): Promise<BacktestResult> {
+  const response = await fetch(`/api/backtests/${encodeURIComponent(resultId)}`, { cache: "no-store" });
+  const payload: unknown = await response.json();
+  if (!response.ok) {
+    const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
+      ? payload.error
+      : messages.failed;
+    throw new Error(message);
+  }
+  if (typeof payload !== "object" || payload === null || !("resultId" in payload) || payload.resultId !== resultId
+    || !("trades" in payload) || !Array.isArray(payload.trades) || !("metrics" in payload) || typeof payload.metrics !== "object") {
+    throw new Error(messages.unreadable);
+  }
+  return payload as BacktestResult;
+}
+
+/** One row of the ⌘K palette. Symbols arrive from the venue, runs and
+ *  strategies from local state; the list is flat so one arrow key walks all of
+ *  them and Enter always means "open the highlighted thing". */
+interface PaletteCommand {
+  key: string;
+  kind: "symbol" | "run" | "strategy";
+  symbol?: string;
+  label: string;
+  detail: string;
+  trailing?: string;
+  execute: () => void;
+}
+
 function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.Element {
   const copy = useCopy(PANEL_COPY);
-  const [symbol, exchange, setSymbol, addWatchlist] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.setSymbol, state.addWatchlistSymbol]));
+  const [symbol, exchange, setSymbol, addWatchlist, setBacktest, setDockTab, setWorkspace, setStrategy, setInspectorTab] = useWorkspaceStore(useShallow((state) => [
+    state.symbol, state.exchange, state.setSymbol, state.addWatchlistSymbol,
+    state.setBacktest, state.setDockTab, state.setWorkspace, state.setStrategy, state.setInspectorTab,
+  ]));
   const [query, setQuery] = useState(symbol);
   const [open, setOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchResult, setSearchResult] = useState<{ query: string; exchange: WorkspaceState["exchange"]; items: MarketSymbol[]; error: string | null } | null>(null);
   const [loading, setLoading] = useState(false);
+  /* Saved runs and strategies live behind the same entry point as symbols: one
+     key, one list, one Enter. A run is only fetched when the palette opens. */
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [paletteError, setPaletteError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  /* Tracks the highlighted row across list inserts; see the effect below. */
+  const selectedKeyRef = useRef<string | null>(null);
   const resultsListRef = useRef<HTMLDivElement>(null);
 
   // Global hotkey to open search: `/` or `Ctrl+K`
@@ -582,6 +647,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
         setOpen(true);
         setQuery("");
         setSelectedIndex(0);
+        selectedKeyRef.current = null;
         window.setTimeout(() => inputRef.current?.focus(), 50);
       }
     };
@@ -611,22 +677,26 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
     return () => { disposed = true; window.clearTimeout(timer); };
   }, [query, open, exchange, copy]);
 
+  useEffect(() => {
+    if (!open || runs.length > 0) return;
+    let disposed = false;
+    void fetch("/api/backtests?view=summary&limit=16", { cache: "no-store" })
+      .then(async (response) => {
+        /* 409 means Replay owns the workspace: the group simply stays empty. */
+        if (!response.ok) return;
+        const body = await response.json();
+        const list = Array.isArray(body) ? body : body.items ?? [];
+        if (!disposed) setRuns((list as RunSummary[]).slice(0, 16));
+      })
+      .catch(() => undefined);
+    return () => { disposed = true; };
+  }, [open, runs.length]);
+
   const result = searchResult?.query === query && searchResult.exchange === exchange ? searchResult : null;
   const items = result?.items ?? [];
   const error = result?.error ?? null;
   const showLoading = open && query.trim().length >= 1 && loading;
 
-  // Auto-scroll selected item into view for supreme keyboard navigation
-  useEffect(() => {
-    if (!open || items.length === 0) return;
-    const container = resultsListRef.current;
-    if (!container) return;
-    const buttons = container.querySelectorAll<HTMLButtonElement>(".symbol-result");
-    const activeBtn = buttons[selectedIndex];
-    if (activeBtn) {
-      activeBtn.scrollIntoView({ block: "nearest" });
-    }
-  }, [selectedIndex, open, items.length]);
 
   const choose = (next: string): void => {
     setSymbol(next);
@@ -634,6 +704,94 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
     setQuery(next);
     setOpen(false);
   };
+
+  const openSavedRun = (resultId: string): void => {
+    setPaletteError(null);
+    void loadSavedRun(resultId, { failed: copy.runLoadFailed, unreadable: copy.runUnreadable })
+      .then((payload) => {
+        setBacktest(payload);
+        setDockTab("backtest");
+        setWorkspace("research");
+        setOpen(false);
+      })
+      .catch((reason: unknown) => setPaletteError(reason instanceof Error ? reason.message : copy.runLoadFailed));
+  };
+
+  /* Rebuilt every render: at most a few dozen rows, and a memo here would need
+     every store action in its dependency list to stay honest. */
+  const commands: PaletteCommand[] = (() => {
+    const q = query.trim().toLowerCase();
+    const list: PaletteCommand[] = [];
+    for (const item of items) {
+      list.push({
+        key: `symbol:${item.symbol}`,
+        kind: "symbol",
+        symbol: item.symbol,
+        label: item.base,
+        detail: `/${item.quote}`,
+        execute: () => choose(item.symbol),
+      });
+    }
+    for (const run of runs) {
+      const pair = `${run.symbol ?? ""} ${run.timeframe ?? ""}`.trim();
+      const name = (run.strategyId ?? "").replace(/-/g, " ");
+      if (q && !`${pair} ${name} ${run.resultId}`.toLowerCase().includes(q)) continue;
+      const value = run.metrics?.totalReturn;
+      list.push({
+        key: `run:${run.resultId}`,
+        kind: "run",
+        label: pair || name,
+        detail: name,
+        trailing: typeof value === "number" ? `${value >= 0 ? "+" : "−"}${Math.abs(value * 100).toFixed(1)}%` : "—",
+        execute: () => openSavedRun(run.resultId),
+      });
+    }
+    for (const strategy of STRATEGIES) {
+      const name = strategy.name ?? strategy.id;
+      if (q && !`${name} ${strategy.id}`.toLowerCase().includes(q)) continue;
+      list.push({
+        key: `strategy:${strategy.id}`,
+        kind: "strategy",
+        label: name,
+        detail: strategy.id,
+        execute: () => {
+          setStrategy(strategy.id, {});
+          setWorkspace("research");
+          setInspectorTab("strategy");
+          setOpen(false);
+        },
+      });
+    }
+    return list;
+  })();
+
+  /* Saved runs arrive after the palette opens, so rows are inserted above the
+     strategy group while the user may already be navigating. Follow the row the
+     reader had highlighted by key instead of leaving the index pointing at
+     whatever moved into that slot. */
+  useEffect(() => {
+    if (!open) return;
+    const current = commands[selectedIndex]?.key ?? null;
+    if (current === selectedKeyRef.current) return;
+    const previous = selectedKeyRef.current;
+    selectedKeyRef.current = current;
+    if (previous === null) return;
+    const moved = commands.findIndex((command) => command.key === previous);
+    if (moved >= 0 && moved !== selectedIndex) setSelectedIndex(moved);
+    else if (moved < 0) setSelectedIndex((value) => Math.min(value, Math.max(0, commands.length - 1)));
+  }, [commands, selectedIndex, open]);
+
+  // Auto-scroll selected item into view for supreme keyboard navigation
+  useEffect(() => {
+    if (!open || commands.length === 0) return;
+    const container = resultsListRef.current;
+    if (!container) return;
+    const buttons = container.querySelectorAll<HTMLButtonElement>(".symbol-result");
+    const activeBtn = buttons[selectedIndex];
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ block: "nearest" });
+    }
+  }, [selectedIndex, open, commands.length]);
 
   return (
     <div className="symbol-picker relative">
@@ -644,7 +802,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
           aria-label={`Search ${exchange} Spot symbols`}
           disabled={disabled}
           value={open ? query : symbol}
-          onFocus={() => { if (!disabled) { setOpen(true); setQuery(""); setSelectedIndex(0); } }}
+          onFocus={() => { if (!disabled) { setOpen(true); setQuery(""); setSelectedIndex(0); selectedKeyRef.current = null; } }}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -652,21 +810,17 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
               setQuery(symbol);
             } else if (event.key === "ArrowDown") {
               event.preventDefault();
-              if (items.length > 0) {
-                setSelectedIndex((prev) => (prev + 1) % items.length);
+              if (commands.length > 0) {
+                setSelectedIndex((prev) => (prev + 1) % commands.length);
               }
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
-              if (items.length > 0) {
-                setSelectedIndex((prev) => (prev - 1 + items.length) % items.length);
+              if (commands.length > 0) {
+                setSelectedIndex((prev) => (prev - 1 + commands.length) % commands.length);
               }
             } else if (event.key === "Enter") {
               event.preventDefault();
-              if (items[selectedIndex]) {
-                choose(items[selectedIndex].symbol);
-              } else if (items[0]) {
-                choose(items[0].symbol);
-              }
+              (commands[selectedIndex] ?? commands[0])?.execute();
             }
           }}
           placeholder={copy.searchPlaceholder}
@@ -678,43 +832,53 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
       {open && (
         <>
           <button className="popover-backdrop fixed inset-0 z-40 bg-black/40" aria-label={copy.closeSearch} onClick={() => { setOpen(false); setQuery(symbol); }} />
-          <div ref={resultsListRef} className="symbol-results absolute left-0 top-full mt-1 w-64 max-h-72 overflow-auto bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] z-50 shadow-2xl p-1 font-mono text-xs">
+          <div ref={resultsListRef} className="symbol-results absolute left-0 top-full mt-1 w-[340px] max-h-80 overflow-auto bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] z-50 shadow-2xl p-1 font-mono text-xs">
             <div className="popover-title text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase p-1.5 border-b border-[var(--ak-border-subtle)] flex items-center justify-between">
-              <span>{copy.spotMarkets(EXCHANGE_LABELS[exchange].toUpperCase())}</span>
-              <span className="text-[10px] opacity-60">{copy.navHint}</span>
+              <span>{copy.paletteTitle}</span>
+              <span className="text-[10px] text-[var(--c-fg-4)]">{copy.navHint}</span>
             </div>
             {showLoading && <div className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><LoaderCircle className="spin" size={12} aria-hidden="true" /><span>{copy.searching}…</span></div>}
             {error && <div className="popover-error p-2 text-xs text-[var(--ak-signal-danger)]">{error}</div>}
-            {!showLoading && !error && items.map((item, idx) => {
+            {paletteError && <div role="alert" className="popover-error p-2 text-xs text-[var(--ak-signal-danger)]">{paletteError}</div>}
+            {commands.map((command, idx) => {
               const isSelected = idx === selectedIndex;
+              const showGroup = idx === 0 || commands[idx - 1]?.kind !== command.kind;
               return (
-                <button
-                  className={`symbol-result w-full flex items-center justify-between p-1.5 text-left transition-colors cursor-pointer group ${
-                    isSelected
-                      ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-info)]"
-                      : "hover:bg-[var(--ak-surface-sunken)] border-l-2 border-transparent"
-                  }`}
-                  key={item.symbol}
-                  draggable
-                  onMouseEnter={() => setSelectedIndex(idx)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = "copy";
-                    event.dataTransfer.setData(WATCHLIST_DRAG_TYPE, item.symbol);
-                    event.dataTransfer.setData("text/plain", item.symbol);
-                  }}
-                  title={copy.resultHint}
-                  onClick={() => choose(item.symbol)}
-                >
-                  <span className="symbol-result-pair flex items-center gap-1">
-                    <strong className={isSelected ? "text-[var(--ak-signal-info)]" : "group-hover:text-[var(--ak-signal-info)]"}>{item.base}</strong>
-                    <small className="opacity-70">/{item.quote}</small>
-                  </span>
-                  <span className="result-quote text-[10px] text-[var(--ak-text-secondary)]">{item.quote}</span>
-                </button>
+                <Fragment key={command.key}>
+                  {showGroup && (
+                    <div className="popover-group text-[10px] uppercase tracking-wider text-[var(--c-fg-4)] px-1.5 pt-1.5 pb-1">
+                      {command.kind === "symbol"
+                        ? copy.spotMarkets(EXCHANGE_LABELS[exchange].toUpperCase())
+                        : command.kind === "run" ? copy.paletteRuns : copy.paletteStrategies}
+                    </div>
+                  )}
+                  <button
+                    className={`symbol-result w-full flex items-center justify-between gap-2 p-1.5 text-left transition-colors cursor-pointer group ${
+                      isSelected
+                        ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-info)]"
+                        : "hover:bg-[var(--ak-surface-sunken)] border-l-2 border-transparent"
+                    }`}
+                    draggable={command.kind === "symbol"}
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                    onDragStart={command.symbol ? (event) => {
+                      event.dataTransfer.effectAllowed = "copy";
+                      event.dataTransfer.setData(WATCHLIST_DRAG_TYPE, command.symbol as string);
+                      event.dataTransfer.setData("text/plain", command.symbol as string);
+                    } : undefined}
+                    title={command.kind === "symbol" ? copy.resultHint : command.detail}
+                    onClick={command.execute}
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <strong className={`truncate ${isSelected ? "text-[var(--ak-signal-info)]" : "group-hover:text-[var(--ak-signal-info)]"}`}>{command.label}</strong>
+                      <small className="truncate text-[10px] text-[var(--c-fg-4)]">{command.detail}</small>
+                    </span>
+                    {command.trailing && <span className="result-quote text-[10px] text-[var(--ak-text-secondary)] shrink-0">{command.trailing}</span>}
+                  </button>
+                </Fragment>
               );
             })}
-            {!showLoading && !error && query.trim().length > 0 && items.length === 0 && (
-              <div className="popover-state p-3 text-center text-xs text-[var(--ak-text-secondary)]">{copy.noPair(query.trim().toUpperCase())}</div>
+            {!showLoading && !error && commands.length === 0 && (
+              <div className="popover-state p-3 text-center text-xs text-[var(--ak-text-secondary)]">{copy.noCommands}</div>
             )}
           </div>
         </>
@@ -851,14 +1015,41 @@ function DragHandle({ direction, onDelta, style }: { direction: "horizontal" | "
   return <div className={`drag-handle drag-${direction}`} style={style} role="separator" aria-orientation={direction === "horizontal" ? "vertical" : "horizontal"} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} />;
 }
 
+/** Compact age for a run row: "3d", "2h", "just now" in the reader's locale.
+ *  The list is scanned by recency, so the unit follows magnitude rather than a
+ *  fixed format. */
+function relativeRunTime(iso: string | undefined, locale: "en" | "zh"): string | null {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return null;
+  const minutes = Math.round((then - Date.now()) / 60_000);
+  const format = (value: number, unit: Intl.RelativeTimeFormatUnit): string =>
+    new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "narrow" }).format(value, unit);
+  if (Math.abs(minutes) < 60) return format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return format(hours, "hour");
+  return format(Math.round(hours / 24), "day");
+}
+
+interface RunSummary {
+  resultId: string;
+  strategyId?: string;
+  symbol?: string;
+  timeframe?: string;
+  createdAt?: string;
+  metrics?: { totalReturn?: number; tradeCount?: number; sharpeRatio?: number | null };
+}
+
 function RailRunHistoryContent(): React.JSX.Element {
   const copy = useCopy(PANEL_COPY);
-  const [activeBacktestId, selectedStrategyId, setDockTab, setBacktest] = useWorkspaceStore(useShallow((state) => [
-    state.activeBacktestId, state.selectedStrategyId, state.setDockTab, state.setBacktest,
+  const locale = useLocale();
+  const [activeBacktestId, selectedStrategyId, currentSymbol, currentTimeframe, setDockTab, setBacktest] = useWorkspaceStore(useShallow((state) => [
+    state.activeBacktestId, state.selectedStrategyId, state.symbol, state.timeframe, state.setDockTab, state.setBacktest,
   ]));
-  const [items, setItems] = useState<Array<{ resultId: string; strategyId?: string; createdAt?: string; metrics?: { totalReturn?: number; tradeCount?: number } }>>([]);
+  const [items, setItems] = useState<RunSummary[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "blocked" | "error">("loading");
   const [opening, setOpening] = useState<{ resultId: string; state: "loading" | "error"; message?: string } | null>(null);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -881,19 +1072,8 @@ function RailRunHistoryContent(): React.JSX.Element {
   const openRun = async (resultId: string): Promise<void> => {
     setOpening({ resultId, state: "loading" });
     try {
-      const response = await fetch(`/api/backtests/${encodeURIComponent(resultId)}`, { cache: "no-store" });
-      const payload: unknown = await response.json();
-      if (!response.ok) {
-        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
-          ? payload.error
-          : copy.runLoadFailed;
-        throw new Error(message);
-      }
-      if (typeof payload !== "object" || payload === null || !("resultId" in payload) || payload.resultId !== resultId
-        || !("trades" in payload) || !Array.isArray(payload.trades) || !("metrics" in payload) || typeof payload.metrics !== "object") {
-        throw new Error(copy.runUnreadable);
-      }
-      setBacktest(payload as BacktestResult);
+      const payload = await loadSavedRun(resultId, { failed: copy.runLoadFailed, unreadable: copy.runUnreadable });
+      setBacktest(payload);
       setDockTab("backtest");
       setOpening(null);
     } catch (error) {
@@ -901,36 +1081,66 @@ function RailRunHistoryContent(): React.JSX.Element {
     }
   };
 
+  const pairLabel = (run: RunSummary): string => `${run.symbol ?? currentSymbol} · ${run.timeframe ?? currentTimeframe}`;
+  const strategyLabel = (run: RunSummary): string => (run.strategyId ?? selectedStrategyId).replace(/-/g, " ");
+  const query = filter.trim().toLowerCase();
+  const visible = query
+    ? items.filter((run) => `${pairLabel(run)} ${strategyLabel(run)} ${run.resultId}`.toLowerCase().includes(query))
+    : items;
+
   return (
     <div className="rail-block font-mono text-xs">
       <span className="rail-block-head flex items-center justify-between text-xs font-semibold text-[var(--c-fg-3)] pb-1 border-b border-[var(--ak-border-subtle)]">
-        <span>{copy.runHistory}</span> {items.length > 0 && <span className="text-[10px] text-[var(--c-fg-4)] font-mono">{items.length}</span>}
+        <span>{copy.runHistory}</span> {items.length > 0 && <span className="text-[10px] text-[var(--c-fg-4)] font-mono">{visible.length === items.length ? items.length : `${visible.length}/${items.length}`}</span>}
       </span>
       {state === "loading" && <span className="rail-hint text-[10px] text-[var(--ak-text-secondary)] p-1">{copy.loadingRuns}</span>}
       {state === "blocked" && <span className="rail-hint text-[10px] text-[var(--ak-signal-action)] p-1">{copy.historySuppressed}</span>}
       {state === "ready" && items.length === 0 && <span className="rail-hint text-[10px] text-[var(--ak-text-secondary)] p-1">{copy.noRuns}</span>}
+      {state === "error" && <span role="alert" className="rail-hint text-[10px] text-[var(--ak-signal-action)] p-1">{copy.runsUnavailable}</span>}
+      {state === "ready" && items.length > 4 && (
+        <input
+          type="search"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder={copy.filterRuns}
+          aria-label={copy.filterRuns}
+          className="rail-filter mt-1"
+        />
+      )}
       <div className="rail-list space-y-1 mt-1 max-h-48 overflow-auto">
-        {items.map((run, idx) => (
-          <button
-            key={run.resultId || `run-${idx}`}
-            type="button"
-            aria-busy={opening?.resultId === run.resultId && opening.state === "loading"}
-            aria-label={copy.openRun(run.strategyId ?? selectedStrategyId)}
-            title={copy.openRun(run.strategyId ?? selectedStrategyId)}
-            className={`rail-item w-full flex items-center justify-between p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${activeBacktestId === run.resultId ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-info)]" : ""}`}
-            onClick={() => void openRun(run.resultId)}
-          >
-            <span className="rail-item-main truncate font-bold">{(run.strategyId ?? selectedStrategyId).replace(/-/g, " ")}</span>
-            <span className="rail-item-meta flex items-center gap-1 text-[10px]">
-              {typeof run.metrics?.totalReturn === "number" ? (
-                <em className={`not-italic font-bold ${run.metrics.totalReturn >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
-                  {run.metrics.totalReturn >= 0 ? "+" : "−"}{(Math.abs(run.metrics.totalReturn) * 100).toFixed(1)}%
-                </em>
-              ) : <em className="muted">—</em>}
-              <small className="text-[var(--ak-text-secondary)]">({run.metrics?.tradeCount ?? 0})</small>
-            </span>
-          </button>
-        ))}
+        {visible.map((run, idx) => {
+          const returnValue = run.metrics?.totalReturn;
+          const hasReturn = typeof returnValue === "number" && Number.isFinite(returnValue);
+          const age = relativeRunTime(run.createdAt, locale);
+          const label = `${pairLabel(run)} ${strategyLabel(run)}`;
+          return (
+            <button
+              key={run.resultId || `run-${idx}`}
+              type="button"
+              aria-busy={opening?.resultId === run.resultId && opening.state === "loading"}
+              aria-label={copy.openRun(label)}
+              title={copy.openRun(label)}
+              className={`rail-item w-full block p-1 text-left text-[11px] hover:bg-[var(--ak-surface-sunken)] transition-colors ${activeBacktestId === run.resultId ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-info)]" : ""}`}
+              onClick={() => void openRun(run.resultId)}
+            >
+              <span className="flex items-baseline justify-between gap-2">
+                <span className="truncate font-bold text-[var(--c-fg)]">{pairLabel(run)}</span>
+                {hasReturn ? (
+                  <em className={`not-italic shrink-0 font-bold tabular-nums ${returnValue >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
+                    {returnValue >= 0 ? "+" : "−"}{(Math.abs(returnValue) * 100).toFixed(1)}%
+                  </em>
+                ) : <em className="muted shrink-0">—</em>}
+              </span>
+              <span className="flex items-baseline justify-between gap-2 text-[10px] text-[var(--c-fg-4)]">
+                <span className="truncate">{strategyLabel(run)}</span>
+                {age && <span className="shrink-0 tabular-nums">{age}</span>}
+              </span>
+            </button>
+          );
+        })}
+        {state === "ready" && items.length > 0 && visible.length === 0 && (
+          <span className="rail-hint text-[10px] text-[var(--ak-text-secondary)] p-1">{copy.noMatchingRuns}</span>
+        )}
       </div>
       {opening?.state === "loading" && <span role="status" className="rail-hint text-[10px] text-[var(--ak-signal-info)] p-1">{copy.runLoading}</span>}
       {opening?.state === "error" && <span role="alert" className="rail-hint text-[10px] text-[var(--ak-signal-danger)] p-1 break-words">{opening.message}</span>}
@@ -1967,7 +2177,12 @@ export function Terminal(): React.JSX.Element {
               <span className="text-[10px] text-[var(--ak-signal-info)] uppercase tracking-wider block font-bold">{section.title}</span>
               {section.rows.map((row) => (
                 <div key={row.label} className="flex justify-between items-center bg-[var(--ak-surface-sunken)] p-1.5 border border-[var(--ak-border-subtle)]">
-                  <span className="text-[var(--ak-text-secondary)]">{row.label}</span>
+                  <span className="text-[var(--ak-text-secondary)] flex items-center gap-1.5">
+                    {row.label}
+                    {row.scope && (
+                      <span className="text-[10px] uppercase tracking-wider text-[var(--c-fg-4)] border border-[var(--c-line)] px-1 leading-4">{row.scope}</span>
+                    )}
+                  </span>
                   {row.tone ? (
                     <span className={`text-[10px] font-bold ${row.tone === "danger" ? "text-[var(--ak-signal-danger)]" : "text-[var(--ak-signal-info)]"}`}>{row.keys}</span>
                   ) : (
