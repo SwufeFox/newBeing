@@ -115,6 +115,7 @@ interface DerivativesCopy {
   /* account */
   accountAria: string;
   frozenSnapshotTitle: string;
+  pageTitle: string;
   paperAccount: (suffix: string) => string;
   refreshSnapshot: string;
   refreshLedger: string;
@@ -326,6 +327,7 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
     candleImageAria: "Contract OHLC candles, 1 hour",
     accountAria: "Derivatives account",
     frozenSnapshotTitle: "Frozen Replay ledger snapshot",
+    pageTitle: "Derivatives workstation",
     paperAccount: (suffix) => `Paper account ${suffix}`,
     refreshSnapshot: "Refresh snapshot",
     refreshLedger: "Refresh ledger",
@@ -536,6 +538,7 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
     candleImageAria: "合约 OHLC K 线，1 小时",
     accountAria: "衍生品账户",
     frozenSnapshotTitle: "冻结回放账本快照",
+    pageTitle: "衍生品工作区",
     paperAccount: (suffix) => `模拟盘账户 ${suffix}`,
     refreshSnapshot: "刷新快照",
     refreshLedger: "刷新账本",
@@ -1447,6 +1450,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
     <div id="derivatives-panel" role="tabpanel" aria-labelledby={'derivatives-' + kind} className="flex flex-col flex-1">
     <main className="derivatives-layout" style={{ ["--mode" as string]: kind === "option" ? "var(--c-up)" : "var(--c-accent)" }}>
       {/* instrument rail: the watchlist vocabulary */}
+      <h1 className="sr-only">{copy.pageTitle}</h1>
       <section className="derivatives-panel derivatives-rail" aria-label={copy.contractBrowser}>
         <div className="derivatives-panel-head">
           <span>{copy.instruments}</span>

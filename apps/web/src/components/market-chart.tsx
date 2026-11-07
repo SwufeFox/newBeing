@@ -56,6 +56,7 @@ interface MarketChartCopy {
   streamReplay: string;
   loadingHistory: string;
   loadVenueHistory: (venue: string) => string;
+  loadingSlow: (venue: string) => string;
   retry: string;
   replayEmpty: string;
   localCache: (time: string) => string;
@@ -94,6 +95,7 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     streamReplay: "Historical Replay",
     loadingHistory: "Loading history",
     loadVenueHistory: (venue) => `Loading ${venue} history`,
+    loadingSlow: (venue) => `${venue} has not answered yet — still waiting.`,
     retry: "Retry",
     replayEmpty: "Seed a historical session to load past bars only.",
     localCache: (time) => `LOCAL CACHE · last fetched ${time}`,
@@ -128,6 +130,7 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     streamReplay: "历史回放",
     loadingHistory: "加载历史",
     loadVenueHistory: (venue) => `加载 ${venue} 历史`,
+    loadingSlow: (venue) => `${venue} 尚未响应 — 仍在等待。`,
     retry: "重试",
     replayEmpty: "初始化历史会话，仅加载过去的 K 线。",
     localCache: (time) => `本地缓存 · 最后获取 ${time}`,
@@ -278,6 +281,15 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
   const replayMode = replayBars !== null;
   const error = replayMode ? null : errorState?.key === dataKey ? errorState.message : null;
   const loading = !replayMode && (refreshing || (loadedKey !== dataKey && error === null));
+  /* A venue that accepts the socket and never answers looked exactly like a
+     hung application. Past six seconds the caption names the venue and says it
+     is still waiting. */
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!loading) { setSlow(false); return; }
+    const timer = window.setTimeout(() => setSlow(true), 6_000);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
   const [stream, setStream] = useState<StreamState>("connecting");
   const [liveGapCount, setLiveGapCount] = useState(0);
   const [liveLastBar, setLiveLastBar] = useState<Candle | null>(null);
@@ -887,7 +899,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
         {loading && (
           <div className="chart-overlay" role="status">
             <LoaderCircle className="spin" size={14} aria-hidden="true" />
-            <span>{copy.loadVenueHistory(venueLabel)}</span>
+            <span>{slow ? copy.loadingSlow(venueLabel) : copy.loadVenueHistory(venueLabel)}</span>
           </div>
         )}
         {error && (

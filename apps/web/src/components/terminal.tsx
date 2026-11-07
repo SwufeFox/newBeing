@@ -105,7 +105,7 @@ const SHELL_COPY: CopyTable<ShellCopy> = {
     research: "Research",
     replay: "Replay",
     derivatives: "Derivatives",
-    terminalName: "Terminal",
+    terminalName: "Markets",
     researchName: "Research",
     replayName: "Replay",
     paperOnly: "PAPER ONLY",
@@ -140,7 +140,7 @@ const SHELL_COPY: CopyTable<ShellCopy> = {
     research: "研究",
     replay: "回放",
     derivatives: "衍生品",
-    terminalName: "行情终端",
+    terminalName: "行情",
     researchName: "研究",
     replayName: "回放",
     paperOnly: "仅模拟盘",
@@ -1758,6 +1758,11 @@ export function Terminal(): React.JSX.Element {
       </div>
 
       <main className={`workspace-layout mode-layout-${workspace}`}>
+        {/* Every view carried landmark labels but no document heading, so a
+            screen reader had no single "you are here" line. The plate already
+            prints this on screen; the heading only names it for assistive
+            technology. */}
+        <h1 className="sr-only">{workspaceName} · {symbol} · {timeframe}</h1>
         {workspace !== "replay" && (showResearchRail || researchRailVisited || mobileResearchOpen) && (
           <div className={`primary-rail p-2.5 bg-[var(--ak-surface-canvas)] border-r border-[var(--ak-border-strong)] space-y-3 font-mono text-xs${mobileResearchOpen ? " is-mobile-open" : ""}`} aria-label={copy.activeWorkspace} hidden={!showResearchRail && !mobileResearchOpen}>
             {mobileResearchOpen && <div className="mobile-rail-backdrop" onClick={() => setMobileRailOpen(false)} aria-hidden="true" />}

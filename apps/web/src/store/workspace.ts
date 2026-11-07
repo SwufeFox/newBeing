@@ -34,6 +34,8 @@ export interface WorkspaceStore extends WorkspaceState {
   setStrategyParameters: (parameters: StrategyParameters) => void;
   setBacktestConfig: (config: BacktestConfig) => void;
   setBacktest: (backtest: BacktestResult | null) => void;
+  /** Drop a stored run selection whose record is no longer readable. */
+  clearBacktestSelection: () => void;
   setActiveReplayId: (id: string | null) => void;
   setFromRemote: (state: WorkspaceState, updatedAt: number) => void;
   markSynced: (updatedAt: number) => void;
@@ -130,6 +132,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   setStrategyParameters: (strategyParameters) => set({ strategyParameters }),
   setBacktestConfig: (backtestConfig) => set({ backtestConfig }),
   setBacktest: (backtest) => set({ backtest, activeBacktestId: backtest?.resultId ?? null }),
+  /* The id and the rendered result are separate: a saved workspace can point at
+     a run that no longer exists while an unrelated result is on screen. Clearing
+     only the id stops the missing run from being re-requested on every mount. */
+  clearBacktestSelection: () => set((state) => (state.activeBacktestId === null ? state : { activeBacktestId: null })),
   setActiveReplayId: (activeReplayId) => set({ activeReplayId }),
   setFromRemote: (state, updatedAt) => set((current) => ({
     ...state,

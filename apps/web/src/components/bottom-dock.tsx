@@ -1525,8 +1525,8 @@ export const BottomDock = memo(function BottomDock({
   replayError?: string | null;
 }): React.JSX.Element {
   const copy = useCopy(DOCK_COPY);
-  const [tab, setTab, symbol, exchange, timeframe, result, activeBacktestId, setBacktest, setWorkspace, setInspectorTab, setExchange, selectedStrategyId, strategyParameters, config] = useWorkspaceStore(useShallow((state) => [
-    state.dockTab, state.setDockTab, state.symbol, state.exchange, state.timeframe, state.backtest, state.activeBacktestId, state.setBacktest,
+  const [tab, setTab, symbol, exchange, timeframe, result, activeBacktestId, setBacktest, clearBacktestSelection, setWorkspace, setInspectorTab, setExchange, selectedStrategyId, strategyParameters, config] = useWorkspaceStore(useShallow((state) => [
+    state.dockTab, state.setDockTab, state.symbol, state.exchange, state.timeframe, state.backtest, state.activeBacktestId, state.setBacktest, state.clearBacktestSelection,
     state.setWorkspace, state.setInspectorTab, state.setExchange, state.selectedStrategyId, state.strategyParameters, state.backtestConfig,
   ]));
 
@@ -1576,7 +1576,17 @@ export const BottomDock = memo(function BottomDock({
     const requestId = selectionRequestRef.current;
     let disposed = false;
     void fetch(`/api/backtests/${encodeURIComponent(activeBacktestId)}`, { cache: "no-store" }).then(async (response) => {
-      if (!response.ok) return;
+      if (!response.ok) {
+        /* A workspace saved against another data directory (or one whose run was
+           deleted) points at a record that is gone. Without this, every mount
+           re-requests the missing id and the failure is invisible. Only a 404 is
+           treated as permanent; anything else may be transient. */
+        if (response.status === 404 && !disposed && requestId === selectionRequestRef.current
+          && useWorkspaceStore.getState().activeBacktestId === activeBacktestId) {
+          clearBacktestSelection();
+        }
+        return;
+      }
       const payload: unknown = await response.json();
       const current = useWorkspaceStore.getState();
       // Restoring the already-selected ID must survive unrelated tab changes,
@@ -1584,7 +1594,7 @@ export const BottomDock = memo(function BottomDock({
       if (!disposed && requestId === selectionRequestRef.current && current.activeWorkspace === workspace && current.activeBacktestId === activeBacktestId && current.backtest === result) setBacktest(payload as BacktestResult);
     }).catch(() => undefined);
     return () => { disposed = true; };
-  }, [activeBacktestId, result, setBacktest, replayMode, workspace]);
+  }, [activeBacktestId, result, setBacktest, clearBacktestSelection, replayMode, workspace]);
 
   useEffect(() => {
     if (replayMode || !shouldPollPaper) return;
