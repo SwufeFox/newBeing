@@ -1612,7 +1612,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                         <span className="meta">{copy.orderHistoryWithCount(account.orderCount)}</span>
                         <OrderHistory key={`${account.id}:${account.orderCount}`} account={account} />
                       </div>
-                    </> : accountReady && instrument ? <p className="text-[var(--c-fg-4)] text-[11px]">{copy.noAccountForSettlement}</p> : null}
+                    </> : accountReady && instrument && ledgerAccounts.length > 0 ? <p className="text-[var(--c-fg-4)] text-[11px]">{copy.noAccountForSettlement}</p> : null}
           </div>
         </section>
       </div>

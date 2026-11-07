@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { useCopy, type CopyTable } from "@/lib/i18n";
+import { formatQuotePrice } from "@/lib/price-format";
 import { STRATEGY_NAMES } from "@/lib/strategy-labels";
 
 import { applyReplaySelection, captureReplaySelection, captureWorkspaceSelection } from "@/lib/workspace-selection";
@@ -487,12 +488,6 @@ function parseSummary(payload: unknown): MarketSummaryPayload | null {
   return payload as MarketSummaryPayload;
 }
 
-function formatPrice(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value.toLocaleString("en-US", { minimumFractionDigits: value < 1 ? 4 : 2, maximumFractionDigits: 6 })
-    : "—";
-}
-
 function localDateTime(timestamp: number): string {
   const local = new Date(timestamp - new Date(timestamp).getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
@@ -732,7 +727,7 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
   const copy = useCopy(PANEL_COPY);
   const change = summary?.changePct24h;
   const currentPrice = replayMode ? replayPrice : summary?.last;
-  const last = formatPrice(currentPrice);
+  const last = formatQuotePrice(currentPrice);
   const changeValid = typeof change === "number" && Number.isFinite(change);
   const changeText = changeValid ? `${change >= 0 ? "+" : ""}${change.toFixed(2)}%` : "—";
   const isPositive = changeValid && change >= 0;
@@ -783,7 +778,7 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
           <div className="summary-pod">
             <span className="uppercase tracking-wider block">{copy.high24h}</span>
             {summary?.high24h != null && Number.isFinite(summary.high24h) ? (
-              <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatPrice(summary.high24h)} trigger={`${subject}|hi`} /></strong>
+              <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatQuotePrice(summary.high24h)} trigger={`${subject}|hi`} /></strong>
             ) : (
               <span className="text-xs font-mono text-[var(--c-fg-4)] select-none">--</span>
             )}
@@ -791,7 +786,7 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
           <div className="summary-pod">
             <span className="uppercase tracking-wider block">{copy.low24h}</span>
             {summary?.low24h != null && Number.isFinite(summary.low24h) ? (
-              <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatPrice(summary.low24h)} trigger={`${subject}|lo`} /></strong>
+              <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs"><Decoded value={formatQuotePrice(summary.low24h)} trigger={`${subject}|lo`} /></strong>
             ) : (
               <span className="text-xs font-mono text-[var(--c-fg-4)] select-none">--</span>
             )}

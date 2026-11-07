@@ -10,6 +10,7 @@ import { EvaluationPanel } from "@/components/evaluation-panel";
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS, symbolForExchange } from "@/lib/exchanges";
 import { useCopy, translate, type CopyTable } from "@/lib/i18n";
+import { formatQuotePrice } from "@/lib/price-format";
 import { captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { buildResearchReport, researchReportFilename } from "@/lib/research-report";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -798,7 +799,7 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
               </td>
               <td className="p-2 font-mono tabular-nums">{portfolio.baseBalance.toFixed(5)}</td>
               <td className="p-2 font-mono tabular-nums">{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
-              <td className="p-2 font-mono tabular-nums">{markPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+              <td className="p-2 font-mono tabular-nums">{formatQuotePrice(markPrice)}</td>
               <td className={`p-2 font-mono tabular-nums font-bold ${unrealized >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                 {money(unrealized, quoteCurrency)}
               </td>
@@ -819,14 +820,14 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
                     {closing ? copy.closing : hasUnresolvedPaperOrder ? copy.orderPending : closeNeedsRefresh ? copy.refreshRequired : copy.closePosition}
                   </Button>
                 ) : (
-                  <span className="text-[10px] text-[var(--ak-text-secondary)] opacity-40">—</span>
+                  <span className="text-[10px] text-[var(--c-fg-4)]">—</span>
                 )}
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      {portfolio.baseBalance === 0 && <div className="table-footnote text-[10px] text-[var(--ak-text-secondary)] mt-2 opacity-70">{copy.noOpenPosition(symbol.split("/")[0])}</div>}
+      {portfolio.baseBalance === 0 && <div className="table-footnote text-[10px] text-[var(--ak-text-secondary)] mt-2">{copy.noOpenPosition(symbol.split("/")[0])}</div>}
     </div>
   );
 }

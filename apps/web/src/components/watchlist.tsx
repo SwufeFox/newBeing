@@ -9,6 +9,7 @@ import { EXCHANGE_LABELS, EXCHANGE_QUOTE } from "@/lib/exchanges";
 import { AkTag, AkCorner, AkInput } from "@swufefox/ak-ui-react";
 import { Decoded } from "@/components/decoded";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
+import { formatQuotePrice } from "@/lib/price-format";
 
 /** Data-transfer key used when a search result is dropped into the watchlist. */
 export const WATCHLIST_DRAG_TYPE = "application/x-newbeing-symbol";
@@ -19,12 +20,6 @@ function readSummaries(payload: unknown): MarketSummary[] {
     if (typeof item !== "object" || item === null || !("symbol" in item) || typeof item.symbol !== "string") return [];
     return [item as MarketSummary];
   });
-}
-
-function quotePrice(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value.toLocaleString("en-US", { minimumFractionDigits: value < 1 ? 4 : 2, maximumFractionDigits: 6 })
-    : "—";
 }
 
 /** Spot symbols accept the quote currencies supported by the selected venue. */
@@ -381,7 +376,7 @@ export const Watchlist = memo(function Watchlist({ disabled = false, selectedSum
                 <span className="watch-quote">
                   <strong className="tabular-nums font-mono">
                     {summary ? (
-                      <Decoded value={quotePrice(summary.last)} trigger={`${symbol}|${summary.last}`} />
+                      <Decoded value={formatQuotePrice(summary.last)} trigger={`${symbol}|${summary.last}`} />
                     ) : error ? (
                       /* The request failed: a pulsing placeholder would promise
                          data that is not coming, so the cell settles on the same

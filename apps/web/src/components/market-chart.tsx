@@ -25,6 +25,7 @@ import { findCandleGaps, reconnectDelayMs, timeframeMilliseconds } from "@newbei
 import { chartPalette, type ChartPalette } from "@/lib/chart-palette";
 import { usePreferences } from "@/lib/preferences";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
+import { formatQuotePrice } from "@/lib/price-format";
 
 type StreamState = "connecting" | "live" | "reconnecting" | "unavailable" | "polling";
 
@@ -810,10 +811,10 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
                   {new Date(displayBar.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 </span>
               )}
-              <span>{copy.legendOpen} <b className="text-[var(--ak-text-primary)]">{displayBar.open.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
-              <span>{copy.legendHigh} <b className="text-[var(--ak-text-primary)]">{displayBar.high.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
-              <span>{copy.legendLow} <b className="text-[var(--ak-text-primary)]">{displayBar.low.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
-              <span>{copy.legendClose} <b className={displayBar.close >= displayBar.open ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}>{displayBar.close.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>
+              <span>{copy.legendOpen} <b className="text-[var(--ak-text-primary)]">{formatQuotePrice(displayBar.open)}</b></span>
+              <span>{copy.legendHigh} <b className="text-[var(--ak-text-primary)]">{formatQuotePrice(displayBar.high)}</b></span>
+              <span>{copy.legendLow} <b className="text-[var(--ak-text-primary)]">{formatQuotePrice(displayBar.low)}</b></span>
+              <span>{copy.legendClose} <b className={displayBar.close >= displayBar.open ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}>{formatQuotePrice(displayBar.close)}</b></span>
               {displayBar.volume != null && indicators.volume && (
                 <span className="text-[var(--ak-text-secondary)]">{copy.legendVolume} <b className="text-[var(--ak-text-primary)]">{displayBar.volume.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b></span>
               )}

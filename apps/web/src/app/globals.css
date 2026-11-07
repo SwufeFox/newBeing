@@ -1232,7 +1232,6 @@ input[type="number"] {
   cursor: pointer;
 }
 
-.watchlist-footnote,
 .data-stamp {
   position: relative;
   margin-top: auto;
@@ -1249,18 +1248,8 @@ input[type="number"] {
 /* Tailwind utilities sit in a layer and lose to these unlayered rules, so state
    colours are expressed here rather than by a conditional utility class. */
 .data-stamp.is-stale { color: var(--c-warn); }
-/* The hazard hair belongs to the watchlist footnote, which has a full-width row
-   to itself. On a right-aligned data stamp the same 6px tab read as a misdrawn
-   glyph beside the venue name, so the stamp states its state in words only. */
-.watchlist-footnote { padding-left: var(--s-5); }
-.watchlist-footnote::before {
-  content: "";
-  position: absolute;
-  inset: var(--s-2) auto var(--s-2) var(--s-2);
-  width: 6px;
-  background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.5) 0 2px, transparent 2px 5px);
-  opacity: 0.4;
-}
+/* The stamp states its state in words only. The 6px hazard hair that used to
+   sit beside it read as a misdrawn glyph at this size. */
 
 /* ══════════════════════════════════════════════════════════════
    9. CHART
@@ -2761,14 +2750,17 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .nb-button.ak-button--action {
   box-shadow: none;
 }
+/* White on #0284c7 measured 4.09:1 at --t-meta, under AA for the workstation's
+   primary action. One step down the sky ramp clears it (5.9:1) with no change of
+   hue or hierarchy. */
 .nb-button.ak-btn-variant-primary {
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #0284c7;
+  background: #0369a1;
   color: #ffffff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 .nb-button.ak-btn-variant-primary:hover:not(:disabled) {
-  background: #0369a1;
+  background: #075985;
   filter: none;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
@@ -3434,9 +3426,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .watch-row:hover .watch-grip { opacity: 0.85; color: var(--c-fg-3); }
 .watch-row.is-dragging .watch-grip { opacity: 1; color: var(--mode); }
 
-/* the footnote is a single line of meta, never a paragraph */
-.watchlist-footnote { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
 /* ========== results dock: give the equity curve room and unjam the provenance ========== */
 
 /* The summary row was 1fr + 26%; the metric strip needs 6 columns of 118px,
@@ -3505,9 +3494,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 .book-columns { grid-template-columns: minmax(0, 1fr) 72px; }
 .book-columns > span:first-child { white-space: nowrap; }
 .book-row, .trade-row { grid-template-columns: minmax(0, 1fr) 72px; }
-
-/* 2. The watchlist footnote needed 319px in a 208px box. Two words is enough. */
-.watchlist-footnote { font-size: var(--t-meta); }
 
 /* The instrument cell pairs the base with its quote on one baseline: BTC/USDT
    rather than BTC over BTC/USDT (which read as a duplicated run-on). */
@@ -3794,16 +3780,6 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   text-overflow: ellipsis;
 }
 .data-table td.instrument strong { margin-right: 1px; }
-
-/*   2. The watchlist footnote needs 319px in a 208px column, so it always
-      ended in an ellipsis. Shorten to what fits at this width. */
-.watchlist-footnote {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-  padding-left: 22px !important;
-}
 
 
 /* The book mid row: a five-figure price (BTC) left no room for "SPREAD" and

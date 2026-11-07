@@ -632,12 +632,12 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         </AkSelect>
       </label>
       {config.accountMode === "legacy-margin" && <label className="flex gap-2 text-xs"><input type="checkbox" checked={config.allowShorts} onChange={(event) => setConfig({ ...config, allowShorts: event.target.checked })} />{copy.allowShorts}</label>}
-      <p className="assumption-note text-[10px] text-[var(--ak-text-secondary)] opacity-70 m-0">
+      <p className="assumption-note m-0">
         {config.accountMode === "legacy-margin" ? copy.legacyNote : copy.spotNote}
       </p>
 
       <div className="strategy-actions sticky bottom-0 bg-[var(--ak-surface-canvas)] flex flex-col gap-1.5 pt-2 pb-1 border-t border-[var(--ak-border-subtle)] z-10">
-        <p className="assumption-note text-[10px] text-[var(--ak-text-secondary)] font-mono m-0 opacity-80 text-center">
+        <p className="assumption-note font-mono m-0 text-center">
           {copy.runsOn} {EXCHANGE_LABELS[exchange]} · {symbol} · {timeframe}
         </p>
 

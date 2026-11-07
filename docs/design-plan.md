@@ -212,3 +212,39 @@ MARKETS   RESEARCH   BACKTEST   REPLAY
 顶栏曾同时出现 `TICKER OFFLINE / AWAITING FEED / DELAYED`——三个句子描述同一件事。
 行情失败时时间戳槽位留空，状态交给错误槽和 feed 胶囊；没有失败且没有时间戳时才写
 `AWAITING FEED`。**同一条件在相邻位置出现第二次就是噪音。**
+
+---
+
+## 九、价格只有一种写法（2026-11 增补）
+
+同一个 BTC 报价曾经同时以 `87,497.24004`（顶栏、持仓表）和 `87,497.24`（图表图例）
+出现在一屏上——三份各自实现的 formatter。
+
+`apps/web/src/lib/price-format.ts` 的 `formatQuotePrice()` 是唯一实现，按量级取位：
+
+| 量级 | 小数位 |
+|---|---|
+| ≥ 1 | 2 |
+| ≥ 0.01 | 4 |
+| ≥ 0.0001 | 6 |
+| 其余 | 8 |
+
+顶栏、自选、图表图例、持仓表都调用它。**新增显示价格的位置时调用它，不要写 `toLocaleString`。**
+
+### 9.2 主操作按钮的对比度
+
+`#0284c7` 上的白字在 11px 时只有 4.09:1。降到天空色一档 `#0369a1`（5.9:1），
+hover 用 `#075985`。色相不变，层级不变。
+
+### 9.3 用 fixture 看真实状态
+
+交易所不可达时，空态/错误态可以验证，但布局的很多问题只在有数据时出现
+（小数位不齐、指标条换行、图表图例宽度）。本地验证方法：
+
+```sh
+NEWBEING_E2E_FIXTURES=1 NEWBEING_DATA_DIR=E:/Temp/newbeing-design-db pnpm dev
+```
+
+fixture 只对 Binance 生效（`apps/web/src/lib/market-adapter.ts`），进页面后把
+交易所切到 **Binance Spot**，即可得到确定性的行情、盘口、成交与衍生品报价。
+**永远不要用默认数据目录跑 fixture 浏览器验证。**
