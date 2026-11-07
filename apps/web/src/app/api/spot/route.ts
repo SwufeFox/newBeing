@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { SPOT_EXECUTION_POLICY } from "@newbeing/core";
 import { executeSharedSpotOrder } from "@newbeing/application";
-import { cancelSpotIntent, getSpotAccount, getWorkspaceState, openSpotAccount } from "@newbeing/storage";
+import { cancelSpotIntent, getSpotAccount, getWorkspaceState, openSpotAccount, SpotReplayBlockedError } from "@newbeing/storage";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
 export const runtime = "nodejs";
@@ -32,6 +32,7 @@ export async function POST(request: Request) {
     const result = await executeSharedSpotOrder(input, getWebMarketAdapter(input.exchange));
     return NextResponse.json(result, { status: result.order.status === "filled" ? 200 : ["submitted", "unknown"].includes(result.order.status) ? 202 : 422 });
   } catch (error) {
+    if (error instanceof SpotReplayBlockedError) return NextResponse.json({ error: error.message }, { status: 409 });
     // A validation/metadata failure can occur before an intent exists. Report the
     // persisted outcome so the ticket can distinguish that from an unknown fill.
     let outcome: Record<string, unknown> = {};

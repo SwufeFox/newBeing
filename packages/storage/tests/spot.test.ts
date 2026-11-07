@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { beginSpotIntent, cancelSpotIntent, closeDatabaseForTests, finalizeSpotIntent, getDatabase, getSpotAccount, mutateSpotAccount, openSpotAccount } from "../src/index.js";
+import { DEFAULT_WORKSPACE_STATE } from "@newbeing/core";
+import { beginSpotIntent, cancelSpotIntent, closeDatabaseForTests, finalizeSpotIntent, getDatabase, getSpotAccount, markSpotIntentUnknown, openSpotAccount, saveWorkspaceState, SpotReplayBlockedError } from "../src/index.js";
 
 let directory: string;
 beforeEach(() => {
@@ -18,6 +19,24 @@ afterEach(() => {
 const buy = (clientOrderId: string, symbol = "BTC/USDT", quantity = 1) => ({ clientOrderId, symbol, side: "buy" as const, quantity });
 
 describe("shared spot wallet transactions", () => {
+  it("blocks account mutations in Replay while allowing status-only reconciliation", () => {
+    openSpotAccount("binance", "USDT");
+    beginSpotIntent("binance", "USDT", buy("pending"), 100);
+    const before = getSpotAccount("binance", "USDT")!;
+    saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "replay" });
+
+    expect(() => openSpotAccount("kraken", "USD")).toThrow(SpotReplayBlockedError);
+    expect(() => beginSpotIntent("binance", "USDT", buy("blocked"), 100)).toThrow(SpotReplayBlockedError);
+    expect(() => finalizeSpotIntent("binance", "USDT", "pending", 100)).toThrow(SpotReplayBlockedError);
+    expect(() => cancelSpotIntent("binance", "USDT", "pending")).toThrow(SpotReplayBlockedError);
+    expect(getSpotAccount("binance", "USDT")).toMatchObject({ balances: before.balances, fills: before.fills, ledger: before.ledger, orders: [{ status: "submitted" }] });
+
+    const reconciled = markSpotIntentUnknown("binance", "USDT", "pending");
+    expect(reconciled.result.status).toBe("unknown");
+    expect(reconciled.account.balances).toEqual(before.balances);
+    expect(reconciled.account.fills).toEqual([]);
+  });
+
   it("requires explicit creation, seeds once across restarts and isolates venues and quotes", () => {
     expect(() => beginSpotIntent("binance", "USDT", buy("missing"), 100)).toThrow(/explicitly open/);
     const original = openSpotAccount("binance", "USDT");
@@ -73,7 +92,7 @@ describe("shared spot wallet transactions", () => {
   it("retains unknown reservations across restart until explicit cancellation and rejects price overruns", () => {
     openSpotAccount("binance", "USDT");
     beginSpotIntent("binance", "USDT", buy("unknown"), 100);
-    mutateSpotAccount("binance", "USDT", (account) => { account.orders[0]!.status = "unknown"; });
+    markSpotIntentUnknown("binance", "USDT", "unknown");
     closeDatabaseForTests();
     expect(getSpotAccount("binance", "USDT")!.balances.USDT!.reserved).toBe(100.1);
     finalizeSpotIntent("binance", "USDT", "unknown", 90);

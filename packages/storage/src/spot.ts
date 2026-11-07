@@ -2,19 +2,35 @@ import { eq } from "drizzle-orm";
 import { createSpotAccount, reserveSpotOrder, releaseSpotOrder, settleSpotOrder, spotAccountId, type ExchangeId, type PaperOrder, type SpotAccount } from "@newbeing/core";
 import { getDatabase } from "./db.js";
 import { spotAccounts } from "./schema.js";
+import { getWorkspaceState } from "./repositories.js";
 
 /** Shared accounts live in a separate table/namespace. Legacy assets are never imported. */
 export function getSpotAccount(exchange: ExchangeId, quote: string): SpotAccount | undefined {
   const row = getDatabase().select().from(spotAccounts).where(eq(spotAccounts.id, spotAccountId(exchange, quote))).get();
   return row ? JSON.parse(row.payload) as SpotAccount : undefined;
 }
+export class SpotReplayBlockedError extends Error {
+  constructor() {
+    super("Normal Paper operations are disabled during Replay.");
+    this.name = "SpotReplayBlockedError";
+  }
+}
+
+export function assertSpotPaperMutationAllowed(): void {
+  if (getWorkspaceState().state.activeWorkspace === "replay") throw new SpotReplayBlockedError();
+}
+
 export function openSpotAccount(exchange: ExchangeId, quote: string): SpotAccount {
   const initial = createSpotAccount(exchange, quote);
-  getDatabase().insert(spotAccounts).values({ id: initial.id, payload: JSON.stringify(initial) }).onConflictDoNothing().run();
-  return getSpotAccount(exchange, quote)!;
-}
-export function mutateSpotAccount<T>(exchange: ExchangeId, quote: string, mutate: (account: SpotAccount) => T): { account: SpotAccount; result: T } {
   return getDatabase().transaction((tx) => {
+    assertSpotPaperMutationAllowed();
+    tx.insert(spotAccounts).values({ id: initial.id, payload: JSON.stringify(initial) }).onConflictDoNothing().run();
+    return getSpotAccount(exchange, quote)!;
+  }, { behavior: "immediate" });
+}
+function mutateSpotAccount<T>(exchange: ExchangeId, quote: string, mutate: (account: SpotAccount) => T, allowDuringReplay = false): { account: SpotAccount; result: T } {
+  return getDatabase().transaction((tx) => {
+    if (!allowDuringReplay) assertSpotPaperMutationAllowed();
     const account = getSpotAccount(exchange, quote);
     if (!account) throw new Error("Shared spot account not found; explicitly open a new account first.");
     const result = mutate(account);
@@ -34,4 +50,13 @@ export function finalizeSpotIntent(exchange: ExchangeId, quote: string, orderId:
 }
 export function cancelSpotIntent(exchange: ExchangeId, quote: string, orderId: string) {
   return mutateSpotAccount(exchange, quote, (account) => releaseSpotOrder(account, orderId, "cancelled"));
+}
+/** Status-only reconciliation remains available if Replay starts during a quote request. */
+export function markSpotIntentUnknown(exchange: ExchangeId, quote: string, orderId: string) {
+  return mutateSpotAccount(exchange, quote, (account) => {
+    const order = account.orders.find((item) => item.clientOrderId === orderId);
+    if (!order) throw new Error("Spot order not found.");
+    if (order.status === "submitted") order.status = "unknown";
+    return order;
+  }, true);
 }

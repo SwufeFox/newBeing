@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DEFAULT_WORKSPACE_STATE } from "@newbeing/core";
 import type { ExchangeAdapter, MarketSummary } from "@newbeing/market-data";
-import { cancelSpotIntent, closeDatabaseForTests, getSpotAccount, openSpotAccount } from "@newbeing/storage";
+import { cancelSpotIntent, closeDatabaseForTests, getSpotAccount, openSpotAccount, saveWorkspaceState } from "@newbeing/storage";
 import { executeSharedSpotOrder } from "../src/spot.js";
 
 let directory: string;
@@ -39,6 +40,23 @@ describe("shared spot async settlement", () => {
     const results = await Promise.allSettled([executeSharedSpotOrder(request, adapter(async () => summary())), executeSharedSpotOrder({ ...request, maximumPrice: 101 }, adapter(async () => summary()))]);
     expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
     expect(getSpotAccount("binance", "USDT")!.fills).toHaveLength(1);
+  });
+
+  it("keeps a pending quote as unknown when Replay activates before settlement", async () => {
+    let resolve!: (value: MarketSummary) => void;
+    const quote = new Promise<MarketSummary>((done) => { resolve = done; });
+    const fetch = vi.fn(() => quote);
+    const pending = executeSharedSpotOrder({ ...request, clientOrderId: "replay-pending" }, adapter(fetch));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+    saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "replay" });
+    resolve(summary());
+    const result = await pending;
+
+    expect(result.order.status).toBe("unknown");
+    expect(result.error).toMatch(/disabled during Replay/);
+    expect(result.account.balances.USDT).toEqual({ total: 10000, reserved: 100.1 });
+    expect(result.account.fills).toEqual([]);
   });
 
   it("does not settle a cancelled intent when a quote arrives late", async () => {

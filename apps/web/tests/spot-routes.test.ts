@@ -5,12 +5,12 @@ import path from "node:path";
 import { DEFAULT_WORKSPACE_STATE, SPOT_EXECUTION_POLICY, type Candle } from "@newbeing/core";
 import { closeDatabaseForTests, getSpotAccount, saveDatasetSnapshot, saveWorkspaceState } from "@newbeing/storage";
 
-const fixture = vi.hoisted(() => ({ fetch: vi.fn(), summary: vi.fn(), connectorUnavailable: false }));
+const fixture = vi.hoisted(() => ({ fetch: vi.fn(), summary: vi.fn(), instrument: vi.fn(), connectorUnavailable: false }));
 vi.mock("@newbeing/market-data", async () => import("@newbeing/market-data/utils"));
 vi.mock("@/lib/market-adapter", () => ({
   getWebMarketAdapter: (exchange: string) => {
     if (fixture.connectorUnavailable) throw new Error("Connector unavailable during frozen playback");
-    return { id: exchange, fetchOHLCVSince: fixture.fetch, fetchSummary: fixture.summary, getInstrument: async (symbol: string) => ({ id: `${exchange}:spot:BTCUSDT`, nativeId: "BTCUSDT", venue: exchange, symbol, base: "BTC", quote: "USDT", marketType: "spot", active: true }) };
+    return { id: exchange, fetchOHLCVSince: fixture.fetch, fetchSummary: fixture.summary, getInstrument: (symbol: string) => fixture.instrument(exchange, symbol) };
   },
   marketDataSourceLabel: () => "Route fixture",
 }));
@@ -24,6 +24,7 @@ beforeEach(() => {
   directory = mkdtempSync(path.join(tmpdir(), "newbeing-spot-routes-"));
   process.env.NEWBEING_DATA_DIR = directory;
   fixture.summary.mockImplementation(async (symbol: string) => ({ symbol, ask: 100, bid: 99, last: 100, timestamp: Date.now() }));
+  fixture.instrument.mockImplementation(async (exchange: string, symbol: string) => ({ id: `${exchange}:spot:BTCUSDT`, nativeId: "BTCUSDT", venue: exchange, symbol, base: "BTC", quote: "USDT", marketType: "spot", active: true }));
 });
 afterEach(() => {
   closeDatabaseForTests();
@@ -51,6 +52,23 @@ describe("shared spot and frozen Replay HTTP contracts", () => {
     expect(account.ledger.filter((entry: { reason: string }) => entry.reason === "initial-capital")).toHaveLength(1);
     expect(account.policy).toEqual(SPOT_EXECUTION_POLICY);
   });
+  it("returns a conflict when Replay starts during spot instrument resolution", async () => {
+    saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "terminal" });
+    await POST(request("spot", { action: "open", exchange: "binance", quote: "USDT" }));
+    let release!: (instrument: unknown) => void;
+    fixture.instrument.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const pending = POST(request("spot", { action: "order", exchange: "binance", symbol: "BTC/USDT", side: "buy", quantity: 1, maximumPrice: 100, clientOrderId: "spot-replay-race" }));
+    await vi.waitFor(() => expect(fixture.instrument).toHaveBeenCalledTimes(1));
+
+    saveWorkspaceState({ ...DEFAULT_WORKSPACE_STATE, activeWorkspace: "replay" });
+    release({ id: "binance:spot:BTCUSDT", nativeId: "BTCUSDT", venue: "binance", symbol: "BTC/USDT", base: "BTC", quote: "USDT", marketType: "spot", active: true });
+    const response = await pending;
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/disabled during Replay/);
+    expect(getSpotAccount("binance", "USDT")!.orders).toEqual([]);
+  });
+
 
   it("reports a confirmed rejection before reservation without inventing an order", async () => {
     await POST(request("spot", { action: "open", exchange: "binance", quote: "USDT" }));
