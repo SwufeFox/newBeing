@@ -25,3 +25,16 @@ export const SLUG_WORKSPACE: Record<WorkspaceSlug, WorkspaceId> = {
 export function isWorkspaceSlug(value: string): value is WorkspaceSlug {
   return (WORKSPACE_SLUGS as readonly string[]).includes(value);
 }
+
+/** A saved run is addressable on its own: the link opens Research with that
+ *  result loaded. Kept out of the `/w/` segment so the shell keeps one mounted
+ *  page while the address changes under it. */
+export function runPath(resultId: string): string {
+  return `/runs/${encodeURIComponent(resultId)}`;
+}
+
+const RUN_ID = /^[A-Za-z0-9-]{8,64}$/;
+
+export function isRunId(value: string): boolean {
+  return RUN_ID.test(value);
+}

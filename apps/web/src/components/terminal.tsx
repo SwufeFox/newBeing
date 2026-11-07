@@ -28,8 +28,8 @@ import { WorkspaceSync } from "@/components/workspace-sync";
 import { Button } from "@/components/ui/button";
 import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { SettingsDialog } from "@/components/settings-dialog";
-import { useCopy, useLocale, type CopyTable } from "@/lib/i18n";
-import { isWorkspaceSlug, SLUG_WORKSPACE, WORKSPACE_PATH, type WorkspaceId } from "@/lib/workspace-routes";
+import { translate, useCopy, useLocale, type CopyTable } from "@/lib/i18n";
+import { isRunId, isWorkspaceSlug, runPath, SLUG_WORKSPACE, WORKSPACE_PATH, type WorkspaceId } from "@/lib/workspace-routes";
 import { formatQuotePrice } from "@/lib/price-format";
 import { STRATEGY_NAMES } from "@/lib/strategy-labels";
 
@@ -713,6 +713,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
         setBacktest(payload);
         setDockTab("backtest");
         setWorkspace("research");
+        if (window.location.pathname !== runPath(resultId)) window.history.pushState({ runId: resultId }, "", runPath(resultId));
         setOpen(false);
       })
       .catch((reason: unknown) => setPaletteError(reason instanceof Error ? reason.message : copy.runLoadFailed));
@@ -1076,6 +1077,7 @@ function RailRunHistoryContent(): React.JSX.Element {
       const payload = await loadSavedRun(resultId, { failed: copy.runLoadFailed, unreadable: copy.runUnreadable });
       setBacktest(payload);
       setDockTab("backtest");
+      if (window.location.pathname !== runPath(resultId)) window.history.pushState({ runId: resultId }, "", runPath(resultId));
       setOpening(null);
     } catch (error) {
       setOpening({ resultId, state: "error", message: error instanceof Error ? error.message : copy.runLoadFailed });
@@ -1199,7 +1201,7 @@ const RailStrategyRoster = memo(RailStrategyRosterContent);
 
 /** `routeWorkspace` is the view named by the URL. The store remains the runtime
  *  source for everything else; the URL only decides which view is on screen. */
-export function Terminal({ routeWorkspace }: { routeWorkspace?: WorkspaceId }): React.JSX.Element {
+export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: WorkspaceId; routeRunId?: string }): React.JSX.Element {
   const router = useRouter();
   const replayConfirmed = useWorkspaceStore((state) => state.replayConfirmedJson === replayIdentity(state));
   const replaySyncError = useWorkspaceStore((state) => state.replaySyncError);
@@ -1285,18 +1287,59 @@ export function Terminal({ routeWorkspace }: { routeWorkspace?: WorkspaceId }): 
     if (useWorkspaceStore.getState().activeWorkspace !== routeWorkspace) setPage(routeWorkspace, { push: false });
   }, [routeWorkspace, workspaceReady, setPage]);
 
+  /* Opening a run — from a `/runs/<id>` link or from the rail — always lands on
+     Research with that result on screen. One loader keeps both entry points
+     honest about failures. */
+  const loadRouteRun = useCallback((resultId: string): void => {
+    const store = useWorkspaceStore.getState();
+    if (store.backtest?.resultId === resultId) {
+      store.setDockTab("backtest");
+      return;
+    }
+    void loadSavedRun(resultId, { failed: translate(PANEL_COPY).runLoadFailed, unreadable: translate(PANEL_COPY).runUnreadable })
+      .then((payload) => {
+        const current = useWorkspaceStore.getState();
+        current.setBacktest(payload);
+        current.setDockTab("backtest");
+      })
+      .catch(() => {
+        /* A link to a run that no longer exists falls back to the plain
+           Research view instead of leaving an address that claims a result is
+           open when nothing is. */
+        if (window.location.pathname === runPath(resultId)) window.history.replaceState(null, "", WORKSPACE_PATH.research);
+      });
+  }, []);
+
+  const appliedRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!routeRunId || !workspaceReady) return;
+    if (appliedRunRef.current === routeRunId) return;
+    appliedRunRef.current = routeRunId;
+    loadRouteRun(routeRunId);
+  }, [routeRunId, workspaceReady, loadRouteRun]);
+
   /* Back and forward move the History API entries written above; the shell
-     reads the slug back out of the URL and applies it in place. */
+     reads the address back and applies it in place. A run link also restores
+     Research, because that is the only view that renders a result. */
   useEffect(() => {
     const applyLocation = (): void => {
-      const slug = window.location.pathname.split("/")[2] ?? "";
+      const path = window.location.pathname;
+      const runMatch = /^\/runs\/([^/]+)$/.exec(path);
+      if (runMatch) {
+        const id = decodeURIComponent(runMatch[1] ?? "");
+        if (!isRunId(id)) return;
+        setPage("research", { push: false });
+        loadRouteRun(id);
+        return;
+      }
+      const slug = path.split("/")[2] ?? "";
       if (!isWorkspaceSlug(slug)) return;
       const target = SLUG_WORKSPACE[slug];
       if (useWorkspaceStore.getState().activeWorkspace !== target) setPage(target, { push: false });
     };
     window.addEventListener("popstate", applyLocation);
     return () => window.removeEventListener("popstate", applyLocation);
-  }, [setPage]);
+  }, [setPage, loadRouteRun]);
 
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
