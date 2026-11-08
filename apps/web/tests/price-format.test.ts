@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatQuotePrice, formatSize } from "../src/lib/price-format.js";
+import { formatCompactAmount, formatQuotePrice, formatSize } from "../src/lib/price-format.js";
 
 /* The plate, the watchlist, the chart legend and the positions table all render
    one quote through this function. The boundaries matter: a pair that crosses
@@ -56,5 +56,26 @@ describe("formatSize", () => {
     expect(formatSize(null)).toBe("—");
     expect(formatSize(undefined)).toBe("—");
     expect(formatSize(Number.NaN)).toBe("—");
+  });
+});
+
+/* A traded amount spans magnitudes, so the unit follows the value instead of
+   being assumed. The plate used to divide by a million unconditionally, which
+   printed 0.00M for a thin market and 1420.00M for a busy one. */
+describe("formatCompactAmount", () => {
+  it("picks the unit from the magnitude", () => {
+    expect(formatCompactAmount(171_700_000)).toBe("171.70M");
+    expect(formatCompactAmount(820_000)).toBe("820.00K");
+    expect(formatCompactAmount(1_420_000_000)).toBe("1.42B");
+  });
+
+  it("prints a small amount without a unit rather than rounding it away", () => {
+    expect(formatCompactAmount(842.5)).toBe("842.50");
+    expect(formatCompactAmount(0)).toBe("0.00");
+  });
+
+  it("renders an absent amount as an em dash", () => {
+    expect(formatCompactAmount(null)).toBe("—");
+    expect(formatCompactAmount(Number.NaN)).toBe("—");
   });
 });

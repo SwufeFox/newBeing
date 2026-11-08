@@ -36,3 +36,18 @@ export function formatSize(value: number | null | undefined, fallback = "—"): 
     maximumFractionDigits: digits,
   });
 }
+
+/**
+ * A traded amount spans many magnitudes, so it is printed compactly with a
+ * unit suffix. The unit follows the magnitude instead of being assumed:
+ * a thin market reads `820.00K` rather than `0.82M`, and a busy one reads
+ * `1.42B` rather than `1420.00M`.
+ */
+export function formatCompactAmount(value: number | null | undefined, fallback = "—"): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  const magnitude = Math.abs(value);
+  const scale = magnitude >= 1e9 ? [1e9, "B"] : magnitude >= 1e6 ? [1e6, "M"] : magnitude >= 1e3 ? [1e3, "K"] : [1, ""];
+  const [factor, unit] = scale as [number, string];
+  const scaled = value / factor;
+  return `${scaled.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${unit}`;
+}

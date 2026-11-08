@@ -30,7 +30,7 @@ import { backtestReplayRequest } from "@/lib/backtest-replay";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { translate, useCopy, useLocale, type CopyTable } from "@/lib/i18n";
 import { isRunId, isWorkspaceSlug, runPath, SLUG_WORKSPACE, WORKSPACE_PATH, type WorkspaceId } from "@/lib/workspace-routes";
-import { formatQuotePrice } from "@/lib/price-format";
+import { formatCompactAmount, formatQuotePrice } from "@/lib/price-format";
 import { STRATEGY_NAMES } from "@/lib/strategy-labels";
 
 import { applyReplaySelection, captureReplaySelection, captureWorkspaceSelection } from "@/lib/workspace-selection";
@@ -961,7 +961,7 @@ const MarketSummaryBar = memo(function MarketSummaryBar({ summary, error, replay
             <span className="uppercase tracking-wider block">{copy.vol24h}</span>
             {summary?.quoteVolume24h != null && Number.isFinite(summary.quoteVolume24h) ? (
               <strong className="text-[var(--ak-text-primary)] font-bold tabular-nums text-xs">
-                <Decoded value={`${(summary.quoteVolume24h / 1_000_000).toFixed(2)}M`} trigger={`${subject}|vol`} />
+                <Decoded value={formatCompactAmount(summary.quoteVolume24h)} trigger={`${subject}|vol`} />
               </strong>
             ) : (
               <span className="text-xs font-mono text-[var(--c-fg-4)] select-none">--</span>
@@ -1189,7 +1189,7 @@ function RailStrategyRosterContent(): React.JSX.Element {
             onClick={() => { setStrategy(s.id, {}); setInspectorTab("strategy"); }}
           >
             <div className="rail-item-main truncate">{strategyNames[s.id] ?? s.name ?? s.id}</div>
-            <div className="rail-item-sub text-[10px] text-[var(--ak-text-secondary)] opacity-70 truncate">{s.id}</div>
+            <div className="rail-item-sub truncate">{s.id}</div>
           </button>
         ))}
       </div>
@@ -1969,15 +1969,15 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
           </header>
 
       {workspace === "replay" && !replayConfirmed && (
-        <div className="replay-sync-banner px-3 py-1.5 bg-amber-950/40 border-b border-amber-500/40 text-xs font-mono text-amber-300 flex items-center justify-between z-20 backdrop-blur-md">
+        <div className="degraded-banner px-3 py-1.5 border-b text-xs font-mono flex items-center justify-between z-20 backdrop-blur-md">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none shrink-0" />
-            <span className="text-[10px] font-medium px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded-xs">{copy.replaySync}</span>
+            <span className="degraded-dot w-2 h-2 rounded-full animate-pulse motion-reduce:animate-none shrink-0" />
+            <span className="degraded-chip text-[10px] font-medium px-1.5 py-0.2 border rounded-xs">{copy.replaySync}</span>
             <span role={replaySyncError ? "alert" : "status"} className="text-[11px]">{replaySyncError ?? copy.replaySyncing}</span>
           </div>
           <div className="flex items-center gap-2">
             {replaySyncError && (
-              <button className="px-2 py-0.5 text-[11px] font-medium bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xs transition-all cursor-pointer" onClick={retryReplaySync}>
+              <button className="degraded-chip px-2 py-0.5 text-[11px] font-medium border rounded-xs transition-all cursor-pointer" onClick={retryReplaySync}>
                 {copy.retry}
               </button>
             )}

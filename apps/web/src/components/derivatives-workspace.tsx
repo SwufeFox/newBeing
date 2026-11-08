@@ -1632,9 +1632,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
           {instrument && quote && <p className="derivatives-ticket-note">{copy.separateAccount}</p>}
           {blocked ? <p role="status" className="derivatives-ticket-note">{copy.entryHidden}</p>
             : !instrument || !quote ? (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/30 space-y-1.5 font-mono">
-                <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[10px] tracking-wider uppercase">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none shrink-0" />
+              <div className="degraded-panel p-3 border space-y-1.5 font-mono">
+                <div className="degraded-caption flex items-center gap-1.5 font-bold text-[10px] tracking-wider uppercase">
+                  <span className="degraded-dot w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none shrink-0" />
                   <span>{copy.orderEntryPaused}</span>
                 </div>
                 <p role="status" className="derivatives-ticket-note alert m-0 text-[11px] leading-relaxed">

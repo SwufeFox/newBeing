@@ -147,9 +147,9 @@ export function PaperRecoveryPanel(): React.JSX.Element {
         <span className="tabular-nums font-bold text-[10px] uppercase tracking-wider">{loaded ? copy.zeroPending : copy.syncing}</span>
       </div>
     ) : (
-      <div className="ticket-disclaimer flex items-center justify-between text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2.5 py-1.5 border-t border-amber-500/30">
+      <div className="degraded-strip ticket-disclaimer flex items-center justify-between text-[10px] font-mono px-2.5 py-1.5 border-t">
         <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none" />
+          <span className="degraded-dot w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" />
           <span>{copy.pendingAudit(pending.length)}</span>
         </div>
         <span className="text-[10px] uppercase tracking-wider font-bold">{copy.interruptedIntents}</span>
