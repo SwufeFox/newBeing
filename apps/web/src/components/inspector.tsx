@@ -594,10 +594,10 @@ interface InspectorProps {
   onReplayOrder: (side: "buy" | "sell", quantity: number, options?: Partial<ReplayOrderInput>) => Promise<void>;
 }
 
-interface PaperPayload {
+/** The ticket sizes and validates sells from the wallet alone, so it reads the
+    compact Paper view instead of pulling recent order history every eight seconds. */
+interface PaperWalletPayload {
   portfolio: PaperPortfolio;
-  orders: PaperOrder[];
-  mode: "paper";
 }
 
 function parseBook(payload: unknown): OrderBookSnapshot | null {
@@ -612,9 +612,9 @@ function parseTrades(payload: unknown): RecentTrade[] {
   return payload.items as RecentTrade[];
 }
 
-function parsePaper(payload: unknown): PaperPayload | null {
-  if (typeof payload !== "object" || payload === null || !("portfolio" in payload) || !("orders" in payload)) return null;
-  return payload as PaperPayload;
+function parsePaper(payload: unknown): PaperWalletPayload | null {
+  if (typeof payload !== "object" || payload === null || !("portfolio" in payload)) return null;
+  return payload as PaperWalletPayload;
 }
 
 function parsePreviews(payload: unknown): OrderPreview[] {
@@ -1608,7 +1608,7 @@ function PaperTicket({
     const refresh = async (): Promise<void> => {
       const request = ++refreshRef.current;
       try {
-        const response = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
+        const response = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}&view=positions`, { cache: "no-store" });
         const payload: unknown = await response.json();
         const parsed = parsePaper(payload);
         if (response.ok && parsed && !disposed && request === refreshRef.current && !mutationRef.current) setPortfolio(parsed.portfolio);
