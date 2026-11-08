@@ -15,16 +15,13 @@ import {
   getStoredStrategy,
   getWorkspaceState,
   listExperiments,
-  listPendingPaperOrders,
-  listPaperRecoveries,
   listStoredStrategySummaries,
-  paperAccountId,
   replayAccountId,
   saveStrategy,
   saveOrderPreview,
   saveWorkspaceState,
 } from "@newbeing/storage";
-import { ResearchError, rerunBacktestSweep, rerunResearchBacktest, runBacktestSweep, runResearchBacktest, type SweepResult } from "@newbeing/application";
+import { ResearchError, readPaperAccount, readPaperRecoveryState, rerunBacktestSweep, rerunResearchBacktest, runBacktestSweep, runResearchBacktest, type SweepResult } from "@newbeing/application";
 import { registerAIGuidance } from "./ai-guidance.js";
 import { registerDerivativesTools } from "./derivatives-tools.js";
 
@@ -202,7 +199,7 @@ export function createNewBeingMcpServer(): McpServer {
       const result = getWorkspaceState();
       const state = { ...DEFAULT_WORKSPACE_STATE, ...result.state, mode: "paper" as const };
       return textResult({ ...result, state: state.activeWorkspace === "replay" ? { ...state, activeBacktestId: null } : state,
-        paperRecovery: { pending: listPendingPaperOrders(), recoveries: listPaperRecoveries(), policy: "Read only. Interrupted local Paper can only be cancelled with an audit reason in the UI; never re-quoted or filled by MCP." },
+        paperRecovery: { ...readPaperRecoveryState(), policy: "Read only. Interrupted local Paper can only be cancelled with an audit reason in the UI; never re-quoted or filled by MCP." },
       });
     } catch (error) { return errorResult(error); }
   });
@@ -258,7 +255,9 @@ export function createNewBeingMcpServer(): McpServer {
         return textResult({ mode: "replay", source: "isolated local replay simulator", exchange: session.exchange, symbol, sessionId: session.id, portfolio: getReplayExecution(session.id)?.portfolio ?? getPaperPortfolio(replayAccountId(session.id, symbol, session.exchange)) });
       }
       if (account_mode === "shared-spot") return textResult({ mode: "paper", accountMode: "shared-spot", exchange: selectedExchange, account: getSpotAccount(selectedExchange, symbol.split("/")[1]!) ?? null, policy: SPOT_EXECUTION_POLICY, note: "Open and trade the shared account explicitly in the trusted UI. Legacy previews remain bound to legacy pair wallets." });
-      return textResult({ mode: "paper", source: "local simulator", exchange: selectedExchange, symbol, portfolio: getPaperPortfolio(paperAccountId(symbol, selectedExchange)) });
+      const read = readPaperAccount(selectedExchange, symbol);
+      if (!read.visible || !read.account) return errorResult(new Error("Normal Paper accounts are hidden during Replay."));
+      return textResult({ mode: "paper", source: "local simulator", exchange: selectedExchange, symbol, portfolio: read.account.portfolio });
     } catch (error) { return errorResult(error); }
   });
 
@@ -563,8 +562,9 @@ export function createNewBeingMcpServer(): McpServer {
       const summary = await getExchangeAdapter(workspace.exchange).fetchSummary(orderSymbol);
       const price = side === "buy" ? (summary.ask ?? summary.last) : (summary.bid ?? summary.last);
       if (price === null || price <= 0) return errorResult(new Error("No usable public quote is available for a preview."));
-      const accountId = paperAccountId(orderSymbol, workspace.exchange);
-      const portfolio = getPaperPortfolio(accountId);
+      const read = readPaperAccount(workspace.exchange, orderSymbol);
+      if (!read.visible || !read.account) return errorResult(new Error("Normal Paper accounts are hidden during Replay."));
+      const { accountId, portfolio } = read.account;
       const { notional, fee: estimatedFee } = estimatePaperAmounts(price, quantity, portfolio.feeRate);
       // Validate with the same accounting policy as confirmation, without saving a fill.
       fillPaperOrder({ clientOrderId: "preview-estimate", symbol: orderSymbol, side, quantity, status: "submitted", fillPrice: null, fee: 0, createdAt: new Date().toISOString() }, portfolio, price);

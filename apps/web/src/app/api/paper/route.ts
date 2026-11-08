@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { SIMULATION_PRECISION } from "@newbeing/core";
-import { executePaperOrder } from "@newbeing/application";
-import { getPaperPortfolio, hasPendingPaperOrders, listPaperOrders, paperAccountId, getWorkspaceState, PaperReplayBlockedError } from "@newbeing/storage";
+import { executePaperOrder, paperAccountsVisible, readPaperAccount } from "@newbeing/application";
+import { getWorkspaceState, PaperReplayBlockedError } from "@newbeing/storage";
 import { getWebMarketAdapter } from "@/lib/market-adapter";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ const orderSchema = z.object({
 /* Replay isolation is the only blanket rule left; which venue fills an order
    is now a per-request choice rather than a capability the app lacks. */
 function unsupported(): NextResponse | null {
-  if (getWorkspaceState().state.activeWorkspace === "replay") {
+  if (!paperAccountsVisible()) {
     return NextResponse.json({ error: "Normal Paper orders are disabled during Replay; use the replay ticket at the revealed bar close." }, { status: 409 });
   }
   return null;
@@ -39,12 +39,12 @@ export async function GET(request: Request): Promise<NextResponse> {
     const symbol = params.get("symbol") ?? "BTC/USDT";
     const parsedExchange = exchangeSchema.safeParse(params.get("exchange") ?? getWorkspaceState().state.exchange);
     if (!parsedExchange.success) return NextResponse.json({ error: "Unknown exchange." }, { status: 400 });
-    const accountId = paperAccountId(symbol, parsedExchange.data);
-    const portfolio = getPaperPortfolio(accountId);
-    const hasPendingOrders = hasPendingPaperOrders(accountId);
+    const read = readPaperAccount(parsedExchange.data, symbol, view === "positions" ? {} : { orders: 30 });
+    if (!read.visible || !read.account) return NextResponse.json({ error: "Normal Paper orders are disabled during Replay; use the replay ticket at the revealed bar close." }, { status: 409 });
+    const account = read.account;
     const headers = { "Cache-Control": "no-store" };
-    if (view === "positions") return NextResponse.json({ portfolio, hasPendingOrders }, { headers });
-    return NextResponse.json({ portfolio, orders: listPaperOrders(30, accountId), hasPendingOrders, mode: "paper", exchange: parsedExchange.data, accountId, simulationPrecision: SIMULATION_PRECISION }, { headers });
+    if (view === "positions") return NextResponse.json({ portfolio: account.portfolio, hasPendingOrders: account.hasPendingOrders }, { headers });
+    return NextResponse.json({ portfolio: account.portfolio, orders: account.orders ?? [], hasPendingOrders: account.hasPendingOrders, mode: "paper", exchange: parsedExchange.data, accountId: account.accountId, simulationPrecision: SIMULATION_PRECISION }, { headers });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Paper account read failed." }, { status: 500 });
   }

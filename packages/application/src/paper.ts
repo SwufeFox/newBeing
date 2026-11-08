@@ -5,9 +5,16 @@ import {
   getPaperOrder,
   finalizePaperFill,
   getPaperPortfolio,
+  hasPendingPaperOrders,
+  listPaperOrders,
+  listPaperRecoveries,
+  listPendingPaperOrders,
   markPaperIntentSubmitted,
   markPaperIntentUnknown,
   paperAccountId,
+  recoverPaperIntent,
+  getWorkspaceState,
+  type PaperRecovery,
 } from "@newbeing/storage";
 import { SIMULATION_PRECISION, type ExchangeId, type PaperOrder, type PaperOrderSide, type PaperPortfolio } from "@newbeing/core";
 
@@ -30,6 +37,59 @@ export interface ExecutePaperOrderResult {
 }
 
 export const PAPER_MAX_QUOTE_AGE_MS = 30_000;
+
+/** Normal Paper accounts stay hidden while a frozen Replay session is active.
+ *  The web API and MCP must apply this rule identically. */
+export function paperAccountsVisible(): boolean {
+  return getWorkspaceState().state.activeWorkspace !== "replay";
+}
+
+export interface PaperAccountDetail {
+  accountId: string;
+  portfolio: PaperPortfolio;
+  hasPendingOrders: boolean;
+  /** Recent order history is loaded only when a caller asks for it. */
+  orders?: PaperOrder[];
+}
+export interface PaperAccountRead {
+  visible: boolean;
+  account?: PaperAccountDetail;
+}
+
+/** Reading a Paper account is a use case, not route glue: the web API and MCP
+ *  must observe the same wallet, the same unresolved-order flag and the same
+ *  history. Order rows are loaded only when the caller asks for them. */
+export function readPaperAccount(exchange: ExchangeId, symbol: string, options: { orders?: number } = {}): PaperAccountRead {
+  if (!paperAccountsVisible()) return { visible: false };
+  const accountId = paperAccountId(symbol, exchange);
+  return {
+    visible: true,
+    account: {
+      accountId,
+      portfolio: getPaperPortfolio(accountId),
+      hasPendingOrders: hasPendingPaperOrders(accountId),
+      ...(options.orders === undefined ? {} : { orders: listPaperOrders(options.orders, accountId) }),
+    },
+  };
+}
+
+/** Interrupted local Paper intents and their recovery audits, read-only. */
+export function readPaperRecoveryState(): { pending: PaperOrder[]; recoveries: PaperRecovery[] } {
+  return { pending: listPendingPaperOrders(), recoveries: listPaperRecoveries() };
+}
+
+export interface PaperRecoveryRequest {
+  clientOrderId: string;
+  actionId: string;
+  reason: string;
+}
+
+/** Cancelling an interrupted local Paper intent is an operator action: the
+ *  audit record and the order change commit together, and no price is ever
+ *  invented for an intent that never filled. */
+export function recoverPendingPaperIntent(input: PaperRecoveryRequest): { order: PaperOrder; recovery: PaperRecovery; deduplicated: boolean } {
+  return recoverPaperIntent(input);
+}
 
 export interface PaperExecutionDependencies {
   beginIntent: (request: ExecutePaperOrderRequest) => { order: PaperOrder; portfolio: PaperPortfolio; deduplicated: boolean };

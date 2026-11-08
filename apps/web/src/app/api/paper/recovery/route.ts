@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { listPaperRecoveries, listPendingPaperOrders, recoverPaperIntent } from "@newbeing/storage";
+import { readPaperRecoveryState, recoverPendingPaperIntent } from "@newbeing/application";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,14 +14,14 @@ const recoverySchema = z.object({
 }).strict();
 
 export async function GET(): Promise<NextResponse> {
-  return NextResponse.json({ pending: listPendingPaperOrders(), recoveries: listPaperRecoveries() }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(readPaperRecoveryState(), { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
     const parsed = recoverySchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Expected cancel, clientOrderId, actionId and audit reason only." }, { status: 400 });
-    return NextResponse.json(recoverPaperIntent(parsed.data));
+    return NextResponse.json(recoverPendingPaperIntent(parsed.data), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Paper recovery failed." }, { status: 409 });
   }
