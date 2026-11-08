@@ -1,14 +1,18 @@
 # Repository Guidelines
 
+newBeing is a local-first, AI-native trading research workstation: a pnpm monorepo with a Next.js workbench, deterministic research/Replay engines, Paper-only execution, and a local MCP server. Trading is **Paper-only** — there is no live order route and no exchange credential handling. Saved strategy source is text, never executable.
+
 ## Project Overview
 
-newBeing is a local-first AI-native trading research workstation built as a pnpm monorepo. It provides public market data, deterministic backtests and Replay, Paper accounts, saved research, and a local MCP server. Trading is Paper-only; there is no live order route or exchange credential handling. Local SQLite state defaults to `.newbeing/` and can be moved with `NEWBEING_DATA_DIR`.
+- Public market data, deterministic backtests, Replay, Paper accounts, saved research, local AI/MCP access.
+- Everything runs on the operator's machine; SQLite defaults to `.newbeing/` and moves with `NEWBEING_DATA_DIR`.
+- One rule outranks convenience: never invent data. No fabricated fills, no inferred balances or FX rates, no future candles, no silent substitution when a lookup fails.
 
 ## Architecture & Data Flow
 
 ```mermaid
 flowchart LR
-  browser[Browser UI] --> web[Next.js UI and API routes]
+  browser[Browser UI] --> web[Next.js UI + API routes]
   web --> app[@newbeing/application]
   app --> core[@newbeing/core]
   app --> market[@newbeing/market-data]
@@ -17,20 +21,22 @@ flowchart LR
   browser -. public klines .-> stream[Binance public WebSocket]
 ```
 
-- `core` owns domain contracts and deterministic strategy, backtest, Paper, and Replay behavior. Backtests evaluate signals on a safe candle prefix; preserve the no-lookahead and explicit execution assumptions.
-- `application` composes shared research and execution use cases. `market-data` normalizes public exchange data through adapters such as CCXT. `storage` persists workspace and experiment state with Drizzle and SQLite.
-- The web server handles public exchange requests; the browser subscribes directly only to Binance's public kline stream. MCP reuses application services over local stdio and does not expose an HTTP listener.
+- `core` is pure and synchronous: types, strategies, backtest, ledger, Paper, Replay, spot, policy, factors. No network, filesystem, or adapter work belongs here.
+- `application` composes use cases (research, sweep, evaluation, Replay, Paper, spot, derivatives) behind dependency objects so tests can inject clocks, adapters, and failure points.
+- `market-data` owns public transport and normalization (`ccxt` adapters plus native derivatives/options clients).
+- `storage` owns SQLite schema, migrations, transactions, and immutable research snapshots via Drizzle + `better-sqlite3`.
+- `web` and `mcp` are callers only — neither is an execution engine nor a secret store. Web serves public exchange requests; the browser subscribes directly only to Binance's public kline stream.
+- Determinism contracts to preserve: strategies see a candle prefix ending at the evaluated bar, signals fill at the **next bar open**, stops win ambiguous ranges, fees/slippage/precision are explicit, and Replay exposes only the revealed prefix of a frozen dataset.
 
 ## Key Directories
 
-- `apps/web/src/app/` — Next.js App Router pages and API routes; `components/`, `lib/`, and `store/` hold UI, client helpers, and shared Zustand state.
-- `packages/core/src/` — shared types, strategies, deterministic backtests, ledger rules, Paper, Replay, and factor evaluation.
-- `packages/application/src/` — backtest, sweep, evaluation, Replay, derivatives, and Paper use cases.
-- `packages/market-data/src/` — normalized market contracts and exchange adapters.
-- `packages/storage/src/` — SQLite schema, migrations, repositories, and immutable research snapshots.
-- `packages/mcp/src/` — local MCP server, tool registration, and stdio smoke client.
-- `e2e/` — Playwright browser and API flows. `docs/` — architecture, feature boundaries, research decisions, and workflows.
-- `packages/core/bench/` — informational strategy benchmarks.
+- `apps/web/src/app/` — App Router pages and `api/*` route handlers; `components/` UI, `lib/` client helpers, `store/workspace.ts` Zustand state.
+- `packages/core/src/` — domain contracts and all deterministic math; `packages/core/bench/` holds informational benchmarks.
+- `packages/application/src/` — use cases and orchestration seams.
+- `packages/market-data/src/` — exchange adapters, normalized contracts, derivatives normalization and fixtures.
+- `packages/storage/src/` — `db.ts` migrations, `schema.ts`, `repositories.ts`, `spot.ts`, `derivatives.ts`, `snapshots.ts`, `research.ts`.
+- `packages/mcp/src/` — stdio server (`server.ts`), tool registration (`tools.ts`, `ai-guidance.ts`, `derivatives-tools.ts`), smoke client (`smoke.ts`).
+- `e2e/` — Playwright browser/API flows and API stubs. `docs/` — decision records (see Important Files).
 
 ## Development Commands
 
@@ -38,48 +44,61 @@ Run from the repository root with pnpm:
 
 ```sh
 pnpm install
-pnpm dev                 # Build shared packages, then start the web app
-pnpm start               # Start the built web app
+pnpm dev          # build:packages, then next dev on 127.0.0.1
+pnpm start        # serve the built web app
 pnpm build
 pnpm typecheck
 pnpm lint
-pnpm test                # Build shared packages, then run package tests serially
-pnpm exec playwright install chromium  # Once per machine
+pnpm test         # build:packages, then package suites serially
+pnpm exec playwright install chromium   # once per machine
 pnpm test:e2e
 pnpm mcp
 pnpm mcp:smoke
 pnpm bench
 ```
 
-A single package can be checked with `pnpm --filter @newbeing/<package> test` or the corresponding `typecheck` script; the web package is `@newbeing/web`.
+- `build:packages` builds `core → market-data → storage → application`. Packages declare types from `src/` but runtime entry points from `dist/`, so build before running or typechecking a consumer.
+- Single package: `pnpm --filter @newbeing/storage test`.
+- Single file / test name: `pnpm --filter @newbeing/core exec vitest run tests/backtest.test.ts -t "fees"`.
+- Single E2E file: `pnpm exec playwright test e2e/workstation.e2e.ts`.
 
 ## Code Conventions & Common Patterns
 
-- TypeScript is strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`); ESLint treats explicit `any` as an error. Keep types and return cases explicit.
-- Respect package boundaries and each manifest's declared exports; packages with `src/index.ts` expose their public API there. Use `.js` extensions for package-relative TypeScript imports; web code uses the `@/` alias.
-- Keep core calculations synchronous and deterministic. Keep network and filesystem I/O at adapter, application, storage, or route boundaries. Use existing abort/timeout handling for asynchronous network calls.
-- Application services expose dependency objects or adapter parameters where needed for deterministic execution and testing; retain those seams when changing service behavior. Keep related SQLite mutations transactional.
-- Shared browser state lives in `apps/web/src/store/workspace.ts` as typed Zustand state and actions. Follow component selector patterns, including `useShallow` for grouped selections.
-- Keep order/replay transitions, market assumptions, fees, and precision rules explicit. Invalid domain transitions and ledger values are rejected; do not silently substitute data or expose future candles during research or Replay.
-- Preserve product boundaries: Paper-only execution, loopback-only local API, and local stdio MCP. Source Draft text is saved for research and is not executable.
+- TypeScript is strict: `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, `noFallthroughCasesInSwitch` (`tsconfig.base.json`, target ES2022, `moduleResolution: "Bundler"`). ESLint makes explicit `any` an error (`eslint.config.mjs`).
+- Use `.js` extensions on package-relative imports, even for types; web code uses the `@/` alias. Respect manifest export maps and keep the public API in each `src/index.ts`.
+- Keep core calculations synchronous and side-effect free. Network, clock, filesystem, and randomness belong at adapter/application/storage/route boundaries.
+- Retain dependency-object seams in `packages/application/src/*` (for example `{ now, marketAdapter }`, injected `ExchangeAdapter`, cache and snapshot hooks). Tests and failure injection depend on them.
+- Fail explicitly. Invalid domain transitions throw `Error`; money/precision violations throw `LedgerValidationError` (`packages/core/src/ledger.ts`); routes translate these into 400/409/422 rather than degrading to empty results.
+- Persist through one immediate SQLite transaction per mutation. Replay guards must be re-checked **inside** the transaction, not only in the route, so a concurrent workspace switch cannot interleave (`packages/storage/src/spot.ts`, `repositories.ts`).
+- Keep read paths read-only: an existing wallet/account is served without an upsert, so polling never contends for the write lock.
+- Browser state lives in `apps/web/src/store/workspace.ts` as typed Zustand actions; select grouped fields with `useShallow`. Server state is written through `/api/workspace` with optimistic timestamps.
+- Polling components pause on `document.hidden` and use the narrowest API view available (for example `/api/paper?view=positions`).
+- Name component files in kebab-case (`bottom-dock.tsx`), tests as `*.test.ts` / `*.e2e.ts`.
 
 ## Important Files
 
-- `README.md` — setup, safety boundaries, commands, and workspace map.
-- `package.json`, `pnpm-workspace.yaml`, and `pnpm-lock.yaml` — workspace scripts, package manager, and dependency lock.
-- `tsconfig.base.json`, `eslint.config.mjs`, and `playwright.config.ts` — shared compiler, lint, and E2E settings.
-- Follow the Next.js-specific rules in `apps/web/AGENTS.md`; resolve the relevant installed guide under `node_modules/next/dist/docs/` from `apps/web/` before editing web code.
-- `docs/research/references.md`, `docs/derivatives.md`, `docs/sweeps.md`, and `docs/research-evaluations.md` — design and behavior decisions for those areas.
+- `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` — scripts, workspaces, native build allowlist.
+- `tsconfig.base.json`, `eslint.config.mjs`, `playwright.config.ts` — shared compiler, lint, and E2E settings.
+- `apps/web/next.config.ts` — `NEWBEING_NEXT_DIST_DIR`, `transpilePackages`, tracing externals.
+- `apps/web/AGENTS.md` — binding Next.js rule: read the relevant guide under `node_modules/next/dist/docs/` from `apps/web/` before writing web code (this Next version differs from training data).
+- `docs/functional-architecture.md` — package responsibilities and safety invariants; `docs/cross-venue-plan.md` — venue/workspace decisions.
+- `docs/derivatives.md`, `docs/sweeps.md`, `docs/research-evaluations.md`, `docs/paper-recovery.md`, `docs/spot-foundation-closure.md` — behavior contracts for those areas.
+- `docs/ai-interaction-design.md` (MCP workflow), `docs/design-plan.md` (UI hierarchy), `docs/research/references.md` (research decisions).
 
 ## Runtime/Tooling Preferences
 
-- Use Node.js 22.12+ and pnpm 12.10.1 (Node 24 is also documented as tested). Use pnpm workspace commands rather than npm or yarn.
-- The web app uses Next.js 16.4.3 with Webpack for development; dev and production servers bind to `127.0.0.1`.
-- Public exchange access requires network access to Binance and other configured public endpoints. No API key is needed for the documented workflows.
+- Node `>=22.12` (CI pins Node 24); `packageManager: pnpm@12.10.1`. Use pnpm workspace commands — never npm or yarn.
+- Next.js 16.4.3 with the Webpack dev bundler; dev and production servers bind `127.0.0.1` only.
+- SQLite via `better-sqlite3` + Drizzle in WAL mode with `busy_timeout`; `pnpm-workspace.yaml` `allowBuilds` controls native dependency builds.
+- Public exchange access needs network reachability (Binance, OKX, Deribit, Coinbase, Kraken); no API keys are required for documented workflows.
+- CI (`.github/workflows/ci.yml`) runs, in order: `pnpm install --frozen-lockfile`, `test`, `typecheck`, `lint`, `build`, Chromium install, `test:e2e`, `mcp:smoke`.
 
 ## Testing & QA
 
-- Vitest 5 unit/integration tests use `*.test.ts` in package `tests/` directories and `apps/web/tests/`. Run `pnpm test` for the workspace or `pnpm --filter @newbeing/<package> test` for one package.
-- Playwright tests use `e2e/*.e2e.ts`. `pnpm test:e2e` builds packages, starts a loopback web server, enables deterministic fixtures, and uses an isolated SQLite data directory. The suite runs with one worker; install Chromium once as shown above.
-- MCP's package test runs its stdio smoke client; `pnpm mcp:smoke` runs that check explicitly.
-- Storage-backed tests should use a fresh temporary `NEWBEING_DATA_DIR`, close the test database, and remove the directory during cleanup. No separate root coverage command is configured.
+- Vitest 5 for packages and web routes (`*.test.ts`); Playwright 1.64.1 for browser/API E2E (`*.e2e.ts`, `workers: 1`).
+- Suites: `packages/*/tests/`, `apps/web/tests/`, `e2e/`. `pnpm test` runs them serially after building packages; there is no coverage threshold configured.
+- Storage-backed tests must isolate state: `closeDatabaseForTests()`, a fresh `mkdtempSync` directory, `process.env.NEWBEING_DATA_DIR = directory`, then close and remove it in cleanup.
+- Crash/restart behavior is tested with subprocess stages in `packages/storage/tests/paper-recovery.test.ts` (`crashAt`).
+- E2E: `NEWBEING_E2E_FIXTURES=1` enables deterministic provider fixtures outside production; `e2e/api-mocks.ts` provides stubbed API mode. `PLAYWRIGHT_BASE_URL` is rejected unless the host is `localhost`, `127.0.0.1`, or `::1`.
+- MCP verification is the stdio smoke client (`packages/mcp/src/smoke.ts`); it checks the approved tool set, snapshot identity, draft non-executability, and Replay restrictions.
+- Before claiming a change works, run the specific test or scenario that exercises it — a passing unrelated suite is not proof.
