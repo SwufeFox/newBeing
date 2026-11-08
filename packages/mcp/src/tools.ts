@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { SPOT_EXECUTION_POLICY, estimatePaperAmounts, fillPaperOrder, SIMULATION_PRECISION, DEFAULT_WORKSPACE_STATE, logEvent, STRATEGIES, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import { findCandleGaps, getExchangeAdapter, removeFormingCandles, timeframeMilliseconds } from "@newbeing/market-data";
 import {
-  getSpotAccount,
   getExperiment,
   getSavedSweep,
   loadDatasetSnapshot,
@@ -21,7 +20,7 @@ import {
   saveOrderPreview,
   saveWorkspaceState,
 } from "@newbeing/storage";
-import { ResearchError, readPaperAccount, readPaperRecoveryState, rerunBacktestSweep, rerunResearchBacktest, runBacktestSweep, runResearchBacktest, type SweepResult } from "@newbeing/application";
+import { assertResearchAvailable, ResearchError, readPaperAccount, readPaperRecoveryState, readSharedSpotAccount, rerunBacktestSweep, rerunResearchBacktest, runBacktestSweep, runResearchBacktest, SpotReplayBlockedError, type SweepResult } from "@newbeing/application";
 import { registerAIGuidance } from "./ai-guidance.js";
 import { registerDerivativesTools } from "./derivatives-tools.js";
 
@@ -248,13 +247,20 @@ export function createNewBeingMcpServer(): McpServer {
     try {
       const workspace = getWorkspaceState().state;
       const selectedExchange = requestedExchange ?? workspace.exchange;
-      if (account_mode === "shared-spot" && workspace.activeWorkspace === "replay") return errorResult(new Error("Shared spot accounts are hidden during Replay."));
+      if (account_mode === "shared-spot") {
+        try {
+          const account = readSharedSpotAccount(selectedExchange, symbol.split("/")[1]!);
+          return textResult({ mode: "paper", accountMode: "shared-spot", exchange: selectedExchange, account: account ?? null, policy: SPOT_EXECUTION_POLICY, note: "Open and trade the shared account explicitly in the trusted UI. Legacy previews remain bound to legacy pair wallets." });
+        } catch (error) {
+          if (error instanceof SpotReplayBlockedError) return errorResult(new Error("Shared spot accounts are hidden during Replay."));
+          throw error;
+        }
+      }
       if (workspace.activeWorkspace === "replay") {
         const session = workspace.activeReplayId ? getReplaySession(workspace.activeReplayId) : undefined;
         if (!session || session.exchange !== workspace.exchange || session.exchange !== selectedExchange || session.symbol !== symbol) return errorResult(new Error("Replay portfolio is available only for the active replay venue and symbol."));
         return textResult({ mode: "replay", source: "isolated local replay simulator", exchange: session.exchange, symbol, sessionId: session.id, portfolio: getReplayExecution(session.id)?.portfolio ?? getPaperPortfolio(replayAccountId(session.id, symbol, session.exchange)) });
       }
-      if (account_mode === "shared-spot") return textResult({ mode: "paper", accountMode: "shared-spot", exchange: selectedExchange, account: getSpotAccount(selectedExchange, symbol.split("/")[1]!) ?? null, policy: SPOT_EXECUTION_POLICY, note: "Open and trade the shared account explicitly in the trusted UI. Legacy previews remain bound to legacy pair wallets." });
       const read = readPaperAccount(selectedExchange, symbol);
       if (!read.visible || !read.account) return errorResult(new Error("Normal Paper accounts are hidden during Replay."));
       return textResult({ mode: "paper", source: "local simulator", exchange: selectedExchange, symbol, portfolio: read.account.portfolio });
@@ -471,7 +477,7 @@ export function createNewBeingMcpServer(): McpServer {
     annotations: { readOnlyHint: true },
   }, async ({ result_id, trade_limit, include_equity_curve }) => {
     try {
-      if (getWorkspaceState().state.activeWorkspace === "replay") return errorResult(new Error("Saved backtests are hidden during Replay to prevent future-result leakage."));
+      assertResearchAvailable("Saved backtests are hidden during Replay to prevent future-result leakage.");
       const result = getExperiment(result_id);
       return result ? textResult(summarizeExperiment(result, trade_limit, include_equity_curve)) : errorResult(new Error("Backtest result not found."));
     } catch (error) { return errorResult(error); }
@@ -484,7 +490,7 @@ export function createNewBeingMcpServer(): McpServer {
     annotations: { readOnlyHint: true },
   }, async ({ sweep_id }) => {
     try {
-      if (getWorkspaceState().state.activeWorkspace === "replay") return researchError(new Error("Saved sweeps are hidden during Replay to prevent future-result leakage."));
+      assertResearchAvailable("Saved sweeps are hidden during Replay to prevent future-result leakage.");
       const sweep = getSavedSweep(sweep_id);
       return sweep ? researchResult(summarizeSweep(sweep), "research-sweep", sweep.sweepId, "saved immutable candle snapshot") : researchError(new Error("Research sweep not found."));
     } catch (error) { return researchError(error); }
@@ -497,7 +503,7 @@ export function createNewBeingMcpServer(): McpServer {
     annotations: { readOnlyHint: true },
   }, async ({ limit }) => {
     try {
-      if (getWorkspaceState().state.activeWorkspace === "replay") return errorResult(new Error("Experiment history is hidden during Replay to prevent future-result leakage."));
+      assertResearchAvailable("Experiment history is hidden during Replay to prevent future-result leakage.");
       const items = listExperiments(limit).map((result) => ({
         resultId: result.resultId,
         datasetId: result.datasetId,

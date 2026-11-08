@@ -212,8 +212,8 @@ importers:
         specifier: ^1.1.13
         version: 1.1.22(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@swufefox/ak-ui-react':
-        specifier: 1.3.1
-        version: 1.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: 1.3.5
+        version: 1.3.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       ccxt:
         specifier: 4.5.89
         version: 4.5.89
@@ -1254,8 +1254,8 @@ packages:
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
 
-  '@swufefox/ak-ui-react@1.3.1':
-    resolution: {integrity: sha512-LuDGH0tuT5AZvlm0Ey+E00Ju7dBx6quOzg1a+cTuaL0lwegnyHniPksDoGtDFQDrhxaxDnud4gwPVuZFoYCTBA==}
+  '@swufefox/ak-ui-react@1.3.5':
+    resolution: {integrity: sha512-lMBt26gylKEAhJ7IJ+lL82rZ05i9kU1Hg9O1N0/MbbcDQ8UcMfFQl1X6oPAGHR28+wDJYQqJVZZe0sl6isfAsA==}
     peerDependencies:
       react: '>=18'
       react-dom: '>=18'
@@ -4108,7 +4108,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@swufefox/ak-ui-react@1.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@swufefox/ak-ui-react@1.3.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)

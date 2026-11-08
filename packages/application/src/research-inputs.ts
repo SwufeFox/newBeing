@@ -28,8 +28,8 @@ export interface OriginalResearchInput {
   snapshot: DatasetPayload;
   reproduction: ResearchReproduction;
 }
-export function assertResearchAvailable(): void {
-  if (getWorkspaceState().state.activeWorkspace === "replay") throw new ResearchError("Backtests are disabled while Replay is active, to avoid exposing future-derived results.", 409);
+export function assertResearchAvailable(message = "Backtests are disabled while Replay is active, to avoid exposing future-derived results."): void {
+  if (getWorkspaceState().state.activeWorkspace === "replay") throw new ResearchError(message, 409);
 }
 /** Hash all executable core modules, not just a version label or function body.
  * The server deployment must retain its compiled core artifact for reruns. */

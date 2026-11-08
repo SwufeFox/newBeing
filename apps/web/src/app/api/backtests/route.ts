@@ -32,9 +32,8 @@ const requestSchema = z.object({
 });
 
 export async function GET(request: Request): Promise<NextResponse> {
-  if (getWorkspaceState().state.activeWorkspace === "replay") {
-    return NextResponse.json({ error: "Backtest history is hidden during Replay to avoid future-derived results." }, { status: 409 });
-  }
+  const guard = researchReadGuard("Backtest history is hidden during Replay to avoid future-derived results.");
+  if (guard) return guard;
   const searchParams = new URL(request.url).searchParams;
   const limitParam = searchParams.get("limit");
   const parsed = z.coerce.number().int().min(1).max(100).safeParse(limitParam ?? 20);

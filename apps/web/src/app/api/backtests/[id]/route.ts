@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getExperiment, getWorkspaceState } from "@newbeing/storage";
+import { getExperiment } from "@newbeing/storage";
+import { researchReadGuard } from "@/lib/research-route";
 
 export const runtime = "nodejs";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
-  if (getWorkspaceState().state.activeWorkspace === "replay") {
-    return NextResponse.json({ error: "Backtest results are hidden during Replay to avoid future-derived outcomes." }, { status: 409 });
-  }
+  const guard = researchReadGuard("Backtest results are hidden during Replay to avoid future-derived outcomes.");
+  if (guard) return guard;
   const { id } = await context.params;
   const result = getExperiment(id);
   return result

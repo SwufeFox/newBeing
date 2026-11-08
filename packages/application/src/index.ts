@@ -4,7 +4,7 @@ import { fetchCompletedCandlesRange, fetchLatestCompletedCandles, findCandleGaps
 import type { ExchangeId, Timeframe } from "@newbeing/core";
 import { getExperiment, getWorkspaceState, identifyDataset, saveDatasetSnapshot, saveResearchResults } from "@newbeing/storage";
 import { assertResearchAvailable, assertSameOutcome, originalResearchInput, reproductionFor, ResearchError, resolveResearchStrategy } from "./research-inputs.js";
-export { ResearchError } from "./research-inputs.js";
+export { assertResearchAvailable, ResearchError } from "./research-inputs.js";
 export * from "./spot.js";
 export * from "./paper.js";
 export * from "./replay.js";
