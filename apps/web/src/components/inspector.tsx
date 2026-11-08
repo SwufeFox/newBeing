@@ -14,6 +14,7 @@ import { StrategyLab } from "@/components/strategy-lab";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import { floorToDecimals } from "@/lib/indicators";
+import { formatQuotePrice, formatSize } from "@/lib/price-format";
 import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress } from "@swufefox/ak-ui-react";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
 
@@ -570,10 +571,32 @@ function exchangeLabel(exchange: ExchangeId): string {
   return ({ binance: "Binance Spot", coinbaseexchange: "Coinbase Exchange", kraken: "Kraken Spot", okx: "OKX Spot" })[exchange];
 }
 
+/** Prices are rendered through the workstation's single formatter, so the
+ *  ladder, the tape and the plate cannot print the same quote differently. */
 function price(value: number | null | undefined): string {
+  return formatQuotePrice(value);
+}
+
+/** A resting size is a quantity, not a quote: it keeps the venue's finer
+ *  precision so `0.14` BTC stays legible next to `866.1400`. */
+function sizeText(value: number | null | undefined): string {
+  return formatSize(value);
+}
+
+/** Money is not a price: it keeps the ledger's own precision instead of
+ *  the quote ladder's two decimals. */
+function amount(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
     ? value.toLocaleString("en-US", { minimumFractionDigits: value < 1 ? 4 : 2, maximumFractionDigits: 6 })
     : "—";
+}
+
+/** How much of the size column one level's resting size fills, as a fraction
+ *  of the largest level on screen. The smallest visible share keeps a sliver
+ *  so a level is never mistaken for an empty one. */
+function depthShare(size: number, maxSize: number): number {
+  if (!Number.isFinite(size) || size <= 0 || maxSize <= 0) return 0;
+  return Math.min(1, Math.max(0.04, size / maxSize));
 }
 
 interface InspectorProps {
@@ -685,7 +708,7 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
     <div className="orderbook-panel bg-[var(--ak-surface-canvas)] p-2.5 font-mono text-xs">
       <div className="book-columns flex justify-between text-[10px] text-[var(--ak-text-secondary)] uppercase font-mono pb-1 border-b border-[var(--ak-border-subtle)]">
         <span>{copy.priceWithQuote(quote)}</span>
-        <span>{copy.size}</span>
+        <span className="book-size-head">{copy.size}</span>
       </div>
       {error && !book && <div role="status" className="stripe-edge book-state">{error}</div>}
       {stale && book && <div role="alert" className="stripe-edge book-state">{copy.staleNotice}</div>}
@@ -715,23 +738,16 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
         {book?.asks.slice(0, 5).reverse().map((level, index) => (
           <button
             type="button"
-            className="book-row ask relative flex justify-between py-[2px] px-1 hover:bg-red-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight w-full text-left"
+            className="book-row ask relative flex justify-between py-[2px] px-1 cursor-pointer select-none group transition-colors text-[11px] leading-tight w-full text-left"
             key={`ask-${index}`}
             onClick={() => onPickPrice?.(level.price)}
             aria-label={copy.pickAsk(price(level.price))}
             title={copy.pickHint}
+            style={{ "--depth-share": depthShare(level.amount, maxSize) } as React.CSSProperties}
           >
-            <span
-              className="depth-bar absolute right-0 top-0 bottom-0 pointer-events-none transition-all duration-300"
-              style={{
-                width: `${Math.min(100, Math.max(3, ((level.amount || 0) / maxSize) * 100))}%`,
-                background: "linear-gradient(90deg, rgba(227, 59, 59, 0.04) 0%, rgba(227, 59, 59, 0.28) 100%)",
-                borderLeft: "2px solid rgba(227, 59, 59, 0.6)",
-                boxShadow: "inset 0 0 8px rgba(227, 59, 59, 0.15)",
-              }}
-            />
+            <span className="depth-bar" aria-hidden="true" />
             <span className="text-[var(--ak-signal-danger)] font-bold tabular-nums group-hover:underline z-10">{price(level.price)}</span>
-            <span className="text-[var(--ak-text-secondary)] tabular-nums z-10">{level.amount.toFixed(4)}</span>
+            <span className="book-size tabular-nums z-10">{sizeText(level.amount)}</span>
           </button>
         ))}
       </div>
@@ -743,8 +759,8 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
             <strong className="text-xs font-bold text-[var(--ak-text-primary)] tabular-nums">{price(midPrice)}</strong>
           </div>
           <span className="book-spread text-[10px] text-[var(--ak-text-secondary)] flex items-center gap-1">
-            <em className="not-italic opacity-70">{copy.spread}</em>
-            <b className="text-[var(--ak-signal-action)] tabular-nums">{price(spread)}</b>
+            <em className="not-italic">{copy.spread}</em>
+            <b className="tabular-nums">{price(spread)}</b>
           </span>
         </div>
       )}
@@ -753,23 +769,16 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
         {book?.bids.slice(0, 5).map((level, index) => (
           <button
             type="button"
-            className="book-row bid relative flex justify-between py-[2px] px-1 hover:bg-emerald-950/25 cursor-pointer select-none group transition-colors text-[11px] leading-tight w-full text-left"
+            className="book-row bid relative flex justify-between py-[2px] px-1 cursor-pointer select-none group transition-colors text-[11px] leading-tight w-full text-left"
             key={`bid-${index}`}
             onClick={() => onPickPrice?.(level.price)}
             aria-label={copy.pickBid(price(level.price))}
             title={copy.pickHint}
+            style={{ "--depth-share": depthShare(level.amount, maxSize) } as React.CSSProperties}
           >
-            <span
-              className="depth-bar absolute right-0 top-0 bottom-0 pointer-events-none transition-all duration-300"
-              style={{
-                width: `${Math.min(100, Math.max(3, ((level.amount || 0) / maxSize) * 100))}%`,
-                background: "linear-gradient(90deg, rgba(70, 196, 124, 0.04) 0%, rgba(70, 196, 124, 0.28) 100%)",
-                borderLeft: "2px solid rgba(70, 196, 124, 0.6)",
-                boxShadow: "inset 0 0 8px rgba(70, 196, 124, 0.15)",
-              }}
-            />
+            <span className="depth-bar" aria-hidden="true" />
             <span className="text-[var(--ak-signal-success)] font-bold tabular-nums group-hover:underline z-10">{price(level.price)}</span>
-            <span className="text-[var(--ak-text-secondary)] tabular-nums z-10">{level.amount.toFixed(4)}</span>
+            <span className="book-size tabular-nums z-10">{sizeText(level.amount)}</span>
           </button>
         ))}
       </div>
@@ -839,8 +848,8 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
     <div className="recent-trades-panel bg-[var(--ak-surface-canvas)] p-2.5 font-mono text-xs">
       <div className="trades-columns flex justify-between text-[10px] text-[var(--ak-text-secondary)] uppercase pb-1 border-b border-[var(--ak-border-subtle)]">
         <span>{copy.columnPrice}</span>
-        <span>{copy.columnAmount}</span>
-        <span>{copy.columnTime}</span>
+        <span className="trade-amount-head">{copy.columnAmount}</span>
+        <span className="trade-time-head">{copy.columnTime}</span>
       </div>
       {error && trades.length === 0 && <div className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{error}</div>}
       {stale && trades.length > 0 && <div role="alert" className="small-error text-xs text-[var(--ak-signal-danger)] p-1">{copy.staleNotice}</div>}
@@ -861,8 +870,8 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
                 {isBuy ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
                 {price(trade.price)}
               </span>
-              <span className="text-[var(--ak-text-secondary)] tabular-nums">{trade.amount.toFixed(4)}</span>
-              <span className="text-[10px] text-[var(--ak-text-secondary)] tabular-nums opacity-70">
+              <span className="trade-amount tabular-nums">{sizeText(trade.amount)}</span>
+              <span className="trade-time tabular-nums">
                 {new Date(trade.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
             </button>
@@ -1938,7 +1947,7 @@ function PaperTicket({
             {copy.previewSide(preview.side, String(preview.quantity), base)}
           </strong>
           <div className="text-[10px] text-[var(--ak-text-secondary)] space-y-0.5">
-            <div>{copy.previewNumbers(price(preview.referencePrice), price(preview.estimatedNotional), quote, price(preview.estimatedFee))}</div>
+            <div>{copy.previewNumbers(price(preview.referencePrice), amount(preview.estimatedNotional), quote, amount(preview.estimatedFee))}</div>
             <div>{copy.expires(new Date(preview.expiresAt).toLocaleTimeString())}</div>
           </div>
           <div className="preview-actions flex gap-2 pt-1">
@@ -2390,7 +2399,7 @@ function ReplayTicket({
 
       {report && (
         <div className="ticket-disclaimer text-[10px] text-[var(--ak-text-secondary)] p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
-          {copy.journalSummary(price(report.equity), quote, price(report.netPnl), report.fillCount, (report.maxDrawdown * 100).toFixed(2))}
+          {copy.journalSummary(amount(report.equity), quote, amount(report.netPnl), report.fillCount, (report.maxDrawdown * 100).toFixed(2))}
         </div>
       )}
     </div>

@@ -68,6 +68,8 @@ interface MarketChartCopy {
   fetchFailed: string;
   noBars: string;
   requestFailed: string;
+  candlesUnavailable: string;
+  errorDetails: string;
   retryFailed: string;
 }
 
@@ -107,6 +109,8 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     fetchFailed: "Could not fetch market candles.",
     noBars: "No valid OHLCV bars were returned for this symbol and timeframe.",
     requestFailed: "Market data request failed.",
+    candlesUnavailable: "Market candles are unavailable.",
+    errorDetails: "Error details",
     retryFailed: "Retry failed.",
   },
   zh: {
@@ -142,6 +146,8 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     fetchFailed: "无法获取行情 K 线。",
     noBars: "该标的与周期未返回有效的 OHLCV K 线。",
     requestFailed: "行情请求失败。",
+    candlesUnavailable: "行情 K 线不可用。",
+    errorDetails: "错误详情",
     retryFailed: "重试失败。",
   },
 };
@@ -903,23 +909,33 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
           </div>
         )}
         {error && (
-          <div className="chart-overlay chart-error">
-            <AlertTriangle size={18} />
-            <span>{error}</span>
-            <button
-              className="link-button"
-              onClick={() => {
-                setErrorState(null);
-                setRefreshing(true);
-                void loadHistory()
-                  .catch((reason: unknown) => {
-                    setErrorState({ key: dataKey, message: reason instanceof Error ? reason.message : translate(MARKET_CHART_COPY).retryFailed });
-                  })
-                  .finally(() => setRefreshing(false));
-              }}
-            >
-              {copy.retry}
-            </button>
+          <div className="chart-overlay chart-error" role="alert">
+            <div className="chart-error-plate stripe-edge">
+              <div className="chart-error-copy">
+                <AlertTriangle size={16} aria-hidden="true" />
+                <div className="chart-error-message">
+                  <strong className="chart-error-title">{copy.candlesUnavailable}</strong>
+                  <details className="chart-error-details">
+                    <summary>{copy.errorDetails}</summary>
+                    <pre>{error}</pre>
+                  </details>
+                </div>
+              </div>
+              <button
+                className="link-button"
+                onClick={() => {
+                  setErrorState(null);
+                  setRefreshing(true);
+                  void loadHistory()
+                    .catch((reason: unknown) => {
+                      setErrorState({ key: dataKey, message: reason instanceof Error ? reason.message : translate(MARKET_CHART_COPY).retryFailed });
+                    })
+                    .finally(() => setRefreshing(false));
+                }}
+              >
+                {copy.retry}
+              </button>
+            </div>
           </div>
         )}
         {replayMode && replayBars.length === 0 && (

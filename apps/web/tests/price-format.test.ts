@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatQuotePrice } from "../src/lib/price-format.js";
+import { formatQuotePrice, formatSize } from "../src/lib/price-format.js";
 
 /* The plate, the watchlist, the chart legend and the positions table all render
    one quote through this function. The boundaries matter: a pair that crosses
@@ -30,5 +30,31 @@ describe("formatQuotePrice", () => {
 
   it("prints negative prices through the same magnitude rules", () => {
     expect(formatQuotePrice(-2_500.5)).toBe("-2,500.50");
+  });
+});
+
+/* A resting size is a quantity, not a quote: the depth ladder and the trade
+   tape print it through its own ladder, and the boundaries matter because a
+   size that silently loses its decimals reads as a different quantity. */
+describe("formatSize", () => {
+  it("keeps four decimals so a resting size stays exact", () => {
+    expect(formatSize(0.14)).toBe("0.1400");
+    expect(formatSize(866.14)).toBe("866.1400");
+    expect(formatSize(1)).toBe("1.0000");
+  });
+
+  it("keeps the digits of a dust size instead of rounding it away", () => {
+    expect(formatSize(0.00001234)).toBe("0.00001234");
+    expect(formatSize(0.0001)).toBe("0.0001");
+  });
+
+  it("drops the decimals that a size of ten thousand cannot use", () => {
+    expect(formatSize(12_345.6789)).toBe("12,345.68");
+  });
+
+  it("renders an absent size as an em dash rather than 0.0000", () => {
+    expect(formatSize(null)).toBe("—");
+    expect(formatSize(undefined)).toBe("—");
+    expect(formatSize(Number.NaN)).toBe("—");
   });
 });

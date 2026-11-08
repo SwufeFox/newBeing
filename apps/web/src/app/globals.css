@@ -139,6 +139,7 @@
   --rail-w: 210px;     /* sidebar rail */
   --plate-h: 64px;     /* streamlined market HUD plate */
   --head-h: 40px;      /* panel header */
+  --size-col: 72px;    /* order book / tape size column */
 
   --dur: 140ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -1403,29 +1404,87 @@ input[type="number"] {
    the watchlist banner and every stale stamp use. Red stays for money at risk. */
 .chart-error {
   color: var(--c-warn);
-  /* Engine diagnostics arrive as sentences, not labels: keep their casing and
-     let the URL survive. */
-  font-family: var(--f-mono);
+  background: color-mix(in srgb, var(--c-canvas) 96%, transparent);
+  font-family: var(--f-body);
   font-size: var(--t-label);
-  font-weight: 500;
+  font-weight: 400;
   letter-spacing: 0;
-  line-height: 1.6;
-  text-align: center;
+  line-height: 1.5;
+  text-align: left;
   text-transform: none;
 }
-.chart-error > span { max-width: 68ch; }
+.chart-error-plate {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  width: min(100%, 520px);
+  min-width: 0;
+  padding: var(--s-3) var(--s-3) var(--s-3) calc(var(--s-3) + 8px);
+  border-block: var(--line) solid color-mix(in srgb, var(--c-warn) 34%, var(--c-line));
+  background: color-mix(in srgb, var(--c-surface) 96%, transparent);
+}
+.chart-error-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.chart-error-copy > svg { flex: 0 0 auto; margin-top: 1px; }
+.chart-error-message { display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--s-2); min-width: 0; }
+.chart-error-title {
+  color: var(--c-fg);
+  font-family: var(--f-body);
+  font-size: var(--t-body);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.chart-error-details { color: var(--c-warn); font-size: var(--t-label); font-weight: 500; }
+.chart-error-details > summary {
+  width: fit-content;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chart-error-details > pre {
+  max-width: 100%;
+  max-height: 6rem;
+  overflow: auto;
+  margin: var(--s-2) 0 0;
+  color: var(--c-fg-4);
+  font-family: var(--f-mono);
+  font-size: var(--t-micro);
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .chart-overlay .link-button {
-  min-height: 24px;
+  min-width: 72px;
+  min-height: 36px;
+  flex: 0 0 auto;
   padding: 0 var(--s-3);
   border: var(--line) solid currentColor;
   background: transparent;
   color: inherit;
-  font-family: var(--f-display);
-  font-size: var(--t-micro);
+  font-family: var(--f-body);
+  font-size: var(--t-label);
   font-weight: 700;
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: none;
   cursor: pointer;
+}
+@container chart (max-width: 480px) {
+  .chart-error-plate { align-items: stretch; flex-direction: column; gap: var(--s-3); }
+  .chart-error-plate .link-button { align-self: flex-end; min-height: 44px; }
+}
+@media (hover: none), (pointer: coarse) {
+  .chart-error-plate .link-button { min-height: 44px; }
 }
 .chart-overlay .link-button:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
 .chart-footer {
@@ -1596,10 +1655,12 @@ input[type="number"] {
 }
 
 /* ---- order book / trades ---- */
+/* Header and rows share one track template. The tape's TIME label used to
+   sit over a third track while its rows carried two, so the timestamp
+   wrapped onto a second line under the price. */
 .book-columns, .trades-columns {
   display: grid;
   gap: var(--s-2);
-  grid-template-columns: 1fr 1fr;
   padding: var(--s-3) var(--s-3) var(--s-1);
   color: var(--c-fg-4);
   font-family: var(--f-display);
@@ -1608,7 +1669,13 @@ input[type="number"] {
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
-.trades-columns { grid-template-columns: 1fr 1fr 1fr; }
+.book-columns, .book-row { grid-template-columns: minmax(0, 1fr) var(--size-col); }
+.trades-columns, .trade-row { grid-template-columns: minmax(0, 1fr) var(--size-col) 60px; }
+/* PRICE (USDT) stays on one line; the numeric labels sit over their own
+   right-aligned columns. */
+.book-columns > span:first-child { white-space: nowrap; }
+.book-size-head { text-align: right; }
+.trade-amount-head, .trade-time-head { text-align: right; }
 
 .book-row, .trade-row {
   position: relative;
@@ -1620,31 +1687,46 @@ input[type="number"] {
   font-variant-numeric: tabular-nums;
   line-height: 1.35;
 }
-/* the depth bar is out of flow — it must not take a grid cell */
-.book-row { grid-template-columns: 1fr 1fr; }
-.trade-row { grid-template-columns: 1fr 1fr 1fr; }
-.book-row > .depth-bar, .trade-row > .depth-bar { grid-area: 1 / 1; }
 .book-row > span:not(.depth-bar), .trade-row > span:not(.depth-bar) {
   position: relative;
   z-index: 1;
   white-space: nowrap;
 }
-.book-row > span:not(.depth-bar):last-child,
-.trade-row > span:not(.depth-bar):last-child {
-  text-align: right;
-  color: var(--c-fg-3);
-}
+.book-size { text-align: right; color: var(--c-fg-3); }
+.trade-amount { text-align: right; color: var(--c-fg-3); }
+/* The timestamp is information, not decoration: it carries the quietest
+   readable tier instead of a faded copy of its own colour. */
+.trade-time { text-align: right; color: var(--c-fg-4); font-size: var(--t-micro); }
+
+/* The depth bar sits under the size figure, the way a real ladder draws it:
+   its length is the resting size relative to the largest level on screen,
+   and the hard edge marks where that size ends. Anchoring it to the size
+   column means it can never print under a price. The colour comes from the
+   direction tokens, so the deuteranopia palette repaints the ladder with the
+   price text instead of leaving a hard-coded red/green behind. */
 .depth-bar {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 0;
+  right: var(--s-3);
   z-index: 0;
-  background: color-mix(in srgb, var(--c-down) 16%, transparent);
+  width: calc(var(--size-col) * var(--depth-share, 0));
+  /* The fill is a flat wash the size figure can sit on; the hard leading edge
+     is what carries the magnitude, so the number never loses contrast. */
+  background: var(--depth-color);
+  border-left: 2px solid var(--depth-edge);
   pointer-events: none;
 }
-.book-row.positive .depth-bar,
-.trade-row .depth-bar { background: color-mix(in srgb, var(--c-up) 16%, transparent); }
+.book-row.ask {
+  --depth-color: color-mix(in srgb, var(--c-down) 16%, transparent);
+  --depth-edge: color-mix(in srgb, var(--c-down) 70%, transparent);
+}
+.book-row.bid {
+  --depth-color: color-mix(in srgb, var(--c-up) 16%, transparent);
+  --depth-edge: color-mix(in srgb, var(--c-up) 70%, transparent);
+}
+.book-row.ask:hover { background: color-mix(in srgb, var(--c-down) 8%, transparent); }
+.book-row.bid:hover { background: color-mix(in srgb, var(--c-up) 8%, transparent); }
 
 .book-mid {
   display: flex;
@@ -3518,11 +3600,9 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 
 /* ========== polish pass: three measured defects ========== */
 
-/* 1. The order book header wrapped to two lines (columns were 82px each and
-      PRICE (USDT) needs more). Widen the price column, keep the header on one line. */
-.book-columns { grid-template-columns: minmax(0, 1fr) 72px; }
-.book-columns > span:first-child { white-space: nowrap; }
-.book-row, .trade-row { grid-template-columns: minmax(0, 1fr) 72px; }
+/* The order book header wrapped to two lines when the price column was
+   82px and PRICE (USDT) needs more. The shared track template lives in
+   the order book section above, so header and rows cannot drift apart. */
 
 /* The instrument cell pairs the base with its quote on one baseline: BTC/USDT
    rather than BTC over BTC/USDT (which read as a duplicated run-on). */
