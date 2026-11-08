@@ -981,7 +981,13 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: "good" | "alert"; text: string } | null>(null);
-  const [revision, setRevision] = useState(0);
+  /* Independent retry counters: a failed instrument list, a failed quote and a
+     failed option-chain quote must each re-arm only the request they belong to.
+     One shared counter restarted all three and spent upstream calls on data the
+     user did not ask to reload. */
+  const [listRevision, setListRevision] = useState(0);
+  const [marketRevision, setMarketRevision] = useState(0);
+  const [optionRevision, setOptionRevision] = useState(0);
   const [ledgerRevision, setLedgerRevision] = useState(0);
   const [action, setAction] = useState<"open" | "close">("open");
   const [side, setSide] = useState<"long" | "short">("long");
@@ -1054,7 +1060,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
         .finally(() => { if (!controller.signal.aborted) setListLoading(false); });
     }, 200);
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [kind, query, revision, blocked]);
+  }, [kind, query, listRevision, blocked]);
 
 
   useEffect(() => {
@@ -1104,7 +1110,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
       window.clearTimeout(retryTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [selectedId, revision, blocked, listLoading, focusedExpired]);
+  }, [selectedId, marketRevision, blocked, listLoading, focusedExpired]);
 
   function select(id: string, focus: DerivativesPosition | null = null): void {
     retainSelection.current = focus !== null;
@@ -1325,7 +1331,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
       window.clearTimeout(retryTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [blocked, kind, optionQuoteIds, optionQuoteKey, revision, listLoading, focusedExpired]);
+  }, [blocked, kind, optionQuoteIds, optionQuoteKey, optionRevision, listLoading, focusedExpired]);
   const marketVenues = [...new Set(items.map((item) => item.venue))]
     .map((venue) => venue === "okx" ? "OKX" : "Deribit")
     .join(" + ");
@@ -1416,7 +1422,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
         <AkTag variant={quote?.source === "fixture" ? "danger" : quote ? "default" : "neutral"}>
           {quote?.source === "fixture" ? copy.fixture : quote ? copy.publicRealtime : copy.noQuote}
         </AkTag>
-        {!blocked && <Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>{copy.refresh}</Button>}
+        {!blocked && <Button size="sm" variant="outline" disabled={busy} onClick={() => { setListRevision((n) => n + 1); setMarketRevision((n) => n + 1); setOptionRevision((n) => n + 1); }}>{copy.refresh}</Button>}
       </div>
     </div>
 
@@ -1471,14 +1477,14 @@ export function DerivativesWorkspace(): React.JSX.Element {
           <p className="meta">{copy.premiumPerBase(`${activeChain.base}/${activeChain.settle}`)}</p>
           {optionQuoteError && <div role="alert" className="space-y-1 text-[var(--c-down)] text-[10px]">
             <p>{optionQuoteError}</p>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>{copy.retryChainQuotes}</Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => setOptionRevision((n) => n + 1)}>{copy.retryChainQuotes}</Button>
           </div>}
           {!optionQuoteError && optionQuoteIds.length > 0 && !currentOptionQuoteData && <p role="status" className="text-[var(--c-fg-4)] text-[10px]">{copy.loadingBatchQuotes}</p>}
         </div>}
         <div className="derivatives-list">
           {blocked ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">{copy.liveDataHidden}</p>
             : listLoading ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">{copy.loadingInstruments}</p>
-              : listError ? <div className="p-3 space-y-2"><p className="text-[var(--c-fg-3)] text-[11px]">{listError}</p><Button size="sm" variant="outline" onClick={() => setRevision((n) => n + 1)}>{copy.retry}</Button></div>
+              : listError ? <div className="p-3 space-y-2"><p className="text-[var(--c-fg-3)] text-[11px]">{listError}</p><Button size="sm" variant="outline" onClick={() => setListRevision((n) => n + 1)}>{copy.retry}</Button></div>
                 : !items.length ? <p className="p-3 text-[var(--c-fg-4)] text-[11px]">{copy.noMatchingContracts}</p>
                   : kind === "option" && activeChain ? activeChain.rows.map((row) => (
                     <div key={activeChain.expiry + "-" + row.strike} className="grid grid-cols-[1fr_auto_1fr] items-stretch border-b border-[var(--c-line-soft)]" role="group" aria-label={copy.strikeGroup(derivativeNumber(row.strike))}>
@@ -1519,7 +1525,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
             <span>{copy.contractDetails}</span>
             {(instrument?.id || focusedLocalOnly?.instrumentId) && <span className="num normal-case tracking-normal font-mono text-[10px] text-[var(--c-fg-4)]">{instrument ? instrument.id : focusedLocalOnly?.instrumentId}</span>}
           </div>
-          {marketError && !focusedLocalOnly && <div role="alert" className="m-3 space-y-2 text-[var(--c-down)] text-[11px]"><p>{marketError}</p><Button size="sm" variant="outline" disabled={busy} onClick={() => setRevision((n) => n + 1)}>{copy.retryQuote}</Button></div>}
+          {marketError && !focusedLocalOnly && <div role="alert" className="m-3 space-y-2 text-[var(--c-down)] text-[11px]"><p>{marketError}</p><Button size="sm" variant="outline" disabled={busy} onClick={() => setMarketRevision((n) => n + 1)}>{copy.retryQuote}</Button></div>}
           {focusedLocalOnly && (
             <div className="derivatives-panel-body space-y-2">
               <p role="status" className="derivatives-ticket-note alert">
