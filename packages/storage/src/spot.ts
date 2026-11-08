@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { createSpotAccount, reserveSpotOrder, releaseSpotOrder, settleSpotOrder, spotAccountId, type ExchangeId, type PaperOrder, type SpotAccount } from "@newbeing/core";
 import { getDatabase } from "./db.js";
 import { spotAccounts } from "./schema.js";
-import { getWorkspaceState } from "./repositories.js";
+import { getWorkspaceState } from "./workspace.js";
 
 /** Shared accounts live in a separate table/namespace. Legacy assets are never imported. */
 export function getSpotAccount(exchange: ExchangeId, quote: string): SpotAccount | undefined {

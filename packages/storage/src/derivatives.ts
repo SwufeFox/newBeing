@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { getDatabase } from "./db.js";
-import { getWorkspaceState } from "./repositories.js";
+import { getWorkspaceState } from "./workspace.js";
 
 export type DerivativesStoredOrder = { clientOrderId: string; instrumentId: string };
 export type DerivativesStoredAccount = { id: string; orders: DerivativesStoredOrder[]; orderCount: number };

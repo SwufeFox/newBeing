@@ -4,7 +4,7 @@ import type { BacktestResult, BacktestSweepResult, WorkspaceState } from "@newbe
 import { getDatabase } from "./db.js";
 import { experiments, savedEvaluations, savedSweeps, workspaceStates } from "./schema.js";
 import { canonicalJson, loadDatasetSnapshot } from "./snapshots.js";
-import { getWorkspaceState } from "./repositories.js";
+import { getWorkspaceState } from "./workspace.js";
 
 /** Version 2 binds deterministic inputs and full outputs, excluding publication metadata. */
 export function outcomeIdentity(result: BacktestResult): string {
