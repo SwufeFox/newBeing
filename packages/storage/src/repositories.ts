@@ -281,13 +281,21 @@ export function replayAccountId(sessionId: string, symbol: string, exchange: Exc
   return `paper:replay:${sessionId}:${base}:${quote}`;
 }
 
+/** Seed for a newly created Paper wallet. Never merged into an existing row. */
+const INITIAL_PAPER_PORTFOLIO: PaperPortfolio = { quoteBalance: 10_000, baseBalance: 0, averageEntryPrice: null, realizedPnl: 0, feeRate: 0.001 };
+
 export function getPaperPortfolio(accountId = PAPER_ACCOUNT_ID): PaperPortfolio {
   const db = getDatabase();
-  const initial: PaperPortfolio = { quoteBalance: 10_000, baseBalance: 0, averageEntryPrice: null, realizedPnl: 0, feeRate: 0.001 };
-  db.insert(paperAccounts).values({ id: accountId, ...initial, updatedAt: Date.now() }).onConflictDoNothing().run();
-  const row = db.select().from(paperAccounts).where(eq(paperAccounts.id, accountId)).get();
-  if (!row) throw new Error("Paper account could not be initialized.");
-  return portfolioFromRow(row);
+  /* The Positions dock polls this every eight seconds and more than one surface
+     reads it. An existing wallet must be served without taking SQLite's write
+     lock, so the account is created only when it is genuinely missing. */
+  const read = () => db.select().from(paperAccounts).where(eq(paperAccounts.id, accountId)).get();
+  const existing = read();
+  if (existing) return portfolioFromRow(existing);
+  db.insert(paperAccounts).values({ id: accountId, ...INITIAL_PAPER_PORTFOLIO, updatedAt: Date.now() }).onConflictDoNothing().run();
+  const created = read();
+  if (!created) throw new Error("Paper account could not be initialized.");
+  return portfolioFromRow(created);
 }
 
 function portfolioFromRow(row: typeof paperAccounts.$inferSelect): PaperPortfolio {
@@ -353,8 +361,7 @@ export function beginPaperIntent(input: Pick<PaperOrder, "clientOrderId" | "symb
       return { order: existing, portfolio: portfolioFromRow(accountRow), deduplicated: true };
     }
     assertPaperMutationAllowed(accountId);
-    const initial: PaperPortfolio = { quoteBalance: 10_000, baseBalance: 0, averageEntryPrice: null, realizedPnl: 0, feeRate: 0.001 };
-    tx.insert(paperAccounts).values({ id: accountId, ...initial, updatedAt: Date.now() }).onConflictDoNothing().run();
+    tx.insert(paperAccounts).values({ id: accountId, ...INITIAL_PAPER_PORTFOLIO, updatedAt: Date.now() }).onConflictDoNothing().run();
     const accountRow = tx.select().from(paperAccounts).where(eq(paperAccounts.id, accountId)).get();
     if (!accountRow) throw new Error("Paper account could not be initialized.");
     const order: PaperOrder = { ...input, status: "created", fillPrice: null, fee: 0, createdAt: new Date().toISOString() };

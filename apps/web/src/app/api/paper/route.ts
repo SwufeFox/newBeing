@@ -34,14 +34,17 @@ export async function GET(request: Request): Promise<NextResponse> {
     const blocked = unsupported();
     if (blocked) return blocked;
     const params = new URL(request.url).searchParams;
+    const view = params.get("view");
+    if (view !== null && view !== "positions") return NextResponse.json({ error: "Unknown Paper view." }, { status: 400 });
     const symbol = params.get("symbol") ?? "BTC/USDT";
     const parsedExchange = exchangeSchema.safeParse(params.get("exchange") ?? getWorkspaceState().state.exchange);
     if (!parsedExchange.success) return NextResponse.json({ error: "Unknown exchange." }, { status: 400 });
     const accountId = paperAccountId(symbol, parsedExchange.data);
-    return NextResponse.json({
-      portfolio: getPaperPortfolio(accountId), orders: listPaperOrders(30, accountId), hasPendingOrders: hasPendingPaperOrders(accountId),
-      mode: "paper", exchange: parsedExchange.data, accountId, simulationPrecision: SIMULATION_PRECISION,
-    }, { headers: { "Cache-Control": "no-store" } });
+    const portfolio = getPaperPortfolio(accountId);
+    const hasPendingOrders = hasPendingPaperOrders(accountId);
+    const headers = { "Cache-Control": "no-store" };
+    if (view === "positions") return NextResponse.json({ portfolio, hasPendingOrders }, { headers });
+    return NextResponse.json({ portfolio, orders: listPaperOrders(30, accountId), hasPendingOrders, mode: "paper", exchange: parsedExchange.data, accountId, simulationPrecision: SIMULATION_PRECISION }, { headers });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Paper account read failed." }, { status: 500 });
   }

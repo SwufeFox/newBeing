@@ -8,6 +8,7 @@ import {
   closeDatabaseForTests,
   createReplaySession,
   finalizePaperFill,
+  getDatabase,
   getPaperOrder,
   getPaperPortfolio,
   getWorkspaceState,
@@ -17,7 +18,8 @@ import {
   markPaperIntentSubmitted,
   saveWorkspaceState,
 } from "../src/index.js";
-import { DEFAULT_WORKSPACE_STATE, type Candle, type ReplaySession } from "@newbeing/core";
+import { DEFAULT_WORKSPACE_STATE, type Candle, type PaperPortfolio, type ReplaySession } from "@newbeing/core";
+import { sql } from "drizzle-orm";
 
 let dataDirectory = "";
 
@@ -79,6 +81,23 @@ describe("SQLite repositories", () => {
     expect(paperAccountId("BTC/USD", "kraken")).not.toBe(paperAccountId("BTC/USD", "binance"));
     // A malformed symbol is still rejected.
     expect(() => paperAccountId("BTC")).toThrow(/BASE\/QUOTE/);
+  });
+
+  it("serves an existing Paper wallet without taking the write lock", () => {
+    const accountId = paperAccountId("BTC/USD", "kraken");
+    const seeded: PaperPortfolio = { quoteBalance: 10_000, baseBalance: 0, averageEntryPrice: null, realizedPnl: 0, feeRate: 0.001 };
+    expect(getPaperPortfolio(accountId)).toEqual(seeded);
+    const db = getDatabase();
+    /* Wallet reads are the hot path: the Positions dock polls one every eight
+       seconds. A read-only connection proves an existing account is served
+       without a redundant INSERT, which would otherwise take SQLite's write
+       lock and contend with fills. */
+    db.run(sql`PRAGMA query_only = ON`);
+    try {
+      expect(getPaperPortfolio(accountId)).toEqual(seeded);
+    } finally {
+      db.run(sql`PRAGMA query_only = OFF`);
+    }
   });
 
   it("persists only the replay cursor and atomically releases one next bar", () => {

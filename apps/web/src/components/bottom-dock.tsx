@@ -225,12 +225,12 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     closePosition: "Close",
     noOpenPosition: (asset) => `No open Paper position for ${asset}.`,
     closeHttpAfterFill: (status) => `Paper close returned HTTP ${status} after the order filled.`,
-    closeRefreshUnavailable: (detail) => `${detail} Refreshed order history is unavailable; the confirmed portfolio is shown.`,
-    closeRefreshMissing: "Paper close filled, but refreshed order history is unavailable. The confirmed portfolio is shown; check order history before continuing.",
+    closeRefreshUnavailable: (detail) => `${detail} Refreshed account state is unavailable; the confirmed portfolio remains visible.`,
+    closeRefreshMissing: "Paper close filled, but account state could not be refreshed. The confirmed portfolio remains visible; refresh the account before continuing.",
     closeStatusInspect: (status) => `Paper close order is ${status}. Inspect its saved status before retrying.`,
     closeStatusSettled: (status) => `Paper close order is ${status}. The latest account and order state is shown.`,
     closeUnknownRetry: "Paper close outcome is unknown. Refresh account state before retrying.",
-    closeRefreshFailed: "Paper close filled, but refreshed order history could not be loaded. The confirmed portfolio is shown.",
+    closeRefreshFailed: "Paper close filled, but account state could not be refreshed. The confirmed portfolio remains visible.",
     closeUnconfirmed: (detail) => `Paper close outcome could not be confirmed: ${detail}. Refresh account state before another close.`,
     closeUnconfirmedPlain: "Paper close outcome could not be confirmed. Refresh account state before another close.",
     accountUnavailable: "Paper account unavailable.",
@@ -391,12 +391,12 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     closePosition: "平仓",
     noOpenPosition: (asset) => `${asset} 无未平仓的模拟盘持仓。`,
     closeHttpAfterFill: (status) => `委托成交后平仓返回 HTTP ${status}。`,
-    closeRefreshUnavailable: (detail) => `${detail} 刷新后的委托历史不可用；当前显示已确认的账户。`,
-    closeRefreshMissing: "平仓已成交，但刷新后的委托历史不可用。当前显示已确认的账户；继续操作前请检查委托历史。",
+    closeRefreshUnavailable: (detail) => `${detail} 刷新后的账户状态不可用；当前仍显示已确认的账户。`,
+    closeRefreshMissing: "平仓已成交，但账户状态无法刷新。当前仍显示已确认的账户；继续操作前请刷新账户。",
     closeStatusInspect: (status) => `平仓委托状态为 ${status}。重试前请检查其已保存状态。`,
     closeStatusSettled: (status) => `平仓委托状态为 ${status}。已显示最新的账户与委托状态。`,
     closeUnknownRetry: "平仓结果未知。重试前请刷新账户状态。",
-    closeRefreshFailed: "平仓已成交，但刷新后的委托历史无法加载。当前显示已确认的账户。",
+    closeRefreshFailed: "平仓已成交，但账户状态无法刷新。当前仍显示已确认的账户。",
     closeUnconfirmed: (detail) => `无法确认平仓结果：${detail}。再次平仓前请刷新账户状态。`,
     closeUnconfirmedPlain: "无法确认平仓结果。再次平仓前请刷新账户状态。",
     accountUnavailable: "模拟盘账户不可用。",
@@ -575,10 +575,12 @@ function EquityChart({ result }: { result: BacktestResult }): React.JSX.Element 
   return <div className="equity-chart w-full h-full" ref={root} />;
 }
 
-interface PaperPayload {
+interface PaperPositionPayload {
   portfolio: PaperPortfolio;
-  orders: PaperOrder[];
   hasPendingOrders: boolean;
+}
+interface PaperPayload extends PaperPositionPayload {
+  orders: PaperOrder[];
 }
 function isPaperOrder(value: unknown): value is PaperOrder {
   if (typeof value !== "object" || value === null) return false;
@@ -606,7 +608,7 @@ function isPaperPortfolio(value: unknown): value is PaperPortfolio {
 
 function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: string; exchange: ExchangeId; markPrice: number | null; quoteStale: boolean }): React.JSX.Element {
   const copy = useCopy(DOCK_COPY);
-  const [payload, setPayload] = useState<PaperPayload | null>(null);
+  const [payload, setPayload] = useState<PaperPositionPayload | null>(null);
   const [accountStale, setAccountStale] = useState(false);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -621,11 +623,11 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
       try {
         /* The terminal already polls this symbol's quote; reuse it instead of
            issuing a second upstream ticker request every eight seconds. */
-        const accountResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
+        const accountResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}&view=positions`, { cache: "no-store" });
         const account: unknown = await accountResponse.json();
         if (disposed || refreshAttempt !== closeAttemptRef.current || closeInFlightRef.current) return;
-        if (!accountResponse.ok || typeof account !== "object" || account === null || !("portfolio" in account) || !("orders" in account) || !Array.isArray(account.orders) || !("hasPendingOrders" in account) || typeof account.hasPendingOrders !== "boolean") throw new Error(translate(DOCK_COPY).accountUnavailable);
-        const freshPayload = account as PaperPayload;
+        if (!accountResponse.ok || typeof account !== "object" || account === null || !("portfolio" in account) || !("hasPendingOrders" in account) || typeof account.hasPendingOrders !== "boolean") throw new Error(translate(DOCK_COPY).accountUnavailable);
+        const freshPayload = account as PaperPositionPayload;
         setPayload(freshPayload);
         if (!freshPayload.hasPendingOrders) closeClientOrderIdRef.current = null;
         setCloseNeedsRefresh(false);
@@ -706,7 +708,6 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
       if (savedOrder && savedPortfolio) {
         setPayload((current) => current ? {
           portfolio: savedPortfolio,
-          orders: [savedOrder, ...current.orders.filter((currentOrder) => currentOrder.clientOrderId !== savedOrder.clientOrderId)].slice(0, 30),
           hasPendingOrders: current.hasPendingOrders || ["created", "submitted", "unknown"].includes(savedOrder.status),
         } : current);
       }
@@ -715,10 +716,10 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
         closeClientOrderIdRef.current = null;
         const responseError = response.ok ? null : responseErrorMessage ?? copy.closeHttpAfterFill(response.status);
         setCloseError(responseError);
-        const refreshResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}`, { cache: "no-store" });
+        const refreshResponse = await fetch(`/api/paper?symbol=${encodeURIComponent(symbol)}&exchange=${exchange}&view=positions`, { cache: "no-store" });
         const account: unknown = await refreshResponse.json();
-        if (refreshResponse.ok && typeof account === "object" && account !== null && "portfolio" in account && "orders" in account && Array.isArray(account.orders) && "hasPendingOrders" in account && typeof account.hasPendingOrders === "boolean") {
-          setPayload(account as PaperPayload);
+        if (refreshResponse.ok && typeof account === "object" && account !== null && "portfolio" in account && "hasPendingOrders" in account && typeof account.hasPendingOrders === "boolean") {
+          setPayload(account as PaperPositionPayload);
           setCloseNeedsRefresh(false);
           setCloseError(responseError);
         } else {
