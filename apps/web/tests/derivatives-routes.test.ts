@@ -47,6 +47,25 @@ describe("derivatives public HTTP boundary", () => {
     expect(fixture.list).not.toHaveBeenCalled();
     expect(fixture.instrument).not.toHaveBeenCalled();
   });
+  it("serves quote polls without fetching candle history", async () => {
+    const response = await market(request(`market?instrumentId=${id}&view=quote`));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.quote.bid).toBe(79999);
+    expect(body).not.toHaveProperty("candles");
+    expect(fixture.quote).toHaveBeenCalledWith(id);
+    expect(fixture.candles).not.toHaveBeenCalled();
+  });
+
+  it("refreshes candle history without fetching another quote", async () => {
+    const response = await market(request(`market?instrumentId=${id}&view=candles`));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.candles).toHaveLength(1);
+    expect(body).not.toHaveProperty("quote");
+    expect(fixture.candles).toHaveBeenCalledWith(id, "1h", 150);
+    expect(fixture.quote).not.toHaveBeenCalled();
+  });
 
   it("accepts a bounded batch of Deribit option IDs and returns exchange snapshot time", async () => {
     const ids = ["deribit:option:BTC-25DEC26-80000-C"];
@@ -123,7 +142,7 @@ describe("derivatives public HTTP boundary", () => {
       fixture.workspace = "replay";
       return { instrumentId: id, mark: 80000 };
     });
-    const response = await market(request(`market?instrumentId=${id}`));
+    const response = await market(request(`market?instrumentId=${id}&view=quote`));
     expect(response.status).toBe(409);
     expect((await response.json()).quote).toBeUndefined();
   });

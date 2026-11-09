@@ -216,7 +216,7 @@ interface DerivativesCopy {
   noBookSnapshot: string;
   stalePrefix: string;
   requestFailed: string;
-  exchangeResources: Record<"contracts" | "quote" | "chainQuotes", string>;
+  exchangeResources: Record<"contracts" | "quote" | "candles" | "chainQuotes", string>;
   exchangeUnreachable: (resource: string) => string;
   exchangeLoadFailed: (resource: string, detail: string | null) => string;
   ledgerUnavailableDefault: string;
@@ -425,7 +425,7 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
     noBookSnapshot: "No public book snapshot",
     stalePrefix: "STALE · ",
     requestFailed: "Derivatives request failed.",
-    exchangeResources: { contracts: "contracts", quote: "quote", chainQuotes: "option-chain quotes" },
+    exchangeResources: { contracts: "contracts", quote: "quote", candles: "candles", chainQuotes: "option-chain quotes" },
     exchangeUnreachable: (resource) => `Exchange ${resource} is temporarily unreachable. Check your internet connection or exchange access, then retry. Your local Paper ledger is stored separately.`,
     exchangeLoadFailed: (resource, detail) => `Could not load exchange ${resource}${detail ? `: ${detail}` : "."} Your local Paper ledger is still available.`,
     ledgerUnavailableDefault: "Local account ledger unavailable.",
@@ -636,7 +636,7 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
     noBookSnapshot: "无公开盘口快照",
     stalePrefix: "已过期 · ",
     requestFailed: "衍生品请求失败。",
-    exchangeResources: { contracts: "合约", quote: "报价", chainQuotes: "期权链报价" },
+    exchangeResources: { contracts: "合约", quote: "报价", candles: "K 线", chainQuotes: "期权链报价" },
     exchangeUnreachable: (resource) => `交易所${resource}暂时不可达。请检查网络连接或交易所访问权限后重试。本地模拟盘账本单独存储。`,
     exchangeLoadFailed: (resource, detail) => `无法加载交易所${resource}${detail ? `：${detail}` : "。"}本地模拟盘账本仍可使用。`,
     ledgerUnavailableDefault: "本地账户账本不可用。",
@@ -1063,10 +1063,10 @@ export function DerivativesWorkspace(): React.JSX.Element {
   }, [kind, query, listRevision, blocked]);
 
 
+  /* A search edit invalidates the visible selection immediately. Polling the
+     old contract while the list reconciles would show a quote for a row the
+     user can no longer see, and an expired local position has no live quote. */
   useEffect(() => {
-    /* A search edit invalidates the visible selection immediately. Polling the
-       old contract while the list reconciles would show a quote for a row the
-       user can no longer see, and an expired local position has no live quote. */
     if (blocked || listLoading || focusedExpired || !selectedId) return;
     let disposed = false;
     let inFlight = false;
@@ -1085,8 +1085,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
       if (inFlight || controller.signal.aborted) return;
       inFlight = true;
       try {
-        const data = await readJson<{ instrument: DerivativeInstrument; quote: DerivativeQuote; candles: Candle[]; candleError: string | null }>(`/api/derivatives/market?instrumentId=${encodeURIComponent(selectedId)}`, { signal: controller.signal });
-        if (!disposed) { setMarket(data); setMarketError(null); setBars(data.candles); setCandleError(data.candleError); }
+        const data = await readJson<{ instrument: DerivativeInstrument; quote: DerivativeQuote }>(`/api/derivatives/market?instrumentId=${encodeURIComponent(selectedId)}&view=quote`, { signal: controller.signal });
+        if (!disposed) { setMarket(data); setMarketError(null); }
         delay = 5000;
       } catch (error) {
         if (!disposed) { setMarket(null); setMarketError(exchangeErrorMessage(error, "quote")); }
@@ -1111,6 +1111,58 @@ export function DerivativesWorkspace(): React.JSX.Element {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [selectedId, marketRevision, blocked, listLoading, focusedExpired]);
+
+  useEffect(() => {
+    if (kind === "option") {
+      setBars([]);
+      setCandleError(null);
+      return;
+    }
+    if (blocked || listLoading || focusedExpired || !selectedId) return;
+    let disposed = false;
+    let inFlight = false;
+    let retryTimer = 0;
+    let delay = 60000;
+    const controller = new AbortController();
+
+    const schedule = () => {
+      retryTimer = window.setTimeout(() => {
+        if (disposed || controller.signal.aborted) return;
+        if (document.hidden) { schedule(); return; }
+        void refresh();
+      }, delay);
+    };
+    const refresh = async () => {
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
+      try {
+        const data = await readJson<{ candles: Candle[]; candleError: string | null }>(`/api/derivatives/market?instrumentId=${encodeURIComponent(selectedId)}&view=candles`, { signal: controller.signal });
+        if (!disposed) { setBars(data.candles); setCandleError(data.candleError); }
+        delay = 60000;
+      } catch (error) {
+        if (!disposed && !controller.signal.aborted) setCandleError(exchangeErrorMessage(error, "candles"));
+        delay = Math.min(delay * 2, 300000);
+      } finally {
+        inFlight = false;
+        if (!disposed && !controller.signal.aborted) schedule();
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden || inFlight) return;
+      window.clearTimeout(retryTimer);
+      void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    if (document.hidden) schedule();
+    else void refresh();
+
+    return () => {
+      disposed = true;
+      controller.abort();
+      window.clearTimeout(retryTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [selectedId, marketRevision, blocked, listLoading, focusedExpired, kind]);
 
   function select(id: string, focus: DerivativesPosition | null = null): void {
     retainSelection.current = focus !== null;

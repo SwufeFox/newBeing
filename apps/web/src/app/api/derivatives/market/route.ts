@@ -8,6 +8,7 @@ const schema = z.object({
   instrumentId: derivativeIdSchema,
   timeframe: derivativeTimeframeSchema.default("1h"),
   limit: z.coerce.number().int().min(1).max(300).default(150),
+  view: z.enum(["full", "quote", "candles"]).default("full"),
 });
 export async function GET(request: Request) {
   const blocked = derivativeReplayRejection();
@@ -17,6 +18,20 @@ export async function GET(request: Request) {
     const instrument = await getDerivativeInstrument(input.instrumentId);
     const afterMetadata = derivativeReplayRejection();
     if (afterMetadata) return afterMetadata;
+    if (input.view === "quote") {
+      const quote = await getDerivativeQuote(instrument.id);
+      const lateBlock = derivativeReplayRejection();
+      if (lateBlock) return lateBlock;
+      return derivativeJson({ instrument, quote });
+    }
+    if (input.view === "candles") {
+      const history = await getDerivativeCandles(instrument.id, input.timeframe, input.limit)
+        .then((candles) => ({ candles, candleError: null as string | null }))
+        .catch((error: unknown) => ({ candles: [], candleError: error instanceof Error ? error.message : "Candle history unavailable." }));
+      const lateBlock = derivativeReplayRejection();
+      if (lateBlock) return lateBlock;
+      return derivativeJson({ instrument, ...history });
+    }
     const [quote, history] = await Promise.all([
       getDerivativeQuote(instrument.id),
       getDerivativeCandles(instrument.id, input.timeframe, input.limit)

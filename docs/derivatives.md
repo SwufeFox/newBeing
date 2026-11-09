@@ -2,7 +2,7 @@
 
 `/derivatives` is a separate market and Paper execution surface. Its product IDs have the form `venue:kind:nativeId`; `BTC-USDT-SWAP`, a dated future and a BTC call can never share a spot candle-cache key or an account position merely because they refer to the same underlying asset.
 
-On narrow screens, the workspace navigation and Engine model control remain visible, while bid/ask prices and contract details wrap to avoid overlapping.
+On narrow screens, the workspace navigation and Engine model control remain visible, while bid/ask prices and contract details wrap to avoid overlapping. Quotes refresh every five seconds; hourly candle history refreshes once a minute. Both refresh when the page becomes visible again.
 
 ## Product coverage
 
