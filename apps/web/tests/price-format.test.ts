@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCompactAmount, formatQuotePrice, formatSize } from "../src/lib/price-format.js";
+import { formatCompactAmount, formatPercentChange, formatQuotePrice, formatRate, formatSize } from "../src/lib/price-format.js";
 
 /* The plate, the watchlist, the chart legend and the positions table all render
    one quote through this function. The boundaries matter: a pair that crosses
@@ -77,5 +77,40 @@ describe("formatCompactAmount", () => {
   it("renders an absent amount as an em dash", () => {
     expect(formatCompactAmount(null)).toBe("—");
     expect(formatCompactAmount(Number.NaN)).toBe("—");
+  });
+});
+
+/* A change and a rate are two different numbers. A return or a drawdown has a
+   direction and must show it; a win rate is a proportion and must not. The
+   workstation printed a win rate as `+54.55%` because both went through the
+   signed formatter. */
+describe("formatPercentChange", () => {
+  it("carries the sign of a return or a drawdown", () => {
+    expect(formatPercentChange(0.0287)).toBe("+2.87%");
+    expect(formatPercentChange(-0.0572)).toBe("−5.72%");
+    expect(formatPercentChange(1.5)).toBe("+150.00%");
+  });
+
+  it("leaves a zero change unsigned", () => {
+    expect(formatPercentChange(0)).toBe("0.00%");
+    expect(formatPercentChange(-0)).toBe("0.00%");
+  });
+
+  it("renders an absent change as an em dash", () => {
+    expect(formatPercentChange(null)).toBe("—");
+    expect(formatPercentChange(Number.NaN)).toBe("—");
+  });
+});
+
+describe("formatRate", () => {
+  it("prints a proportion without a sign", () => {
+    expect(formatRate(0.5455)).toBe("54.55%");
+    expect(formatRate(0)).toBe("0.00%");
+    expect(formatRate(1)).toBe("100.00%");
+  });
+
+  it("renders an absent rate as an em dash", () => {
+    expect(formatRate(null)).toBe("—");
+    expect(formatRate(Number.POSITIVE_INFINITY)).toBe("—");
   });
 });

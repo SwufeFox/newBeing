@@ -14,7 +14,7 @@ import { StrategyLab } from "@/components/strategy-lab";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
 import { floorToDecimals } from "@/lib/indicators";
-import { formatQuotePrice, formatSize } from "@/lib/price-format";
+import { formatQuotePrice, formatRate, formatSize } from "@/lib/price-format";
 import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkCard, AkNum, AkButton, AkProgress } from "@swufefox/ak-ui-react";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
 
@@ -1356,7 +1356,7 @@ function WorkspaceContext({ summary, summaryError, result, replayMode }: { summa
                     <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">
                       <span className="text-[10px] text-[var(--ak-text-secondary)]">{copy.winRateLabel}</span>
                       <strong className="text-xs font-bold text-[var(--ak-text-primary)]">
-                        {(backtest.metrics.winRate * 100).toFixed(0)}%
+                        {formatRate(backtest.metrics.winRate)}
                       </strong>
                     </div>
                     <div className="flex flex-col p-1 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)]">

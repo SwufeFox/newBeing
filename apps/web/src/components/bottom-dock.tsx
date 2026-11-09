@@ -10,7 +10,7 @@ import { EvaluationPanel } from "@/components/evaluation-panel";
 import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS, symbolForExchange } from "@/lib/exchanges";
 import { useCopy, translate, type CopyTable } from "@/lib/i18n";
-import { formatQuotePrice } from "@/lib/price-format";
+import { formatPercentChange, formatQuotePrice, formatRate } from "@/lib/price-format";
 import { captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { buildResearchReport, researchReportFilename } from "@/lib/research-report";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,11 +22,6 @@ import { AkTag, AkNotice, AkNum, AkButton, AkProgress, AkCountUp } from "@swufef
 function money(value: number, currency = "USDT"): string {
   if (!Number.isFinite(value)) return `— ${currency}`;
   return `${value < 0 ? "−" : ""}${Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
-}
-
-function percentage(value: number): string {
-  if (!Number.isFinite(value)) return "—";
-  return `${value >= 0 ? "+" : "−"}${(Math.abs(value) * 100).toFixed(2)}%`;
 }
 
 function timestamp(value: number): string {
@@ -799,7 +794,7 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
                 </button>
               </td>
               <td className="p-2 font-mono tabular-nums">{portfolio.baseBalance.toFixed(5)}</td>
-              <td className="p-2 font-mono tabular-nums">{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+              <td className="p-2 font-mono tabular-nums">{formatQuotePrice(portfolio.averageEntryPrice)}</td>
               <td className="p-2 font-mono tabular-nums">{formatQuotePrice(markPrice)}</td>
               <td className={`p-2 font-mono tabular-nums font-bold ${unrealized >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                 {money(unrealized, quoteCurrency)}
@@ -864,8 +859,8 @@ function ReplayPositions({ session, portfolio }: { session: ReplaySession | null
                 <span className="text-[10px] text-[var(--ak-text-secondary)]">/{session.symbol.split("/")[1]} · {session.timeframe}</span>
               </td>
               <td className="p-2 font-mono tabular-nums">{portfolio.baseBalance.toFixed(5)}</td>
-              <td className="p-2 font-mono tabular-nums">{portfolio.averageEntryPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
-              <td className="p-2 font-mono tabular-nums">{current?.close.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+              <td className="p-2 font-mono tabular-nums">{formatQuotePrice(portfolio.averageEntryPrice)}</td>
+              <td className="p-2 font-mono tabular-nums">{formatQuotePrice(current?.close)}</td>
               <td className={`p-2 font-mono tabular-nums font-bold ${unrealized >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                 {money(unrealized, quoteCurrency)}
               </td>
@@ -933,7 +928,7 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
                 <td className="p-2">
                   <span className={`status-pill status-${order.status} uppercase font-bold text-[10px]`}>{copy.orderStatus[order.status]}</span>
                 </td>
-                <td className="p-2 font-mono tabular-nums">{order.fillPrice?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "—"}</td>
+                <td className="p-2 font-mono tabular-nums">{formatQuotePrice(order.fillPrice)}</td>
                 <td className="p-2 mono text-[10px] text-[var(--ak-text-secondary)]">
                   <button
                     type="button"
@@ -1058,15 +1053,15 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
     <div className="backtest-view p-3 bg-[var(--ak-surface-canvas)] font-mono text-xs space-y-3">
       <div className="backtest-summary-row grid grid-cols-1 lg:grid-cols-4 gap-3">
         <div className="metric-strip lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2 bg-[var(--ak-surface-sunken)] p-2.5 border border-[var(--ak-border-subtle)]">
-          <Metric label={copy.totalReturn} value={percentage(metric.totalReturn)} tone={metric.totalReturn >= 0 ? "positive" : "negative"} />
-          <Metric label={copy.maxDrawdown} value={percentage(-metric.maxDrawdown)} tone="negative" />
+          <Metric label={copy.totalReturn} value={formatPercentChange(metric.totalReturn)} tone={metric.totalReturn >= 0 ? "positive" : "negative"} change={metric.totalReturn >= 0 ? "up" : "down"} />
+          <Metric label={copy.maxDrawdown} value={formatPercentChange(-metric.maxDrawdown)} tone="negative" change="down" />
           <Metric
             label={copy.sharpeRatio}
             value={metric.sharpeRatio?.toFixed(2) ?? "—"}
             tone={metric.sharpeRatio != null ? (metric.sharpeRatio >= 1 ? "positive" : metric.sharpeRatio < 0 ? "negative" : undefined) : undefined}
             title={result.execution?.sharpeMethod}
           />
-          <Metric label={copy.winRate} value={percentage(metric.winRate)} tone={metric.winRate >= 0.5 ? "positive" : "negative"} />
+          <Metric label={copy.winRate} value={formatRate(metric.winRate)} tone={metric.winRate >= 0.5 ? "positive" : "negative"} />
           <Metric
             label={copy.profitFactor}
             value={metric.profitFactor?.toFixed(2) ?? "—"}
@@ -1209,9 +1204,9 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
                       </AkTag>
                     </td>
                     <td className="p-1.5 text-[10px] text-[var(--ak-text-secondary)]">{timestamp(trade.entryTime)}</td>
-                    <td className="p-1.5 font-mono tabular-nums">{trade.entryPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                    <td className="p-1.5 font-mono tabular-nums">{formatQuotePrice(trade.entryPrice)}</td>
                     <td className="p-1.5 text-[10px] text-[var(--ak-text-secondary)]">{timestamp(trade.exitTime)}</td>
-                    <td className="p-1.5 font-mono tabular-nums">{trade.exitPrice.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                    <td className="p-1.5 font-mono tabular-nums">{formatQuotePrice(trade.exitPrice)}</td>
                     <td className={`p-1.5 font-mono tabular-nums font-bold ${trade.netPnl >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                       {money(trade.netPnl, result.symbol.split("/")[1])}
                     </td>
@@ -1234,8 +1229,11 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
 
 const BacktestView = memo(BacktestViewContent);
 
-function Metric({ label, value, tone, title }: { label: string; value: string; tone?: "positive" | "negative" | undefined; title?: string | undefined }): React.JSX.Element {
-  const Icon = tone === "positive" ? ArrowUpRight : tone === "negative" ? ArrowDownRight : null;
+function Metric({ label, value, tone, change, title }: { label: string; value: string; tone?: "positive" | "negative" | undefined; change?: "up" | "down" | undefined; title?: string | undefined }): React.JSX.Element {
+  /* The arrow says "this number is moving in that direction". A level — a win
+     rate, a Sharpe ratio, a profit factor — has no direction, so it keeps the
+     tone colour and no arrow; only a return or a drawdown earns one. */
+  const Icon = change === "up" ? ArrowUpRight : change === "down" ? ArrowDownRight : null;
   return (
     <div className="metric-cell flex flex-col p-1.5" title={title}>
       <span className="text-[10px] text-[var(--ak-text-secondary)] font-mono uppercase tracking-wider">{label}</span>
@@ -1397,10 +1395,10 @@ function ExperimentHistoryContent({ onSelect, refreshKey }: { onSelect: (id: str
                 <td className="p-1.5 font-bold">{item.symbol} · {item.timeframe}</td>
                 <td className="p-1.5">{item.strategyId}</td>
                 <td className={`p-1.5 font-mono tabular-nums font-bold ${item.metrics.totalReturn === null ? "" : item.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
-                  {item.metrics.totalReturn === null ? "—" : percentage(item.metrics.totalReturn)}
+                  {item.metrics.totalReturn === null ? "—" : formatPercentChange(item.metrics.totalReturn)}
                 </td>
                 <td className="p-1.5 font-mono tabular-nums text-[var(--ak-signal-danger)]">
-                  {item.metrics.maxDrawdown === null ? "—" : percentage(-item.metrics.maxDrawdown)}
+                  {item.metrics.maxDrawdown === null ? "—" : formatPercentChange(-item.metrics.maxDrawdown)}
                 </td>
                 <td className="p-1.5 font-mono tabular-nums">{item.metrics.tradeCount ?? "—"}</td>
                 <td className="p-1.5 mono text-[10px] text-[var(--ak-text-secondary)]">{item.resultId.slice(0, 12)}…</td>
@@ -1482,11 +1480,11 @@ function ExperimentHistoryContent({ onSelect, refreshKey }: { onSelect: (id: str
                         <small className="mono text-[10px] text-[var(--ak-text-secondary)]">{item.resultId.slice(0, 10)}…</small>
                       </td>
                       <td className={`p-1.5 font-mono font-bold ${item.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
-                        {percentage(item.metrics.totalReturn)}
+                        {formatPercentChange(item.metrics.totalReturn)}
                       </td>
-                      <td className="p-1.5 font-mono text-[var(--ak-signal-danger)]">{percentage(-item.metrics.maxDrawdown)}</td>
+                      <td className="p-1.5 font-mono text-[var(--ak-signal-danger)]">{formatPercentChange(-item.metrics.maxDrawdown)}</td>
                       <td className="p-1.5 font-mono">{item.metrics.sharpeRatio?.toFixed(2) ?? "—"}</td>
-                      <td className="p-1.5 font-mono">{percentage(item.metrics.winRate)}</td>
+                      <td className="p-1.5 font-mono">{formatRate(item.metrics.winRate)}</td>
                       <td className="p-1.5 font-mono">{item.metrics.tradeCount}</td>
                     </tr>
                   ))}

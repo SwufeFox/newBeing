@@ -3970,6 +3970,9 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   padding: var(--s-2) var(--s-2) 0;
 }
 .sweep-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* A form-level note describes the whole form, so it spans every track. Left in
+   a single cell it collapsed into a narrow column beside the controls. */
+.sweep-form-note { grid-column: 1 / -1; margin: 0; }
 .sweep-field > span {
   color: var(--c-fg-4);
   font-family: var(--f-display);

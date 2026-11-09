@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { useCopy, translate, type CopyTable } from "@/lib/i18n";
 import { PARAMETER_LABELS } from "@/lib/strategy-labels";
+import { formatPercentChange, formatRate } from "@/lib/price-format";
 import { AkSelect, AkInput, AkTag, AkNotice, AkButton } from "@swufefox/ak-ui-react";
 import { useWorkspaceStore } from "@/store/workspace";
 
@@ -109,6 +110,8 @@ interface SweepCopy {
   snapshotSource: string;
   snapshotUnavailable: string;
   currentInputs: string;
+  paramGroup: string;
+  assumptionGroup: string;
   reportInputs: string;
   incompatibleStrategy: string;
   mode: string;
@@ -222,6 +225,8 @@ const SWEEP_COPY: CopyTable<SweepCopy> = {
     snapshotSource: "Loaded backtest snapshot",
     snapshotUnavailable: "The selected backtest snapshot changed or is unavailable. Select a source before running.",
     currentInputs: "Current strategy and config",
+    paramGroup: "params",
+    assumptionGroup: "assumptions",
     reportInputs: "Report strategy and config",
     incompatibleStrategy: "Select the report's strategy and version before applying a candidate.",
     mode: "MODE",
@@ -329,6 +334,8 @@ const SWEEP_COPY: CopyTable<SweepCopy> = {
     snapshotSource: "已加载回测快照",
     snapshotUnavailable: "所选回测快照已更改或不可用。请重新选择数据来源后再运行。",
     currentInputs: "当前策略和配置",
+    paramGroup: "参数",
+    assumptionGroup: "假设",
     reportInputs: "报告策略和配置",
     incompatibleStrategy: "请先选择与报告相同的策略及版本，再应用候选参数。",
     mode: "模式",
@@ -424,13 +431,16 @@ function parameterName(key: string, copy: SweepCopy): string {
   return copy.parameters[key] ?? label(key);
 }
 
-function pct(value: number): string {
-  if (!Number.isFinite(value)) return "—";
-  return `${value >= 0 ? "+" : "−"}${(Math.abs(value) * 100).toFixed(2)}%`;
-}
-
 function timeRange(start: number, end: number): string {
   return `${new Date(start).toLocaleString()} – ${new Date(end).toLocaleString()}`;
+}
+
+/** A reader scans labelled inputs, not JSON punctuation: `allowShorts: on`
+ *  rather than `"allowShorts":true`. */
+function inputPairs(values: object): string {
+  return Object.entries(values)
+    .map(([key, value]) => `${key}: ${typeof value === "boolean" ? (value ? "on" : "off") : String(value)}`)
+    .join(" · ");
 }
 
 function isSweepResult(payload: unknown): payload is SweepResult {
@@ -450,7 +460,7 @@ function sweepHistorySelection(sweep: SweepResult, copy: SweepCopy): string {
   if (!sweep.walkForward) return copy.inSampleSelection;
   const metric = sweep.walkForward.selectionMetric === "sharpeRatio" ? copy.selectionSharpe : copy.selectionReturn;
   const drawdown = sweep.walkForward.selectionConstraints?.maxTrainingDrawdown;
-  return copy.selectionSummary(metric, sweep.walkForward.selectionRule, drawdown === undefined ? null : pct(drawdown));
+  return copy.selectionSummary(metric, sweep.walkForward.selectionRule, drawdown === undefined ? null : formatPercentChange(drawdown));
 }
 export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters, config }: SweepPanelProps): React.JSX.Element {
   const copy = useCopy(SWEEP_COPY);
@@ -696,9 +706,9 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
           </AkSelect>
         </label>
         {snapshotUnavailable
-          ? <p className="m-0 w-full text-[10px] text-[var(--ak-signal-action)]" role="status">{copy.snapshotUnavailable}</p>
-          : <p className="m-0 w-full break-all text-[10px] text-[var(--ak-text-secondary)]">{snapshot ? `${EXCHANGE_LABELS[snapshot.exchange]} · ${snapshot.symbol} · ${snapshot.timeframe} · ${snapshot.datasetId}` : `${EXCHANGE_LABELS[exchange]} · ${symbol} · ${timeframe}`}</p>}
-        <p className="m-0 w-full break-words text-[10px] text-[var(--ak-text-secondary)]">{copy.currentInputs}: {strategyId} · {JSON.stringify(parameters)} · {JSON.stringify(config)}</p>
+          ? <p className="sweep-form-note text-[10px] text-[var(--ak-signal-action)]" role="status">{copy.snapshotUnavailable}</p>
+          : <p className="sweep-form-note break-all text-[10px] text-[var(--ak-text-secondary)]">{snapshot ? `${EXCHANGE_LABELS[snapshot.exchange]} · ${snapshot.symbol} · ${snapshot.timeframe} · ${snapshot.datasetId}` : `${EXCHANGE_LABELS[exchange]} · ${symbol} · ${timeframe}`}</p>}
+        <p className="sweep-form-note break-words text-[10px] text-[var(--ak-text-secondary)]">{copy.currentInputs}: {strategyId} · {copy.paramGroup}: {inputPairs(parameters)} · {copy.assumptionGroup}: {inputPairs(config)}</p>
         <label className="sweep-field flex flex-col gap-1">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">{copy.mode}</span>
           <AkSelect className="select-input h-7 text-xs font-bold" value={mode} onChange={(event) => setMode(event.target.value as "full-sample" | "walk-forward")}>
@@ -719,7 +729,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
               <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase font-mono">{copy.maxDrawdownLabel}</span>
               <AkInput className="compact-input w-28 h-7 text-xs font-mono" type="number" min={0} max={1} step={0.01} placeholder={copy.noLimit} value={maxTrainingDrawdown} onChange={(event) => setMaxTrainingDrawdown(event.target.value)} />
             </label>
-            <span className="w-full text-[10px] text-[var(--ak-text-secondary)]">{copy.drawdownHint}</span>
+            <span className="sweep-form-note text-[10px] text-[var(--ak-text-secondary)]">{copy.drawdownHint}</span>
           </>
         )}
         <label className="sweep-field flex flex-col gap-1">
@@ -784,7 +794,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
                 <span className="text-[var(--ak-text-secondary)]">{sweepHistorySelection(sweep, copy)}</span>
                 <span className="text-[var(--ak-text-secondary)]">
                   {report ? copy.validationFolds(report.folds.length) : copy.inSampleOnly}
-                  {finalTest ? copy.finalTestSummary(pct(finalTest.totalReturn), pct(-finalTest.maxDrawdown), finalTest.sharpeRatio === null ? copy.notAvailable : finalTest.sharpeRatio.toFixed(3), finalTest.tradeCount) : copy.candidateRuns(sweep.runs.length)}
+                  {finalTest ? copy.finalTestSummary(formatPercentChange(finalTest.totalReturn), formatPercentChange(-finalTest.maxDrawdown), finalTest.sharpeRatio === null ? copy.notAvailable : finalTest.sharpeRatio.toFixed(3), finalTest.tradeCount) : copy.candidateRuns(sweep.runs.length)}
                   {sweep.createdAt && ` · ${new Date(sweep.createdAt).toLocaleString()}`}
                 </span>
                 <span className="break-all font-mono text-[10px] text-[var(--ak-text-secondary)]">{sweep.sweepId}</span>
@@ -812,27 +822,27 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
         {` ${EXCHANGE_LABELS[result?.exchange ?? snapshot?.exchange ?? exchange]} · ${result?.symbol ?? snapshot?.symbol ?? symbol} · ${result?.timeframe ?? snapshot?.timeframe ?? timeframe}`}
         {result && copy.resultSummary(result.bars, result.values.length, result.runs.length, result.datasetId.slice(0, 24))}
       </p>
-      {result && <p className="m-0 break-words text-[10px] text-[var(--ak-text-secondary)]">{copy.reportInputs}: {result.strategyId} ({result.strategyVersion}) · {JSON.stringify(result.parameters)} · {JSON.stringify(result.config)} · {result.datasetId}</p>}
+      {result && <p className="m-0 break-words text-[10px] text-[var(--ak-text-secondary)]">{copy.reportInputs}: {result.strategyId} ({result.strategyVersion}) · {copy.paramGroup}: {inputPairs(result.parameters)} · {copy.assumptionGroup}: {inputPairs(result.config)} · {result.datasetId}</p>}
       {result && !canApply && <p className="m-0 text-xs text-[var(--ak-signal-action)]" role="status">{copy.incompatibleStrategy}</p>}
 
       {walkForwardReport && (
         <section className="space-y-2 rounded border border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken)] p-2 text-xs">
           <p className="m-0 text-[var(--ak-text-secondary)]">{copy.walkForwardCaveat}</p>
           <p className="m-0 font-mono">{copy.boundaries(walkForwardReport.boundaries.train50, walkForwardReport.boundaries.train60, walkForwardReport.boundaries.train70, walkForwardReport.boundaries.train80, walkForwardReport.boundaries.total)}</p>
-          <p className="m-0">{copy.selectionLead(walkForwardReport.selectionMetric === "sharpeRatio" ? "sharpe" : "return")}<code>{walkForwardReport.selectionRule}</code>{copy.selectionRuleSuffix}{walkForwardReport.selectionConstraints && copy.trainingDrawdownLimit(pct(walkForwardReport.selectionConstraints.maxTrainingDrawdown))}</p>
+          <p className="m-0">{copy.selectionLead(walkForwardReport.selectionMetric === "sharpeRatio" ? "sharpe" : "return")}<code>{walkForwardReport.selectionRule}</code>{copy.selectionRuleSuffix}{walkForwardReport.selectionConstraints && copy.trainingDrawdownLimit(formatPercentChange(walkForwardReport.selectionConstraints.maxTrainingDrawdown))}</p>
           {walkForwardReport.folds.map((fold, index) => {
             const candidates = result!.runs.filter((run) => run.segment?.start === 0 && run.segment.end === fold.trainEnd);
             return <details key={fold.validationResultId} className="rounded border border-[var(--ak-border-subtle)] p-1.5">
-              <summary className="cursor-pointer font-semibold">{copy.foldSummary({ index: index + 1, trainEnd: fold.trainEnd, validationStart: fold.validationStart, validationEnd: fold.validationEnd, parameter: parameterName(result!.parameter, copy), value: fold.candidateValue, validationReturn: pct(fold.validationMetrics.totalReturn) })}</summary>
+              <summary className="cursor-pointer font-semibold">{copy.foldSummary({ index: index + 1, trainEnd: fold.trainEnd, validationStart: fold.validationStart, validationEnd: fold.validationEnd, parameter: parameterName(result!.parameter, copy), value: fold.candidateValue, validationReturn: formatPercentChange(fold.validationMetrics.totalReturn) })}</summary>
               <p className="my-1">{copy.foldBars(timeRange(fold.trainStartTimestamp, fold.trainEndTimestamp), timeRange(fold.validationStartTimestamp, fold.validationEndTimestamp))}</p>
-              <p className="m-0">{copy.foldMetrics(pct(fold.trainingMetrics.totalReturn), fold.trainingMetrics.sharpeRatio === null ? copy.notAvailable : fold.trainingMetrics.sharpeRatio.toFixed(3), pct(-fold.validationMetrics.maxDrawdown), fold.validationMetrics.tradeCount, fold.validationMetrics.totalFees.toFixed(2))}</p>
+              <p className="m-0">{copy.foldMetrics(formatPercentChange(fold.trainingMetrics.totalReturn), fold.trainingMetrics.sharpeRatio === null ? copy.notAvailable : fold.trainingMetrics.sharpeRatio.toFixed(3), formatPercentChange(-fold.validationMetrics.maxDrawdown), fold.validationMetrics.tradeCount, fold.validationMetrics.totalFees.toFixed(2))}</p>
               <p className="m-0 font-mono text-[10px]">{copy.foldIds(fold.trainingResultId, fold.validationResultId)}</p>
               <div className="mt-1 max-h-40 overflow-auto">
                 <table className="data-table w-full text-[10px]">
                   <thead><tr><th>{copy.trainCandidate}</th><th>{copy.returnColumn}</th><th>{copy.sharpeColumn}</th><th>{copy.maxDdColumn}</th><th>{copy.tradesColumn}</th><th>{copy.feesColumn}</th><th>{copy.resultColumn}</th></tr></thead>
                   <tbody>{candidates.map((candidate) => <tr key={candidate.resultId} className={candidate.resultId === fold.trainingResultId ? "font-bold" : ""}>
                     <td>{candidate.value}{candidate.resultId === fold.trainingResultId ? copy.selectedMark : ""}</td>
-                    <td>{pct(candidate.metrics.totalReturn)}</td><td>{candidate.metrics.sharpeRatio === null ? copy.notAvailable : candidate.metrics.sharpeRatio.toFixed(3)}</td><td>{pct(-candidate.metrics.maxDrawdown)}</td><td>{candidate.metrics.tradeCount}</td><td>{candidate.metrics.totalFees.toFixed(2)}</td><td className="font-mono">{candidate.resultId}</td>
+                    <td>{formatPercentChange(candidate.metrics.totalReturn)}</td><td>{candidate.metrics.sharpeRatio === null ? copy.notAvailable : candidate.metrics.sharpeRatio.toFixed(3)}</td><td>{formatPercentChange(-candidate.metrics.maxDrawdown)}</td><td>{candidate.metrics.tradeCount}</td><td>{candidate.metrics.totalFees.toFixed(2)}</td><td className="font-mono">{candidate.resultId}</td>
                   </tr>)}</tbody>
                 </table>
               </div>
@@ -840,8 +850,8 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
           })}
           <div className="rounded border border-[var(--ak-border-subtle)] p-1.5">
             <p className="m-0 font-semibold">{copy.finalTestHeading(walkForwardReport.boundaries.train80, walkForwardReport.boundaries.total, timeRange(walkForwardReport.finalTestStartTimestamp, walkForwardReport.finalTestEndTimestamp))}</p>
-            <p className="m-0">{copy.finalTestMetrics(parameterName(result!.parameter, copy), walkForwardReport.finalCandidateValue, pct(walkForwardReport.finalTestMetrics.totalReturn), pct(-walkForwardReport.finalTestMetrics.maxDrawdown), walkForwardReport.finalTestMetrics.tradeCount, walkForwardReport.finalTestMetrics.totalFees.toFixed(2))}</p>
-            <p className="m-0">{copy.finalTrainingMetrics(pct(walkForwardReport.finalTrainingMetrics.totalReturn), walkForwardReport.finalTrainingMetrics.sharpeRatio === null ? copy.notAvailable : walkForwardReport.finalTrainingMetrics.sharpeRatio.toFixed(3))}</p>
+            <p className="m-0">{copy.finalTestMetrics(parameterName(result!.parameter, copy), walkForwardReport.finalCandidateValue, formatPercentChange(walkForwardReport.finalTestMetrics.totalReturn), formatPercentChange(-walkForwardReport.finalTestMetrics.maxDrawdown), walkForwardReport.finalTestMetrics.tradeCount, walkForwardReport.finalTestMetrics.totalFees.toFixed(2))}</p>
+            <p className="m-0">{copy.finalTrainingMetrics(formatPercentChange(walkForwardReport.finalTrainingMetrics.totalReturn), walkForwardReport.finalTrainingMetrics.sharpeRatio === null ? copy.notAvailable : walkForwardReport.finalTrainingMetrics.sharpeRatio.toFixed(3))}</p>
             <Button size="sm" variant="outline" className="mt-1 h-6 text-[10px]" disabled={!canApply} onClick={() => applyParameter(walkForwardReport.finalCandidateValue)}>
               {copy.applyFinalCandidate}
             </Button>
@@ -855,7 +865,7 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
                   <thead><tr><th>{copy.finalTrainCandidate}</th><th>{copy.returnColumn}</th><th>{copy.sharpeColumn}</th><th>{copy.maxDdColumn}</th><th>{copy.tradesColumn}</th><th>{copy.feesColumn}</th><th>{copy.resultColumn}</th></tr></thead>
                   <tbody>{candidates.map((candidate) => <tr key={candidate.resultId} className={candidate.resultId === walkForwardReport.finalTrainingResultId ? "font-bold" : ""}>
                     <td>{candidate.value}{candidate.resultId === walkForwardReport.finalTrainingResultId ? copy.selectedMark : ""}</td>
-                    <td>{pct(candidate.metrics.totalReturn)}</td><td>{candidate.metrics.sharpeRatio === null ? copy.notAvailable : candidate.metrics.sharpeRatio.toFixed(3)}</td><td>{pct(-candidate.metrics.maxDrawdown)}</td><td>{candidate.metrics.tradeCount}</td><td>{candidate.metrics.totalFees.toFixed(2)}</td><td className="font-mono">{candidate.resultId}</td>
+                    <td>{formatPercentChange(candidate.metrics.totalReturn)}</td><td>{candidate.metrics.sharpeRatio === null ? copy.notAvailable : candidate.metrics.sharpeRatio.toFixed(3)}</td><td>{formatPercentChange(-candidate.metrics.maxDrawdown)}</td><td>{candidate.metrics.tradeCount}</td><td>{candidate.metrics.totalFees.toFixed(2)}</td><td className="font-mono">{candidate.resultId}</td>
                   </tr>)}</tbody>
                 </table>
               </div>
@@ -875,13 +885,13 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
           <div className="sweep-verdict-cell flex flex-col">
             <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.bestValue}</span>
             <strong className="text-xs text-[var(--ak-signal-success)] font-mono font-bold tabular-nums">
-              {parameterName(result.parameter, copy)} = {stats.best.value} ({pct(stats.best.metrics.totalReturn)})
+              {parameterName(result.parameter, copy)} = {stats.best.value} ({formatPercentChange(stats.best.metrics.totalReturn)})
             </strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
             <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.worstValue}</span>
             <strong className="text-xs text-[var(--ak-signal-danger)] font-mono font-bold tabular-nums">
-              {parameterName(result.parameter, copy)} = {stats.worst.value} ({pct(stats.worst.metrics.totalReturn)})
+              {parameterName(result.parameter, copy)} = {stats.worst.value} ({formatPercentChange(stats.worst.metrics.totalReturn)})
             </strong>
           </div>
           <div className="sweep-verdict-cell flex flex-col">
@@ -956,13 +966,13 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
                     </td>
                     <td className={`p-1.5 font-mono tabular-nums font-bold ${entry.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                       {entry.metrics.totalReturn >= 0 ? <TrendingUp size={11} className="inline mr-1" /> : <TrendingDown size={11} className="inline mr-1" />}
-                      {pct(entry.metrics.totalReturn)}
+                      {formatPercentChange(entry.metrics.totalReturn)}
                     </td>
                     <td className="negative p-1.5 font-mono tabular-nums text-[var(--ak-signal-danger)]">
-                      −{(entry.metrics.maxDrawdown * 100).toFixed(2)}%
+                      {formatPercentChange(-entry.metrics.maxDrawdown)}
                     </td>
                     <td className="p-1.5 font-mono tabular-nums">{entry.metrics.sharpeRatio === null ? "—" : entry.metrics.sharpeRatio.toFixed(2)}</td>
-                    <td className="p-1.5 font-mono tabular-nums">{(entry.metrics.winRate * 100).toFixed(1)}%</td>
+                    <td className="p-1.5 font-mono tabular-nums">{formatRate(entry.metrics.winRate)}</td>
                     <td className="p-1.5 font-mono tabular-nums">{entry.metrics.profitFactor === null ? "—" : entry.metrics.profitFactor.toFixed(2)}</td>
                     <td className="p-1.5 font-mono tabular-nums">{entry.metrics.tradeCount}</td>
                     <td className="mono p-1.5 font-mono tabular-nums">{entry.metrics.finalEquity.toFixed(2)}</td>

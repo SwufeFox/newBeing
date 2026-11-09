@@ -38,7 +38,7 @@ export function formatSize(value: number | null | undefined, fallback = "—"): 
 }
 
 /**
- * A traded amount spans many magnitudes, so it is printed compactly with a
+ * A traded amount spans magnitudes, so it is printed compactly with a
  * unit suffix. The unit follows the magnitude instead of being assumed:
  * a thin market reads `820.00K` rather than `0.82M`, and a busy one reads
  * `1.42B` rather than `1420.00M`.
@@ -50,4 +50,27 @@ export function formatCompactAmount(value: number | null | undefined, fallback =
   const [factor, unit] = scale as [number, string];
   const scaled = value / factor;
   return `${scaled.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${unit}`;
+}
+
+/**
+ * A change in value — a return or a drawdown — carries its sign, because the
+ * direction is the whole point. It takes a fraction and prints a percentage.
+ * A zero change has no direction, so it takes no sign.
+ */
+export function formatPercentChange(value: number | null | undefined, fallback = "—"): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  const magnitude = (Math.abs(value) * 100).toFixed(2);
+  if (value === 0) return `${magnitude}%`;
+  return `${value > 0 ? "+" : "−"}${magnitude}%`;
+}
+
+/**
+ * A rate is a proportion, not a change: a win rate of 0.5455 prints `54.55%`
+ * and never takes a sign. It keeps the panel's two-decimal precision so a
+ * column of rates stays aligned, and one renderer serves every panel that
+ * shows the same metric.
+ */
+export function formatRate(value: number | null | undefined, fallback = "—"): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return `${(value * 100).toFixed(2)}%`;
 }

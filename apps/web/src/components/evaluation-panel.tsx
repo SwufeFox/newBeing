@@ -8,6 +8,7 @@ import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import { buildEvaluationCandidates } from "@/lib/evaluation-candidates";
 import { useCopy, type CopyTable } from "@/lib/i18n";
 import { PARAMETER_LABELS } from "@/lib/strategy-labels";
+import { formatPercentChange } from "@/lib/price-format";
 import { AkInput, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
@@ -374,11 +375,6 @@ function formatParameters(parameters: StrategyParameters, copy: EvaluationCopy):
  *  scan selector shows and falls back to the derived name for the rest. */
 function parameterName(key: string, copy: EvaluationCopy): string {
   return copy.parameters[key] ?? label(key);
-}
-
-function pct(value: number): string {
-  if (!Number.isFinite(value)) return "—";
-  return `${value >= 0 ? "+" : "−"}${(Math.abs(value) * 100).toFixed(2)}%`;
 }
 
 export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: string; timeframe: Timeframe; exchange: ExchangeId }): React.JSX.Element {
@@ -827,7 +823,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
         <strong className="text-[10px] uppercase font-mono text-[var(--ak-text-secondary)]">{copy.recentEvaluations}</strong>
         {historyError && <span role="alert" className="text-xs text-[var(--ak-signal-danger)]">{historyError}</span>}
         {history.map((item) => <button key={item.reportId} type="button" className="text-left p-1.5 border border-[var(--ak-border-subtle)] text-xs font-mono hover:bg-[var(--ak-surface-sunken)]" onClick={() => void openHistorical(item.reportId)}>
-          {new Date(item.createdAt).toLocaleString()} · {item.strategyId} · {item.symbol} · {copy.historyHoldout(pct(item.holdout.metrics.totalReturn))}
+          {new Date(item.createdAt).toLocaleString()} · {item.strategyId} · {item.symbol} · {copy.historyHoldout(formatPercentChange(item.holdout.metrics.totalReturn))}
         </button>)}
         {historyLoading && <span className="text-xs opacity-70">{copy.historyLoading}</span>}
         {!historyLoading && !history.length && !historyError && <span className="text-xs opacity-70">{copy.noHistory}</span>}
@@ -888,13 +884,13 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             <div className="evaluation-verdict-cell flex flex-col">
               <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.trainReturnColumn}</span>
               <strong className={`text-xs font-mono font-bold tabular-nums ${(bestTraining?.result.metrics.totalReturn ?? 0) >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
-                {bestTraining ? pct(bestTraining.result.metrics.totalReturn) : "—"}
+                {bestTraining ? formatPercentChange(bestTraining.result.metrics.totalReturn) : "—"}
               </strong>
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
               <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.holdoutReturn}</span>
               <strong className={`text-xs font-mono font-bold tabular-nums ${report.holdout.metrics.totalReturn >= 0 ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
-                {pct(report.holdout.metrics.totalReturn)}
+                {formatPercentChange(report.holdout.metrics.totalReturn)}
               </strong>
             </div>
             <div className="evaluation-verdict-cell flex flex-col">
@@ -934,9 +930,9 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
                       </td>
                       <td className={`p-1.5 font-mono tabular-nums font-bold ${candidate.result.metrics.totalReturn >= 0 ? "positive text-[var(--ak-signal-success)]" : "negative text-[var(--ak-signal-danger)]"}`}>
                         {candidate.result.metrics.totalReturn >= 0 ? <TrendingUp size={11} className="inline mr-1" /> : <TrendingDown size={11} className="inline mr-1" />}
-                        {pct(candidate.result.metrics.totalReturn)}
+                        {formatPercentChange(candidate.result.metrics.totalReturn)}
                       </td>
-                      <td className="negative p-1.5 font-mono tabular-nums text-[var(--ak-signal-danger)]">−{(candidate.result.metrics.maxDrawdown * 100).toFixed(2)}%</td>
+                      <td className="negative p-1.5 font-mono tabular-nums text-[var(--ak-signal-danger)]">{formatPercentChange(-candidate.result.metrics.maxDrawdown)}</td>
                       <td className="p-1.5 font-mono tabular-nums">{candidate.result.metrics.sharpeRatio === null ? "—" : candidate.result.metrics.sharpeRatio.toFixed(2)}</td>
                       <td className="p-1.5 font-mono tabular-nums">{candidate.result.metrics.tradeCount}</td>
                       <td className="p-1.5 text-right">{isSelected ? <Check size={12} className="inline text-[var(--ak-signal-success)]" /> : null}</td>
