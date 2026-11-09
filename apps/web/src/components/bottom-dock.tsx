@@ -99,6 +99,8 @@ interface DockCopy {
   startingReplay: string;
   continueReplay: string;
   continueReplayHint: string;
+  sweepThisResult: string;
+  sweepThisHint: string;
   researchInputs: string;
   inputsDiffer: string;
   inputsMatch: string;
@@ -269,6 +271,8 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     startingReplay: "Starting replay…",
     continueReplay: "Continue to Replay",
     continueReplayHint: "Practise from an earlier point in this backtest's frozen dataset, with its original starting capital and costs.",
+    sweepThisResult: "Sweep this result",
+    sweepThisHint: "Compare parameter values on the strategy and dataset this result was run with.",
     researchInputs: "Research inputs",
     inputsDiffer: "Result and current workspace inputs differ",
     inputsMatch: "Result and current workspace inputs match",
@@ -435,6 +439,8 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     startingReplay: "正在启动回放…",
     continueReplay: "继续回放",
     continueReplayHint: "从本次回测冻结数据集的较早位置开始练习，使用原始初始资金和成本。",
+    sweepThisResult: "扫描此结果",
+    sweepThisHint: "用产生该结果的策略与数据集比较参数取值。",
     researchInputs: "研究输入",
     inputsDiffer: "结果与当前工作区的输入不同",
     inputsMatch: "结果与当前工作区的输入一致",
@@ -952,7 +958,7 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
   );
 }
 
-function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy, replayError, selectionRequestRef }: { result: BacktestResult | null; onOpenStrategy: () => void; onStartReplay: (result: BacktestResult) => void; replayBusy: boolean; replayError: string | null; selectionRequestRef: React.MutableRefObject<number> }): React.JSX.Element {
+function BacktestViewContent({ result, onOpenStrategy, onStartReplay, onOpenSweep, replayBusy, replayError, selectionRequestRef }: { result: BacktestResult | null; onOpenStrategy: () => void; onStartReplay: (result: BacktestResult) => void; onOpenSweep: () => void; replayBusy: boolean; replayError: string | null; selectionRequestRef: React.MutableRefObject<number> }): React.JSX.Element {
   const copy = useCopy(DOCK_COPY);
   const [filter, setFilter] = useState<"all" | "long" | "short" | "win" | "loss">("all");
   const [rerunning, setRerunning] = useState(false);
@@ -1118,6 +1124,16 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, replayBusy
             className="text-xs h-7"
           >
             {copy.rerunBacktest}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenSweep}
+            icon={<ScanSearch size={12} />}
+            className="text-xs h-7"
+            title={copy.sweepThisHint}
+          >
+            {copy.sweepThisResult}
           </Button>
           <Button
             variant="primary"
@@ -1698,7 +1714,7 @@ export const BottomDock = memo(function BottomDock({
         )}
         {!replayMode && (backtestPanelVisited || showBacktestPanel) && (
           <div hidden={!showBacktestPanel}>
-            <BacktestView result={result} selectionRequestRef={selectionRequestRef} onOpenStrategy={openStrategy} onStartReplay={onStartReplay} replayBusy={replayBusy} replayError={replayError} />
+            <BacktestView result={result} selectionRequestRef={selectionRequestRef} onOpenStrategy={openStrategy} onStartReplay={onStartReplay} onOpenSweep={() => setTab("sweep")} replayBusy={replayBusy} replayError={replayError} />
           </div>
         )}
         {activeTab === "sweep" && workspace === "research" && replayMode && (

@@ -1128,9 +1128,17 @@ export function DerivativesWorkspace(): React.JSX.Element {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (blocked) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      /* Workspace navigation is shell behaviour, not trading behaviour: a
+         Replay isolation or a missing quote must never trap the reader on this
+         page while the nav still advertises those digits. */
+      if (!event.altKey && !event.ctrlKey && !event.metaKey) {
+        if (event.key === "1") { router.push(WORKSPACE_PATH.terminal); return; }
+        if (event.key === "2") { router.push(WORKSPACE_PATH.research); return; }
+        if (event.key === "3") { router.push(WORKSPACE_PATH.replay); return; }
+      }
+      if (blocked) return;
       if (event.altKey && event.key === "1") {
         event.preventDefault();
         changeKindRef.current("perpetual");
@@ -1140,14 +1148,6 @@ export function DerivativesWorkspace(): React.JSX.Element {
       } else if (event.altKey && event.key === "3") {
         event.preventDefault();
         changeKindRef.current("option");
-      } else if (!event.altKey && !event.ctrlKey && !event.metaKey) {
-        if (event.key === "1") {
-          router.push(WORKSPACE_PATH.terminal);
-        } else if (event.key === "2") {
-          router.push(WORKSPACE_PATH.research);
-        } else if (event.key === "3") {
-          router.push(WORKSPACE_PATH.replay);
-        }
       }
     };
     window.addEventListener("keydown", handleKeyDown);

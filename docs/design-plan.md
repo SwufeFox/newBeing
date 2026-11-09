@@ -303,3 +303,41 @@ NEWBEING_E2E_FIXTURES=1 NEWBEING_DATA_DIR=E:/Temp/newbeing-design-db pnpm dev
 fixture 只对 Binance 生效（`apps/web/src/lib/market-adapter.ts`），进页面后把
 交易所切到 **Binance Spot**，即可得到确定性的行情、盘口、成交与衍生品报价。
 **永远不要用默认数据目录跑 fixture 浏览器验证。**
+
+---
+
+## 十、顶层交互的三条契约（2026-11 增补）
+
+功能都在，但入口之间的关系决定用户走得通不走得通。这一节固定三条。
+
+### 10.1 导航不受交易状态门禁
+
+四个工作区是**外壳**层面的事，不是交易层面的事。衍生品页在 Replay 隔离时会暂停
+实时行情与模拟盘操作（`blocked`），但 `1/2/3` 必须照常离开该页——
+那一页的导航标题本身就写着"用 1 切换到行情"。
+
+踩过的坑：`blocked` 检查放在 `handleKeyDown` 顶部，把导航快捷键一并挡掉，
+于是唯一出口只剩鼠标，而且正好发生在应用刻意隔离你的状态里。
+**规则：先处理导航，再判断交易状态。**
+
+### 10.2 CTA 说的是结果，不是意图
+
+行情页右上角曾写 `Build strategy`，实际只切到 Research，什么都没构建。
+改为 `Open Research`（中文"进入研究"），标题保留细节（"以 BTC/USDT 的 5m 周期进入研究"）。
+
+**规则：按钮文字 = 点下去会发生的事。** 细节放 `title`，不要放动词。
+
+### 10.3 每一步的终点给出下一步
+
+研究是一条链：回测 → 扫参 → 评估 → 回放。五个 dock 标签是并列的，用户跑完回测
+还得自己发现旁边有 `Sweep`。现在 Results 的动作行是：
+
+```
+Export report · Rerun backtest · Sweep this result · Continue to Replay
+```
+
+当前步骤的终点直接把下一步摆在旁边，同时不删除任何标签入口
+（不采用"未跑回测就禁用 Sweep/Evaluate"的做法——那会把功能藏起来）。
+
+交接时的上下文已经共享（交易所/标的/周期/策略/配置都在同一个 store），
+所以 `Sweep this result` 不需要传参，只切换 dock 标签。

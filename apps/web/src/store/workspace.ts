@@ -5,7 +5,7 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 import { DEFAULT_WORKSPACE_STATE, EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestConfig, type BacktestResult, type ExchangeId, type StrategyParameters, type Timeframe, type WorkspaceState } from "@newbeing/core";
 import { symbolForExchange } from "@/lib/exchanges";
 
-export type InspectorTab = "watchlist" | "book" | "trades" | "strategy" | "context";
+export type InspectorTab = "book" | "trades" | "strategy" | "context";
 export type DockTab = "positions" | "orders" | "history" | "backtest" | "sweep" | "evaluate" | "logs";
 
 export interface WorkspaceStore extends WorkspaceState {
@@ -96,7 +96,7 @@ function createDeferredStorage<S>(): PersistStorage<S> {
 export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   ...DEFAULT_WORKSPACE_STATE,
   watchlist: ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT"],
-  inspectorTab: "watchlist",
+  inspectorTab: "book",
   dockTab: "backtest",
   strategyParameters: firstStrategy ? { ...firstStrategy.defaults } : {},
   backtestConfig: { initialCapital: 10_000, positionFraction: 0.95, feeRate: 0.001, slippageRate: 0.0005, allowShorts: false },

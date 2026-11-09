@@ -282,3 +282,22 @@ test("derivatives navigation, venue coverage labels and narrow layout", async ({
   await expect(page.getByRole("heading", { name: "/ Derivatives" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
 });
+
+/* Navigation is a shell contract, not a trading one. While Replay owns the
+   terminal the derivatives page pauses live markets behind a banner; the
+   workspace digits must still leave the page, because that banner's own nav
+   advertises them. A guard placed above the navigation branch re-breaks this. */
+test("workspace digits leave Derivatives even while Replay pauses it", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: /Derivatives market mode/ }).first().click();
+  await page.waitForURL("**/derivatives", { timeout: 120_000 });
+  /* The page polls the shared workspace boundary, so answering that one read is
+     enough to put it in the paused state the banner describes. */
+  await page.route("**/api/workspace", (route) => route.request().method() === "GET"
+    ? route.fulfill({ json: { state: { activeWorkspace: "replay" }, updatedAt: 0 } })
+    : route.continue());
+  await expect(page.locator(".derivatives-banner")).toBeVisible({ timeout: 60_000 });
+  await page.unroute("**/api/workspace");
+  await page.keyboard.press("1");
+  await page.waitForURL("**/w/markets", { timeout: 60_000 });
+});
