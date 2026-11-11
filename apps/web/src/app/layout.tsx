@@ -29,7 +29,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
        inline script below writes the device's stored colour-vision mode and
        language onto <html> before hydration, so the root element is *meant* to
        differ from the server HTML. Every other node must still match. */
-    <html lang="en" data-theme="dark" className={notoSans.variable} suppressHydrationWarning>
+    <html lang="en" data-ak-theme="terminal" className={notoSans.variable} suppressHydrationWarning>
       <head>
         {/* Colour-vision mode and language are paint-time decisions: read them
             during head parsing so a deuteranopia reader never sees the red/green
