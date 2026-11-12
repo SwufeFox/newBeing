@@ -1564,7 +1564,18 @@ export const BottomDock = memo(function BottomDock({
   /* The Positions tab owns its own account poll. Only the Orders/Logs views
      need this dock-level snapshot, so an idle tab must not request it too. */
   const shouldPollPaper = (workspace === "terminal" && activeTab === "orders") || (workspace === "research" && activeTab === "logs");
-  const openStrategy = useCallback(() => setInspectorTab("strategy"), [setInspectorTab]);
+  /* The Results empty state offers this action while the Strategy tab may
+     already be active. Selecting the tab is then a no-op, so reveal the lab
+     and move focus into it; otherwise the button looks inert. */
+  const openStrategy = useCallback(() => {
+    setInspectorTab("strategy");
+    window.setTimeout(() => {
+      const lab = document.querySelector<HTMLElement>(".strategy-lab");
+      if (!lab) return;
+      lab.scrollIntoView({ block: "nearest", inline: "nearest" });
+      lab.querySelector<HTMLElement>("select, input, button")?.focus({ preventScroll: true });
+    }, 0);
+  }, [setInspectorTab]);
 
 
   const [paper, setPaper] = useState<PaperPayload | null>(null);

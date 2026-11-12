@@ -3505,6 +3505,9 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
 /* Coarse pointers have no hover, and a 22px control is not reliably tappable.
    Keep the dense desktop metrics; expand hit areas only where hover is absent. */
 @media (hover: none), (pointer: coarse) {
+  /* The cockpit's icon row is pinned at 28px for pointer layouts; on touch the
+     same targets must clear 44px without changing the desktop density. */
+  .topbar-actions button { width: 44px !important; height: 44px !important; }
   .watchlist-panel .panel-heading { flex-basis: 44px; height: 44px; }
   .watchlist-add-toggle { width: 44px; height: 44px; }
   .watch-row { min-height: 44px; }
