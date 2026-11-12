@@ -1602,6 +1602,7 @@ function PaperTicket({
   const [resolvingPreview, setResolvingPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
   const mutationRef = useRef(false);
   const refreshRef = useRef(0);
   const mode = useWorkspaceStore((state) => state.mode);
@@ -1611,6 +1612,14 @@ function PaperTicket({
   const referencePrice = prefilledPrice ?? summary?.last ?? null;
   const quote = symbol.split("/")[1] ?? "USDT";
   const base = symbol.split("/")[0] ?? "BTC";
+
+  /* The ticket sits at the bottom of a scrolling inspector: a filled order's
+     confirmation lands just below the fold. Reveal whichever message appeared
+     so the click that caused it always produces visible feedback. */
+  useEffect(() => {
+    if (!notice && !error) return;
+    feedbackRef.current?.scrollIntoView({ block: "nearest" });
+  }, [notice, error]);
 
   useEffect(() => {
     let disposed = false;
@@ -1961,8 +1970,12 @@ function PaperTicket({
         </div>
       ))}
 
-      {error && <div role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">{error}</div>}
-      {notice && <div className="success-inline text-xs text-[var(--ak-signal-success)] p-1.5 bg-emerald-950/20 border border-emerald-800/40">{notice}</div>}
+      {(error || notice) && (
+        <div ref={feedbackRef} className="ticket-feedback space-y-1">
+          {error && <div role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">{error}</div>}
+          {notice && <div role="status" className="success-inline text-xs text-[var(--ak-signal-success)] p-1.5 bg-emerald-950/20 border border-emerald-800/40">{notice}</div>}
+        </div>
+      )}
       <div className="ticket-disclaimer flex items-center justify-between text-[10px] text-[var(--ak-text-secondary)] font-mono tracking-wider pt-0.5">
         <div className="flex items-center gap-1">
           <span className="w-1 h-1 rounded-full bg-[var(--ak-signal-info)]" />
