@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ChevronDown,
@@ -637,6 +637,14 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
   /* Tracks the highlighted row across list inserts; see the effect below. */
   const selectedKeyRef = useRef<string | null>(null);
   const resultsListRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
+  const optionId = (index: number): string => `${listboxId}-option-${index}`;
+  const openPalette = useCallback(() => {
+    setOpen(true);
+    setQuery("");
+    setSelectedIndex(0);
+    selectedKeyRef.current = null;
+  }, []);
 
   // Global hotkey to open search: `/` or `Ctrl+K`
   useEffect(() => {
@@ -645,16 +653,13 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
 
       if (event.key === "/" || (event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey))) {
         event.preventDefault();
-        setOpen(true);
-        setQuery("");
-        setSelectedIndex(0);
-        selectedKeyRef.current = null;
+        openPalette();
         window.setTimeout(() => inputRef.current?.focus(), 50);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [disabled]);
+  }, [disabled, openPalette]);
 
   useEffect(() => {
     if (!open || query.trim().length < 1) return;
@@ -757,6 +762,8 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
         label: name,
         detail: strategy.id,
         execute: () => {
+          const path = WORKSPACE_PATH.research;
+          if (window.location.pathname !== path) window.history.pushState({ workspace: "research" }, "", path);
           setStrategy(strategy.id, {});
           setWorkspace("research");
           setInspectorTab("strategy");
@@ -801,12 +808,23 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
         <Search size={13} className="text-[var(--ak-signal-info)]" />
         <input
           ref={inputRef}
-          aria-label={`Search ${exchange} Spot symbols`}
+          role="combobox"
+          aria-label={copy.searchPlaceholder}
+          aria-expanded={open}
+          aria-controls={open ? listboxId : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={open && commands.length > 0 ? optionId(Math.min(selectedIndex, commands.length - 1)) : undefined}
           disabled={disabled}
           value={open ? query : symbol}
-          onFocus={() => { if (!disabled) { setOpen(true); setQuery(""); setSelectedIndex(0); selectedKeyRef.current = null; } }}
+          onFocus={() => { if (!disabled && !open) openPalette(); }}
+          onClick={() => { if (!disabled && !open) openPalette(); }}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
+            if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+              event.preventDefault();
+              openPalette();
+              return;
+            }
             if (event.key === "Escape") {
               setOpen(false);
               setQuery(symbol);
@@ -833,14 +851,14 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
 
       {open && (
         <>
-          <button className="popover-backdrop fixed inset-0 z-40 bg-black/40" aria-label={copy.closeSearch} onClick={() => { setOpen(false); setQuery(symbol); }} />
-          <div ref={resultsListRef} className="symbol-results absolute left-0 top-full mt-1 w-[340px] max-h-80 overflow-auto bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] z-50 shadow-2xl p-1 font-mono text-xs">
+          <button tabIndex={-1} className="popover-backdrop fixed inset-0 z-40 bg-black/40" aria-label={copy.closeSearch} onClick={() => { setOpen(false); setQuery(symbol); }} />
+          <div ref={resultsListRef} id={listboxId} role="listbox" aria-label={copy.paletteTitle} className="symbol-results absolute left-0 top-full mt-1 w-[340px] max-h-80 overflow-auto bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] z-50 shadow-2xl p-1 font-mono text-xs">
             <div className="popover-title text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase p-1.5 border-b border-[var(--ak-border-subtle)] flex items-center justify-between">
               <span>{copy.paletteTitle}</span>
               <span className="text-[10px] text-[var(--c-fg-4)]">{copy.navHint}</span>
             </div>
-            {showLoading && <div className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><LoaderCircle className="spin" size={12} aria-hidden="true" /><span>{copy.searching}…</span></div>}
-            {error && <div className="popover-error p-2 text-xs text-[var(--ak-signal-danger)]">{error}</div>}
+            {showLoading && <div role="status" className="popover-state p-3 text-center text-xs flex items-center justify-center gap-2"><LoaderCircle className="spin" size={12} aria-hidden="true" /><span>{copy.searching}…</span></div>}
+            {error && <div role="alert" className="popover-error p-2 text-xs text-[var(--ak-signal-danger)]">{error}</div>}
             {paletteError && <div role="alert" className="popover-error p-2 text-xs text-[var(--ak-signal-danger)]">{paletteError}</div>}
             {commands.map((command, idx) => {
               const isSelected = idx === selectedIndex;
@@ -855,6 +873,10 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
                     </div>
                   )}
                   <button
+                    id={optionId(idx)}
+                    role="option"
+                    aria-selected={isSelected}
+                    tabIndex={-1}
                     className={`symbol-result w-full flex items-center justify-between gap-2 p-1.5 text-left transition-colors cursor-pointer group ${
                       isSelected
                         ? "bg-[var(--ak-surface-raised)] border-l-2 border-[var(--ak-signal-info)]"
@@ -880,7 +902,7 @@ function SymbolPicker({ disabled = false }: { disabled?: boolean }): React.JSX.E
               );
             })}
             {!showLoading && !error && commands.length === 0 && (
-              <div className="popover-state p-3 text-center text-xs text-[var(--ak-text-secondary)]">{copy.noCommands}</div>
+              <div role="status" className="popover-state p-3 text-center text-xs text-[var(--ak-text-secondary)]">{copy.noCommands}</div>
             )}
           </div>
         </>
@@ -1546,6 +1568,18 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
     if (!canApply() || refresh !== replayRefreshRef.current) return;
     if (!response.ok) {
       const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : "Replay session could not be loaded.";
+      if (response.status === 404) {
+        /* The session was removed with the database or an older install. Do not
+           keep the dead id pinned in shared workspace state: clear it and its
+           in-memory copy so the seed form takes over instead of retrying and
+           blocking public reads on every visit. */
+        setActiveReplayId(null);
+        setReplaySession(null);
+        setReplayExecution(null);
+        setReplayReportValue(null);
+        setReplayPortfolio(null);
+        setReplayOrders([]);
+      }
       throw new Error(message);
     }
     const parsed = parseReplayEnvelope(payload);
@@ -1560,7 +1594,7 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
     if (currentWorkspace.exchange !== parsed.session.exchange) currentWorkspace.setExchange(parsed.session.exchange);
     if (useWorkspaceStore.getState().symbol !== parsed.session.symbol) useWorkspaceStore.getState().setSymbol(parsed.session.symbol);
     if (useWorkspaceStore.getState().timeframe !== parsed.session.timeframe) useWorkspaceStore.getState().setTimeframe(parsed.session.timeframe);
-  }, [applyReplayReport]);
+  }, [applyReplayReport, setActiveReplayId]);
 
   useEffect(() => {
     if (!workspaceReady || !activeReplayId) return;
@@ -1812,6 +1846,13 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
   const replayLocked = workspace === "replay";
   const replayBars = workspace === "replay" ? replaySession?.bars ?? EMPTY_REPLAY_BARS : null;
   const replayPrice = replaySession?.bars.at(-1)?.close ?? null;
+  /* Anything a "New session" click would make unreachable in the UI. */
+  const replayHasProgress = replayOrders.length > 0
+    || (replayExecution?.orders.length ?? 0) > 0
+    || (replayExecution?.fills.length ?? 0) > 0
+    || Boolean(replayExecution?.notes.trim())
+    || (replayExecution?.tags.length ?? 0) > 0
+    || (replayPortfolio?.baseBalance ?? 0) > 0;
 
   /* The inspector keeps a fixed pixel width because the study panels need it, but in
      a narrow pane (the sidebar browser is ~420px) that fixed width leaves the chart
@@ -2136,6 +2177,7 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
                   limit={replayLimit}
                   speed={replaySpeed}
                   exhausted={replayExhausted}
+                  hasProgress={replayHasProgress}
                   playing={replayPlaying}
                   busy={replayBusy}
                   error={replayError}

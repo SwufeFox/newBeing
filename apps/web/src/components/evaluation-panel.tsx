@@ -502,6 +502,15 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   };
   const report = savedReport?.response ?? null;
   const reportKey = savedReport?.parameter ?? "";
+  const reportVerdictRef = useRef<HTMLDivElement | null>(null);
+
+  /* The verdict renders below the form in a short dock; reveal it once the run
+     (or a historical open) completes instead of leaving the click with no
+     visible result. */
+  useEffect(() => {
+    if (!savedReport) return;
+    reportVerdictRef.current?.scrollIntoView({ block: "center" });
+  }, [savedReport]);
 
   const activeKey = keys.includes(parameter) ? parameter : (keys[0] ?? "");
   const spotOnly = (config.accountMode ?? "spot") === "spot" && config.allowShorts === false;
@@ -860,7 +869,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
             <summary>{copy.savedRequest(savedReport?.strategyId ?? "", reportKey ? parameterName(reportKey, copy) : copy.scanUndetermined)}</summary>
             {savedReport?.request}
           </details>
-          <div className="evaluation-verdict grid grid-cols-2 md:grid-cols-4 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
+          <div ref={reportVerdictRef} className="evaluation-verdict grid grid-cols-2 md:grid-cols-4 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
             <div className="evaluation-verdict-cell flex flex-col justify-between">
               <div>
                 <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.selectedOnTrain}</span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Clock3, FastForward, LoaderCircle, Pause, Play, SkipForward, Square, RotateCcw } from "lucide-react";
 import type { ReplayConfig, ReplaySession, Timeframe } from "@newbeing/core";
 import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkNum } from "@swufefox/ak-ui-react";
@@ -18,6 +18,8 @@ interface ReplayControlsProps {
   busy: boolean;
   /** Frozen dataset fully revealed: stepping can never advance again. */
   exhausted?: boolean;
+  /** Session contains orders, fills, a position, or notes worth confirming. */
+  hasProgress?: boolean;
   error: string | null;
   onStartAtChange: (value: string) => void;
   onLimitChange: (value: number) => void;
@@ -62,6 +64,9 @@ interface ReplayCopy {
   replaySpeed: string;
   finish: string;
   newSession: string;
+  discardPrompt: string;
+  discardConfirm: string;
+  discardCancel: string;
   statusActive: string;
   statusFinished: string;
   exhaustedTitle: string;
@@ -103,6 +108,9 @@ const REPLAY_COPY: CopyTable<ReplayCopy> = {
     replaySpeed: "Replay speed",
     finish: "Finish",
     newSession: "New session",
+    discardPrompt: "Discard this session?",
+    discardConfirm: "Discard",
+    discardCancel: "Cancel",
     statusActive: "ACTIVE",
     statusFinished: "FINISHED",
     exhaustedTitle: "Frozen dataset fully revealed",
@@ -142,6 +150,9 @@ const REPLAY_COPY: CopyTable<ReplayCopy> = {
     replaySpeed: "回放速度",
     finish: "结束",
     newSession: "新建回放",
+    discardPrompt: "放弃本次回放？",
+    discardConfirm: "放弃",
+    discardCancel: "取消",
     statusActive: "进行中",
     statusFinished: "已结束",
     exhaustedTitle: "冻结数据集已完全揭示",
@@ -153,13 +164,33 @@ const REPLAY_COPY: CopyTable<ReplayCopy> = {
 export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
   const copy = useCopy(REPLAY_COPY);
   const {
-    symbol, timeframe, session, startAt, limit, speed, playing, busy, error, exhausted = false,
+    symbol, timeframe, session, startAt, limit, speed, playing, busy, error, exhausted = false, hasProgress = false,
     onStartAtChange, onLimitChange, onSpeedChange, onStart, onTogglePlay, onStep, onFinish, onNewSession,
   } = props;
   const [initialCapital, setInitialCapital] = useState("10000");
   const [feeRate, setFeeRate] = useState("0.001");
   const [slippageRate, setSlippageRate] = useState("0.0005");
+  const [confirmNew, setConfirmNew] = useState(false);
+  const newSessionRef = useRef<HTMLButtonElement | null>(null);
+  const confirmNewRef = useRef<HTMLButtonElement | null>(null);
   const cursor = session?.bars.at(-1);
+
+  /* A new session replaces the active one in the UI; the server copy becomes
+     unreachable. Ask before discarding orders, fills, a position, or notes. */
+  useEffect(() => { setConfirmNew(false); }, [session?.id]);
+  useEffect(() => { if (confirmNew) confirmNewRef.current?.focus(); }, [confirmNew]);
+  const requestNewSession = (): void => {
+    if (!hasProgress) {
+      onNewSession();
+      return;
+    }
+    setConfirmNew(true);
+  };
+  const cancelNewSession = (): void => {
+    setConfirmNew(false);
+    /* The New session button is mounted only after this state commits. */
+    window.setTimeout(() => newSessionRef.current?.focus(), 0);
+  };
 
   // Global hotkeys for supreme tactile feel: Space = Play/Pause, ArrowRight/N = Step, < / > = Speed
   useEffect(() => {
@@ -403,16 +434,47 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 {copy.finish}
               </Button>
 
-              <Button
-                variant="subtle"
-                size="sm"
-                disabled={busy || playing}
-                onClick={onNewSession}
-                icon={<RotateCcw size={12} />}
-                className="h-7 text-xs"
-              >
-                {copy.newSession}
-              </Button>
+              {confirmNew ? (
+                <div
+                  className="flex flex-wrap items-center gap-1.5"
+                  role="group"
+                  aria-label={copy.discardPrompt}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      cancelNewSession();
+                    }
+                  }}
+                >
+                  <span role="alert" className="text-[10px] font-mono text-[var(--ak-signal-action)]">{copy.discardPrompt}</span>
+                  <button
+                    ref={confirmNewRef}
+                    type="button"
+                    onClick={onNewSession}
+                    className="h-7 px-2 border border-[var(--c-down)] bg-[color-mix(in_srgb,var(--c-down)_14%,transparent)] text-[10px] font-bold text-[var(--c-down)] hover:brightness-110"
+                  >
+                    {copy.discardConfirm}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelNewSession}
+                    className="h-7 px-2 border border-[var(--ak-border)] text-[10px] text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)]"
+                  >
+                    {copy.discardCancel}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  ref={newSessionRef}
+                  type="button"
+                  disabled={busy || playing}
+                  onClick={requestNewSession}
+                  className="inline-flex h-7 items-center gap-1.5 px-2 border border-[var(--ak-border)] bg-[var(--ak-surface-raised)] text-xs text-[var(--ak-text-secondary)] hover:text-[var(--ak-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw size={12} />
+                  {copy.newSession}
+                </button>
+              )}
             </div>
           </div>
         </div>

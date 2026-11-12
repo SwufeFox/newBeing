@@ -484,6 +484,8 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
 
   const [result, setResult] = useState<SweepResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const sweepErrorRef = useRef<HTMLDivElement | null>(null);
+  const sweepVerdictRef = useRef<HTMLDivElement | null>(null);
   const [running, setRunning] = useState(false);
   const [applied, setApplied] = useState<{ sweepId: string; value: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -595,6 +597,13 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   const showWalkForward = result ? Boolean(walkForwardReport) : mode === "walk-forward";
   const canApply = Boolean(result && result.strategyId === strategyId && result.strategyVersion === strategy?.version && keys.includes(result.parameter));
 
+  /* A failed run used to leave its only message below the fold. Reveal it so
+     the button that started the sweep always reports the outcome. */
+  useEffect(() => {
+    if (!error) return;
+    sweepErrorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [error]);
+
   const run = async (): Promise<void> => {
     if (snapshotUnavailable) {
       setError(copy.snapshotUnavailable);
@@ -689,6 +698,13 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
 
     return { best, worst, profitable, total: result.runs.length, spread: Math.max(...returns) - Math.min(...returns), distinct, collapsed, thinnest };
   }, [result]);
+
+  /* A finished sweep used to leave its verdict below the dock viewport. Reveal
+     the summary when a run or a saved sweep loads. */
+  useEffect(() => {
+    if (!result || !stats) return;
+    sweepVerdictRef.current?.scrollIntoView({ block: "center" });
+  }, [result, stats]);
 
   if (keys.length === 0) {
     return <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><ScanSearch size={22} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>{copy.nothingToSweepTitle}</strong><span>{copy.nothingToSweepBody}</span></div>;
@@ -875,13 +891,13 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
       )}
 
       {error && (
-        <div className="error-inline p-2 text-xs text-[var(--ak-signal-danger)] bg-red-950/20 border border-red-800/40">
+        <div ref={sweepErrorRef} role="alert" className="error-inline p-2 text-xs text-[var(--ak-signal-danger)] bg-red-950/20 border border-red-800/40">
           <AlertCircle size={13} /> {error}
         </div>
       )}
 
       {result && stats && (
-        <div className="sweep-verdict grid grid-cols-2 md:grid-cols-5 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
+        <div ref={sweepVerdictRef} className="sweep-verdict grid grid-cols-2 md:grid-cols-5 gap-2 p-2 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
           <div className="sweep-verdict-cell flex flex-col">
             <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{copy.bestValue}</span>
             <strong className="text-xs text-[var(--ak-signal-success)] font-mono font-bold tabular-nums">

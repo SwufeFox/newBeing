@@ -185,6 +185,8 @@ interface InspectorCopy {
   tags: string;
   tagsPlaceholder: string;
   saveNotesTags: string;
+  journalSaved: string;
+  journalSaveFailed: string;
   exportJournal: string;
   marketCloseQueued: string;
   limitStopRequired: string;
@@ -367,6 +369,8 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     tags: "TAGS · COMMA SEPARATED",
     tagsPlaceholder: "breakout, trend-following",
     saveNotesTags: "Save notes / tags",
+    journalSaved: "Notes / tags saved.",
+    journalSaveFailed: "Could not save notes / tags.",
     exportJournal: "Export journal JSON",
     marketCloseQueued: "Market close queued for next bar",
     limitStopRequired: "Limit/stop price is required and must be positive.",
@@ -546,6 +550,8 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     tags: "标签 · 逗号分隔",
     tagsPlaceholder: "突破, 趋势跟随",
     saveNotesTags: "保存备注 / 标签",
+    journalSaved: "备注与标签已保存。",
+    journalSaveFailed: "无法保存备注与标签。",
     exportJournal: "导出日志 JSON",
     marketCloseQueued: "市价平仓已排队至下一根 K 线",
     limitStopRequired: "限价/止损价必填，且必须为正数。",
@@ -2019,6 +2025,7 @@ function ReplayTicket({
   const [tags, setTags] = useState(execution?.tags.join(", ") ?? "");
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [ticketNotice, setTicketNotice] = useState<string | null>(null);
+  const replayFeedbackRef = useRef<HTMLDivElement | null>(null);
   const size = Number(quantity);
   const current = session?.bars.at(-1);
   const triggerPrice = Number(trigger);
@@ -2026,6 +2033,13 @@ function ReplayTicket({
     Number.isFinite(size) && size > 0 &&
     (orderType === "market" || (Number.isFinite(triggerPrice) && triggerPrice > 0));
   const canSell = canBuy && !!portfolio && size <= portfolio.baseBalance;
+
+  /* Same bottom-of-panel feedback problem as the Paper ticket: reveal the
+     queued/error message instead of leaving it below the fold. */
+  useEffect(() => {
+    if (!ticketError && !ticketNotice) return;
+    replayFeedbackRef.current?.scrollIntoView({ block: "nearest" });
+  }, [ticketError, ticketNotice]);
 
   const submit = (side: "buy" | "sell"): void => {
     const text = translate(INSPECTOR_COPY);
@@ -2172,9 +2186,15 @@ function ReplayTicket({
                 type="button"
                 disabled={busy || session.status !== "active"}
                 onClick={() => {
+                  const text = translate(INSPECTOR_COPY);
+                  setTicketError(null);
+                  setTicketNotice(null);
                   void onOrder("sell", portfolio.baseBalance, { type: "market" }).then(() => {
-                    setTicketNotice(translate(INSPECTOR_COPY).marketCloseQueued);
+                    setTicketNotice(text.marketCloseQueued);
                     window.setTimeout(() => setTicketNotice(null), 3000);
+                  }).catch((reason: unknown) => {
+                    setTicketError(reason instanceof Error ? reason.message : text.replayOrderFailed);
+                    window.setTimeout(() => setTicketError(null), 4000);
                   });
                 }}
                 className="ticket-close-full text-[10px] px-1 py-0.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold uppercase transition-all active:scale-95 cursor-pointer"
@@ -2357,8 +2377,12 @@ function ReplayTicket({
         </Button>
       </div>
 
-      {ticketError && <div className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">{ticketError}</div>}
-      {ticketNotice && <div className="success-inline text-xs text-[var(--ak-signal-success)] p-1.5 bg-emerald-950/20 border border-emerald-800/40">{ticketNotice}</div>}
+      {(ticketError || ticketNotice) && (
+        <div ref={replayFeedbackRef} className="ticket-feedback space-y-1">
+          {ticketError && <div role="alert" className="error-inline text-xs text-[var(--ak-signal-danger)] p-1.5 bg-red-950/20 border border-red-800/40">{ticketError}</div>}
+          {ticketNotice && <div role="status" className="success-inline text-xs text-[var(--ak-signal-success)] p-1.5 bg-emerald-950/20 border border-emerald-800/40">{ticketNotice}</div>}
+        </div>
+      )}
 
       {orders.length > 0 && (
         <div className="space-y-1 max-h-32 overflow-auto p-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
@@ -2401,7 +2425,26 @@ function ReplayTicket({
           />
         </label>
         <div className="flex gap-2">
-          <Button size="sm" variant="subtle" className="flex-1 h-7 text-xs" disabled={busy} onClick={() => void onCommand({ action: "journal", notes, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean) }).catch(() => undefined)}>
+          <Button
+            size="sm"
+            variant="subtle"
+            className="flex-1 h-7 text-xs"
+            disabled={busy}
+            onClick={() => {
+              const text = translate(INSPECTOR_COPY);
+              setTicketError(null);
+              setTicketNotice(null);
+              void onCommand({ action: "journal", notes, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean) })
+                .then(() => {
+                  setTicketNotice(text.journalSaved);
+                  window.setTimeout(() => setTicketNotice(null), 3000);
+                })
+                .catch((reason: unknown) => {
+                  setTicketError(reason instanceof Error ? reason.message : text.journalSaveFailed);
+                  window.setTimeout(() => setTicketError(null), 4000);
+                });
+            }}
+          >
             {copy.saveNotesTags}
           </Button>
           <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" disabled={busy || !execution} onClick={exportJournal}>

@@ -51,6 +51,10 @@ export function WorkspaceSync(): null {
     let identityRevision = 0;
     let isSending = false;
     let isPolling = false;
+    /* A stale `expectedUpdatedAt` costs one conflict. Retry once against the
+       version the server just returned; a genuinely newer remote edit still
+       wins because the second write conflicts too and stops. */
+    let conflictRetries = 0;
     let lastFocusRefreshAt = 0;
     let pendingSend = false;
     let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -101,11 +105,13 @@ export function WorkspaceSync(): null {
             // state; the local change that lost simply becomes unsynced and the
             // next local edit (or an explicit retry) resends against the new
             // version. No waiting on the losing request is required.
+            let conflictJson: string | null = null;
             try {
               const conflict = (await response.json()) as WorkspaceEnvelope & { error: string };
               if (stopped) return;
+              conflictJson = JSON.stringify(conflict.state);
               lastServerTime = Math.max(lastServerTime, conflict.updatedAt);
-              lastSyncedJson = JSON.stringify(conflict.state);
+              lastSyncedJson = conflictJson;
               if (sentRevision === revision && sentIdentityRevision === identityRevision) {
                 const store = useWorkspaceStore.getState();
                 if (store.activeWorkspace !== "replay" || replayIdentity(store) === replayIdentity(conflict.state)) {
@@ -115,12 +121,21 @@ export function WorkspaceSync(): null {
                 }
               }
             } catch { /* A malformed conflict body still counts as a failed write. */ }
+            /* A workspace switch made while the row moved (for example after a
+               Replay command) must not leave the shell on the new view while the
+               server still refuses the old one. Retry the surviving local intent
+               once against the version just learned. */
+            if (conflictJson !== null && currentJson() !== conflictJson && conflictRetries < 1) {
+              conflictRetries += 1;
+              pendingSend = true;
+            }
             return;
           }
           throw new Error(`Workspace sync failed (${response.status}).`);
         }
         const envelope = (await response.json()) as WorkspaceEnvelope;
         if (stopped) return;
+        conflictRetries = 0;
         const serverJson = JSON.stringify(envelope.state);
         lastLocalWrite = envelope.updatedAt;
         lastServerTime = Math.max(lastServerTime, envelope.updatedAt);
