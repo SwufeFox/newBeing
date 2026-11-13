@@ -130,6 +130,24 @@ try {
     }
   }
 
+  const tradedRun = sweepData.candidateRuns.find((run) => typeof run.metrics.tradeCount === "number" && run.metrics.tradeCount > 0);
+  if (!tradedRun) throw new Error("MCP smoke requires a saved training result with trades.");
+  const resultSummary = readPayload(await client.callTool({ name: "get_backtest_result", arguments: { result_id: tradedRun.resultId } }));
+  const explicitSummary = readPayload(await client.callTool({ name: "get_backtest_result", arguments: { result_id: tradedRun.resultId, trade_limit: 0 } }));
+  const resultDetails = readPayload(await client.callTool({ name: "get_backtest_result", arguments: { result_id: tradedRun.resultId, trade_limit: 1, include_equity_curve: true } }));
+  if (resultSummary.tradeCount !== tradedRun.metrics.tradeCount || !Array.isArray(resultSummary.trades) || resultSummary.trades.length !== 0 ||
+      !Array.isArray(explicitSummary.trades) || explicitSummary.trades.length !== 0 ||
+      !Array.isArray(resultDetails.trades) || resultDetails.trades.length !== 1 ||
+      !Array.isArray(resultDetails.equityCurve) || resultDetails.equityCurve.length !== tradedRun.segment.end - tradedRun.segment.start ||
+      (resultSummary.equityCurve as { pointCount: number }).pointCount !== resultDetails.equityCurve.length) {
+    throw new Error("MCP saved-result summaries must retain total counts and expose only explicitly requested detail.");
+  }
+  for (const trade_limit of [-1, 201]) {
+    if (!(await client.callTool({ name: "get_backtest_result", arguments: { result_id: tradedRun.resultId, trade_limit } })).isError) {
+      throw new Error("MCP accepted a trade detail limit outside 0–200.");
+    }
+  }
+
   const flatBars = researchBars.map((bar) => ({ ...bar, open: 100, high: 101, low: 99, close: 100 }));
   const flatDatasetId = saveDatasetSnapshot({ ...researchInput, candles: flatBars });
   const failedSweep = await client.callTool({

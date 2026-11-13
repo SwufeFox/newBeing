@@ -68,6 +68,29 @@ export function listExperimentSummaries(limit = 20): ExperimentSummary[] {
   }));
 }
 
+export type ExperimentMetadata = Omit<ExperimentSummary, "metrics"> & Pick<BacktestResult, "datasetId" | "strategyVersion" | "metrics">;
+
+/** Read research history without transferring trade, signal or equity arrays into Node. */
+export function listExperimentMetadata(limit = 20): ExperimentMetadata[] {
+  const rows = getDatabase().select({
+    resultId: experiments.resultId,
+    datasetId: experiments.datasetId,
+    symbol: experiments.symbol,
+    timeframe: experiments.timeframe,
+    strategyId: experiments.strategyId,
+    strategyVersion: experiments.strategyVersion,
+    createdAt: experiments.createdAt,
+    metrics: sql<string>`json_extract(${experiments.result}, '$.metrics')`,
+  }).from(experiments).where(sql`json_valid(${experiments.result})`)
+    .orderBy(desc(experiments.createdAt)).limit(Math.max(1, Math.min(100, limit))).all();
+
+  return rows.map(({ metrics, createdAt, ...result }) => ({
+    ...result,
+    createdAt: new Date(createdAt).toISOString(),
+    metrics: JSON.parse(metrics) as BacktestResult["metrics"],
+  }));
+}
+
 export function listExperiments(limit = 20): BacktestResult[] {
   return getDatabase().select({ result: experiments.result }).from(experiments)
     .orderBy(desc(experiments.createdAt)).limit(Math.max(1, Math.min(100, limit))).all()

@@ -13,7 +13,7 @@ import {
   getPaperPortfolio,
   getStoredStrategy,
   getWorkspaceState,
-  listExperiments,
+  listExperimentMetadata,
   listStoredStrategySummaries,
   replayAccountId,
   saveStrategy,
@@ -87,7 +87,7 @@ function publicStrategyList(): Array<{ id: string; name: string; version: string
   return [...builtins, ...drafts];
 }
 
-function summarizeExperiment(result: NonNullable<ReturnType<typeof getExperiment>>, tradeLimit = 20, includeEquityCurve = false): Record<string, unknown> {
+function summarizeExperiment(result: NonNullable<ReturnType<typeof getExperiment>>, tradeLimit = 0, includeEquityCurve = false): Record<string, unknown> {
   return {
     resultId: result.resultId,
     datasetId: result.datasetId,
@@ -106,7 +106,7 @@ function summarizeExperiment(result: NonNullable<ReturnType<typeof getExperiment
     createdAt: result.createdAt,
     metrics: result.metrics,
     tradeCount: result.trades.length,
-    trades: result.trades.slice(0, Math.max(1, Math.min(200, tradeLimit))),
+    trades: result.trades.slice(0, Math.max(0, Math.min(200, tradeLimit))),
     equityCurve: includeEquityCurve ? result.equityCurve : {
       pointCount: result.equityCurve.length,
       first: result.equityCurve[0] ?? null,
@@ -468,10 +468,10 @@ export function createNewBeingMcpServer(): McpServer {
 
   server.registerTool("get_backtest_result", {
     title: "Get saved backtest result",
-    description: "Read a reproducible experiment result and its dataset/execution provenance from local SQLite.",
+    description: "Read a saved experiment's metrics, assumptions and dataset/execution provenance. Trades and the full equity curve are opt-in.",
     inputSchema: z.object({
       result_id: z.string().min(1).max(120),
-      trade_limit: z.number().int().min(1).max(200).default(100),
+      trade_limit: z.number().int().min(0).max(200).default(0),
       include_equity_curve: z.boolean().default(false),
     }),
     annotations: { readOnlyHint: true },
@@ -504,17 +504,7 @@ export function createNewBeingMcpServer(): McpServer {
   }, async ({ limit }) => {
     try {
       assertResearchAvailable("Experiment history is hidden during Replay to prevent future-result leakage.");
-      const items = listExperiments(limit).map((result) => ({
-        resultId: result.resultId,
-        datasetId: result.datasetId,
-        symbol: result.symbol,
-        timeframe: result.timeframe,
-        strategyId: result.strategyId,
-        strategyVersion: result.strategyVersion,
-        createdAt: result.createdAt,
-        metrics: result.metrics,
-      }));
-      return textResult({ items });
+      return textResult({ items: listExperimentMetadata(limit) });
     }
     catch (error) { return errorResult(error); }
   });

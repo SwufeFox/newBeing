@@ -103,7 +103,9 @@ MCP 的 bounded research 工具复用 application/storage 用例：
 
 这些工具的错误同时设置 MCP `isError`，并返回 `code`、message、retryable 和 nextAction。通常的失败使用 `RESEARCH_OPERATION_FAILED`；无有限训练 Sharpe 使用 `SWEEP_NO_FINITE_TRAINING_SHARPE`，训练回撤上限排除全部候选使用 `SWEEP_TRAINING_DRAWDOWN_EXCLUDES_ALL`，其他无合格选参指标使用 `SWEEP_NO_ELIGIBLE_TRAINING_CANDIDATE`，每种 nextAction 都给出对应调整建议。既有 `run_backtest` / `get_backtest_result` 保留旧响应形状以兼容客户端，后续迁移前需单独处理兼容性。
 
-研究响应默认摘要优先；长 bars、交易和 equity curve 仅在显式参数下返回并受上限约束。每个研究答复引用 `resultId` / `sweepId`、dataset、venue/instrument/timeframe、barRange、来源、strategy/version、成本、执行假设和警告；缺失字段显示为未知，不补猜。
+研究响应默认摘要优先。`run_backtest`、`rerun_backtest` 和 `get_backtest_result` 默认保留完整指标、来源与执行假设、总 `tradeCount`，返回 `trades: []`，权益曲线仅含 `pointCount`、`first`、`last`。需要逐笔成交时，用 `get_backtest_result` 显式传 `trade_limit`（0–200，读取最早的已保存成交）；需要完整权益曲线时传 `include_equity_curve: true`。成交读取上限不改变总成交数或指标。
+
+先用 `list_experiments(limit)` 获取 ID 和完整指标，再按 ID 读取所需明细。列表直接在 SQLite 中提取元数据，不把每个结果的成交、信号和权益数组载入 Node。每个研究答复引用 `resultId` / `sweepId`、dataset、venue/instrument/timeframe、barRange、来源、strategy/version、成本、执行假设和警告；缺失字段显示为未知，不补猜。
 
 ## 实施顺序
 
