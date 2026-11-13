@@ -3908,7 +3908,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .paper-ticket .ticket-close-full,
   .paper-ticket .ticket-sizing-toggle,
   .paper-ticket .ticket-percent,
-  .paper-ticket .ticket-actions button { min-width: 44px; min-height: 44px; }
+  .paper-ticket .ticket-actions button,
+  .paper-ticket .replay-orders button { min-width: 44px; min-height: 44px; }
   .paper-ticket .ticket-stepper { height: 46px; }
   .paper-ticket .ticket-stepper button { min-width: 44px; }
   .shared-spot-ticket button { min-width: 44px; min-height: 44px; }

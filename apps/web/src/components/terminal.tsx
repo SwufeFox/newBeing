@@ -229,7 +229,8 @@ const HOTKEYS_COPY: CopyTable<HotkeysCopy> = {
         rows: [
           { label: "Quick Buy / Sell", keys: "B / S", scope: "Markets" },
           { label: "Sizing Chips / Stepper", keys: "Chips · - / +" },
-          { label: "One-Click Flatten", keys: "Close 100% button", tone: "danger" },
+          { label: "Legacy wallet: close position", keys: "Close 100% button", tone: "danger", scope: "Markets" },
+          { label: "Shared wallet: size full sell", keys: "Size 100%, then Sell inventory", tone: "info", scope: "Markets" },
         ],
       },
       {
@@ -278,7 +279,8 @@ const HOTKEYS_COPY: CopyTable<HotkeysCopy> = {
         rows: [
           { label: "快速买入 / 卖出", keys: "B / S", scope: "Markets" },
           { label: "仓位比例 / 步进", keys: "比例键 · - / +" },
-          { label: "一键平仓", keys: "“Close 100%”按钮", tone: "danger" },
+          { label: "旧钱包：平仓", keys: "“Close 100%”按钮", tone: "danger", scope: "Markets" },
+          { label: "共享钱包：填入全部卖出数量", keys: "填入 100%，再点击卖出库存", tone: "info", scope: "Markets" },
         ],
       },
       {

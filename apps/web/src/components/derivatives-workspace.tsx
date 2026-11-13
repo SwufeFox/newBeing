@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity } from "lucide-react";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { AkInput, AkPopover, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import type { Candle } from "@newbeing/core";
 import { CandlestickSeries, ColorType, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
@@ -12,7 +13,7 @@ import type { DerivativesAccount, DerivativesOrderRequest, DerivativesPosition }
 import { Button } from "@/components/ui/button";
 import { WORKSPACE_PATH } from "@/lib/workspace-routes";
 import { useWorkspaceStore } from "@/store/workspace";
-import { derivativeNumber, derivativeDate, derivativeBlockCode, derivativePositionIsExpired, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale, derivativeProtectionSeed, derivativeInputErrors, derivativeCommandWasRejected, DerivativeRequestError, type DerivativeBlockCode } from "@/lib/derivatives-ui";
+import { derivativeNumber, derivativeDate, derivativeBlockCode, derivativePositionIsExpired, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale, derivativeProtectionSeed, derivativeSizedQuantity, derivativeInputErrors, derivativeCommandWasRejected, DerivativeRequestError, type DerivativeBlockCode } from "@/lib/derivatives-ui";
 import { chartPalette, type ChartPalette } from "@/lib/chart-palette";
 import { usePreferences } from "@/lib/preferences";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
@@ -1240,20 +1241,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
   };
 
   const sizeDerivativesBudget = (fraction: number): void => {
-    if (!account || !instrument || !quote) return;
-    const avail = Number(account.available) || 0;
-    const refPrice = Number(quote.mark || quote.bid || maximumPrice) || 0;
-    if (avail <= 0 || refPrice <= 0) return;
-    const lev = Number(leverage) || 1;
-    const cSize = instrument.contractSize || 1;
-    const marginPerContract = (cSize * refPrice) / lev;
-    if (marginPerContract <= 0) return;
-    const budget = avail * fraction;
-    const step = instrument.quantityStep || 1;
-    const contracts = Math.floor((budget / marginPerContract) / step) * step;
-    if (contracts > 0) {
-      setQuantity(String(Number(contracts.toFixed(4))));
-    }
+    const sized = derivativeSizedQuantity(instrument, quote, account, action, side, Number(leverage), fraction, Date.now());
+    if (sized !== null) setQuantity(sized);
   };
   function selectPosition(position: DerivativesPosition, settle?: string): void {
     // A settlement account can contain several contracts, and Deribit USDC
@@ -1421,7 +1410,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
     .join(" + ");
 
 
-  return <div className="derivatives-shell font-mono">
+  return <TabsPrimitive.Root value={kind} onValueChange={(value) => changeKind(value as DerivativeKind)} asChild><div className="derivatives-shell font-mono">
     <header className="derivatives-topbar">
       <Link href="/" className="derivatives-brand flex items-center gap-2">
         <div className="brand-mark p-1 rounded-xs bg-[var(--c-surface-3)] border border-[var(--ak-border-strong)] text-[var(--c-accent)] flex items-center justify-center">
@@ -1516,26 +1505,21 @@ export function DerivativesWorkspace(): React.JSX.Element {
     </div>}
 
     {/* kind switch: the workspace-tab grammar from the main terminal nav */}
-    <div role="tablist" aria-label={copy.marketsAria} className="derivatives-kind-tabs flex items-center gap-1 px-4 py-2 bg-[var(--ak-surface-sunken)] border-b border-[var(--c-line)]">
+    <TabsPrimitive.List aria-label={copy.marketsAria} className="derivatives-kind-tabs flex items-center gap-1 px-4 py-2 bg-[var(--ak-surface-sunken)] border-b border-[var(--c-line)]">
       {KINDS.map((value) => (
-        <button
+        <TabsPrimitive.Trigger
           key={value}
-          type="button"
-          role="tab"
-          id={'derivatives-' + value}
-          aria-selected={kind === value}
-          aria-controls="derivatives-panel"
+          value={value}
           className={'px-3 py-1 text-xs font-medium rounded-xs transition-all cursor-pointer ' + (kind === value ? "bg-[var(--c-surface-3)] text-[var(--c-fg)] font-semibold border-b-2 border-[var(--c-accent)] shadow-xs" : "text-[var(--c-fg-3)] hover:text-white hover:bg-[var(--c-surface-2)]")}
           disabled={busy || blocked}
-          onClick={() => changeKind(value)}
         >
           {copy.kinds[value]}
-        </button>
+        </TabsPrimitive.Trigger>
       ))}
       <div className="flex-1" />
       <span className="derivatives-kind-summary text-[11px] text-[var(--c-fg-4)] font-mono">{kind === "option" ? copy.longOptionsOnly : copy.linearContractsLine(marketVenues || copy.noVenues)}</span>
-    </div>
-    <div id="derivatives-panel" role="tabpanel" aria-labelledby={'derivatives-' + kind} className="flex flex-col flex-1">
+    </TabsPrimitive.List>
+    <TabsPrimitive.Content value={kind} className="flex flex-col flex-1">
     <main className="derivatives-layout" style={{ ["--mode" as string]: kind === "option" ? "var(--c-up)" : "var(--c-accent)" }}>
       {/* instrument rail: the watchlist vocabulary */}
       <h1 className="sr-only">{copy.pageTitle}</h1>
@@ -1882,7 +1866,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
         </div>
       </section>
     </main>
-    </div>
+    </TabsPrimitive.Content>
 
     <footer className="derivatives-statusbar">
       <span>{copy.localWorkspace(instrument ? `${instrument.nativeId} · ${instrument.settle}` : copy.noContract)}</span>
@@ -1894,5 +1878,5 @@ export function DerivativesWorkspace(): React.JSX.Element {
       <Link href={WORKSPACE_PATH.replay}>{copy.replay}</Link>
       <Link href="/derivatives" aria-current="page" className="active">{copy.derivatives}</Link>
     </nav>
-  </div>;
+  </div></TabsPrimitive.Root>;
 }

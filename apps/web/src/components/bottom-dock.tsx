@@ -3,7 +3,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { AreaSeries, ColorType, createChart, type UTCTimestamp } from "lightweight-charts";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileDown, FileText, FlaskConical, ListChecks, RotateCcw, ScanSearch, Wallet, Filter } from "lucide-react";
-import { EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplaySession, type SpotAccount } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplayOrderInput, type ReplaySession, type SpotAccount } from "@newbeing/core";
 import type { ExperimentSummary } from "@newbeing/storage";
 import { SweepPanel } from "@/components/sweep-panel";
 import { EvaluationPanel } from "@/components/evaluation-panel";
@@ -13,6 +13,7 @@ import { useCopy, translate, type CopyTable } from "@/lib/i18n";
 import { formatPercentChange, formatQuotePrice, formatRate } from "@/lib/price-format";
 import { captureWorkspaceSelection } from "@/lib/workspace-selection";
 import { buildResearchReport, researchReportFilename } from "@/lib/research-report";
+import { sameBacktestConfig } from "@/lib/research-inputs";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore } from "@/store/workspace";
@@ -82,6 +83,7 @@ interface DockCopy {
   copyOrderId: string;
   copied: string;
   orderSide: Record<PaperOrder["side"], string>;
+  orderTypes: Record<ReplayOrderInput["type"], string>;
   orderStatus: Record<PaperOrder["status"], string>;
   noBacktest: string;
   noBacktestHint: string;
@@ -263,6 +265,7 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     copyOrderId: "Click to copy order ID",
     copied: "COPIED",
     orderSide: { buy: "BUY", sell: "SELL" },
+    orderTypes: { market: "Market", limit: "Limit", stop: "Stop" },
     orderStatus: { created: "created", submitted: "submitted", filled: "filled", rejected: "rejected", cancelled: "cancelled", unknown: "unknown" },
     noBacktest: "No backtest selected",
     noBacktestHint: "Configure a strategy in the Strategy Lab, then execute a deterministic historical run on any supported venue.",
@@ -440,6 +443,7 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     copyOrderId: "点击复制委托号",
     copied: "已复制",
     orderSide: { buy: "买入", sell: "卖出" },
+    orderTypes: { market: "市价", limit: "限价", stop: "止损" },
     orderStatus: { created: "已创建", submitted: "已提交", filled: "已成交", rejected: "已拒绝", cancelled: "已取消", unknown: "未知" },
     noBacktest: "未选择回测",
     noBacktestHint: "在策略实验室配置策略，然后在任一支持的交易所执行确定性历史运行。",
@@ -966,7 +970,7 @@ function ReplayPositions({ session, portfolio }: { session: ReplaySession | null
   );
 }
 
-function OrdersTable({ orders }: { orders: Array<PaperOrder & { error?: string; rejectionReason?: string }> }): React.JSX.Element {
+function OrdersTable({ orders }: { orders: Array<PaperOrder & { error?: string; rejectionReason?: string; type?: ReplayOrderInput["type"]; price?: number }> }): React.JSX.Element {
   const copy = useCopy(DOCK_COPY);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyId = (id: string): void => {
@@ -1014,6 +1018,9 @@ function OrdersTable({ orders }: { orders: Array<PaperOrder & { error?: string; 
                   <AkTag variant={isBuy ? "default" : "danger"} className="text-[10px] px-1.5 py-0">
                     {copy.orderSide[order.side]}
                   </AkTag>
+                  {order.type && <p className="mt-1 whitespace-nowrap text-[var(--ak-text-secondary)] tabular-nums">
+                    {copy.orderTypes[order.type]}{order.price !== undefined ? ` · ${formatQuotePrice(order.price)} ${order.symbol.split("/")[1] ?? ""}` : ""}
+                  </p>}
                 </td>
                 <td className="p-2 font-mono tabular-nums">{order.quantity}</td>
                 <td className="p-2">
@@ -1078,7 +1085,7 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, onOpenSwee
   const normalized = (value: object): string => JSON.stringify(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
   const inputsDiffer = result.exchange !== currentExchange || result.symbol !== currentSymbol || result.timeframe !== currentTimeframe
     || result.strategyId !== currentStrategy || normalized(result.parameters) !== normalized(currentParameters)
-    || normalized(result.assumptions) !== normalized(currentConfig);
+    || !sameBacktestConfig(result.assumptions, currentConfig);
   const restoreInputs = (): void => {
     if (!inputsAvailable || useWorkspaceStore.getState().activeWorkspace !== "research") return;
     useWorkspaceStore.setState((state) => ({

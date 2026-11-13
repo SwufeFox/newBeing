@@ -1,5 +1,7 @@
 import type { DerivativeInstrument, DerivativeQuote } from "@newbeing/market-data/derivatives";
-import { validateDerivativesQuantity, validateDerivativesPrice } from "@newbeing/application/derivatives-types";
+import { DERIVATIVES_POLICY, DerivativesDecimal, derivativesOpeningAmounts, validateDerivativesQuantity, validateDerivativesPrice, type DerivativesAccount } from "@newbeing/application/derivatives-types";
+
+type Decimal = InstanceType<typeof DerivativesDecimal>;
 
 export function derivativeInputErrors(instrument: DerivativeInstrument | null, quantity: string, maximumPrice: string): { quantity: string | null; maximumPrice: string | null } {
   const errors: { quantity: string | null; maximumPrice: string | null } = { quantity: null, maximumPrice: null };
@@ -37,6 +39,48 @@ export function derivativeProtectionSeed(
   return typeof price === "number" && Number.isFinite(price) && price > 0 ? String(price) : null;
 }
 
+/** Size the selected intent; zero exposes a below-minimum result without rounding up. */
+export function derivativeSizedQuantity(
+  instrument: DerivativeInstrument | null,
+  quote: DerivativeQuote | null,
+  account: Pick<DerivativesAccount, "venue" | "settle" | "available" | "feeRate" | "positions"> | null,
+  action: "open" | "close",
+  side: "long" | "short",
+  leverage: number,
+  fraction: number,
+  now: number,
+): string | null {
+  if (!instrument || !account || account.venue !== instrument.venue || account.settle !== instrument.settle
+    || !Number.isFinite(fraction) || fraction <= 0 || fraction > 1) return null;
+  const price = derivativeProtectionSeed(instrument, quote, action, side, now);
+  if (price === null) return null;
+  const step = new DerivativesDecimal(instrument.quantityStep!);
+  let quantity: Decimal;
+  if (action === "close") {
+    const position = account.positions.find((item) => item.instrumentId === instrument.id && item.side === side);
+    quantity = new DerivativesDecimal(position?.quantity ?? "0").mul(fraction).div(step).floor().mul(step);
+  } else {
+    if (!Number.isInteger(leverage) || leverage < 1 || leverage > DERIVATIVES_POLICY.maxLeverage
+      || (instrument.kind === "option" && (side !== "long" || leverage !== 1))) return null;
+    const available = new DerivativesDecimal(account.available), feeRate = new DerivativesDecimal(account.feeRate);
+    if (!available.isFinite() || available.lt(0) || !feeRate.isFinite() || feeRate.lt(0) || feeRate.gt("0.1")) return null;
+    const budget = available.mul(fraction);
+    const cost = (contracts: Decimal): Decimal => {
+      const notional = contracts.mul(instrument.contractSize).mul(price);
+      return derivativesOpeningAmounts(notional, instrument.kind, leverage, account.feeRate).required;
+    };
+    quantity = budget.div(cost(new DerivativesDecimal(1))).div(step).floor().mul(step);
+    // Check the engine's operation order at rounding boundaries, including the next native step.
+    while (quantity.gt(0) && cost(quantity).gt(budget)) quantity = quantity.sub(step);
+    while (cost(quantity.add(step)).lte(budget)) quantity = quantity.add(step);
+  }
+  if (quantity.lte(0) || quantity.lt(instrument.minContracts!)) return "0";
+  const result = quantity.toString();
+  try { validateDerivativesQuantity(instrument, result); }
+  catch { return "0"; }
+  return result;
+}
+
 export function derivativeNumber(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
     ? value.toLocaleString("en-US", { maximumFractionDigits: 10 }) : "—";
@@ -66,7 +110,7 @@ export function derivativeBlockCode(instrument: DerivativeInstrument | null, quo
   // Fixture orders are accepted only by the engine in the non-production E2E
   // process, so the ticket must not deadlock there; production never sees them.
   if (!quote || quote.instrumentId !== instrument.id || quote.source !== instrument.source || quote.bid === null || quote.ask === null || !Number.isFinite(quote.bid) || !Number.isFinite(quote.ask) || quote.bid <= 0 || quote.ask <= 0 || quote.bid > quote.ask) return "needsQuote";
-  if (!Number.isFinite(quote.timestamp) || now - quote.timestamp > 15000 || now < quote.timestamp) return "staleQuote";
+  if (!Number.isFinite(quote.timestamp) || now - quote.timestamp > DERIVATIVES_POLICY.maxQuoteAgeMs || now < quote.timestamp) return "staleQuote";
   return null;
 }
 

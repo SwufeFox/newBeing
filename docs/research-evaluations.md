@@ -43,6 +43,8 @@ The research dock has an **Evaluate** tab (`apps/web/src/components/evaluation-p
 
 `GET /api/datasets/{id}` returns snapshot metadata including continuous bar timestamps with `Cache-Control: no-store` and the Replay guard. The Evaluate panel defaults each dataset's split to its midpoint while preserving per-dataset manual edits, and displays a human-readable split preview with exact candle open timestamps and half-open index ranges. The panel explicitly contrasts current workspace settings against loaded backtest inputs, and only allows applying report or backtest parameters when the selected strategy version and parameter schema are strictly compatible.
 
+Results and Evaluate compare effective backtest configurations: an omitted account mode is equivalent to explicit `spot`. Real differences in capital, position fraction, fees, slippage, short permission, account mode or optional stop/take-profit settings still identify the loaded result as different from the workspace.
+
 A legacy result has no canonical snapshot, so its dataset field stays empty and must be supplied manually — the panel never substitutes a re-fetch for a missing snapshot. The candidate construction lives in `apps/web/src/lib/evaluation-candidates.ts` so it is unit-tested independently of React; it fails closed on an oversized range rather than emitting a truncated one.
 ## Handoff from a backtest into frozen Replay
 

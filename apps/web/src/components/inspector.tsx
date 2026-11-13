@@ -167,6 +167,7 @@ interface InspectorCopy {
   awaitingSeed: string;
   replaySeedNote: string;
   replaySimulator: string;
+  replayOrders: string;
   queueCloseHint: string;
   cursorClosePrice: string;
   cursorCloseHint: string;
@@ -210,6 +211,7 @@ interface InspectorCopy {
   legacyWallet: string;
   sharedSpotWallet: string;
   priceAppliedToTicket: (value: string) => string;
+  priceSelectedForShared: (value: string) => string;
 }
 
 const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
@@ -355,6 +357,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     awaitingSeed: "AWAITING SEED",
     replaySeedNote: "Time-travel simulation strictly isolates lookahead history. Seed the window on the chart bar to initialize local ledger state and execute paper fills.",
     replaySimulator: "REPLAY SIMULATOR",
+    replayOrders: "Replay orders",
     queueCloseHint: "Queue market sell of entire position on next bar",
     cursorClosePrice: "CURSOR CLOSE PRICE",
     cursorCloseHint: "Click to copy cursor close to limit/stop price input",
@@ -397,6 +400,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     legacyWallet: "Legacy pair wallet",
     sharedSpotWallet: "New shared spot wallet",
     priceAppliedToTicket: (value) => `Price $${value} applied to ticket`,
+    priceSelectedForShared: (value) => `Price $${value} selected for the next shared order`,
   },
   zh: {
     priceWithQuote: (quote) => `价格 (${quote})`,
@@ -540,6 +544,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     awaitingSeed: "等待种子",
     replaySeedNote: "时间旅行模拟严格隔离未来数据。在图表上播种窗口，以初始化本地账本状态并执行模拟成交。",
     replaySimulator: "回放模拟器",
+    replayOrders: "回放委托",
     queueCloseHint: "在下一根 K 线市价卖出全部持仓",
     cursorClosePrice: "光标收盘价",
     cursorCloseHint: "点击将光标收盘价填入限价/止损价输入",
@@ -582,6 +587,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     legacyWallet: "旧版币对钱包",
     sharedSpotWallet: "新版共享现货钱包",
     priceAppliedToTicket: (value) => `价格 $${value} 已填入下单区`,
+    priceSelectedForShared: (value) => `价格 $${value} 已选为下一笔共享委托的价格`,
   },
 };
 
@@ -2029,7 +2035,7 @@ function ReplayTicket({
   symbol: string;
   session: ReplaySession | null;
   portfolio: PaperPortfolio | null;
-  orders: PaperOrder[];
+  orders: Array<PaperOrder & { type?: ReplayOrderInput["type"]; price?: number }>;
   busy: boolean;
   onOrder: (side: "buy" | "sell", quantity: number, options?: Partial<ReplayOrderInput>) => Promise<void>;
 }): React.JSX.Element {
@@ -2408,16 +2414,16 @@ function ReplayTicket({
       )}
 
       {orders.length > 0 && (
-        <div className="space-y-1 max-h-32 overflow-auto p-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
+        <div role="list" aria-label={copy.replayOrders} className="replay-orders shrink-0 space-y-1 max-h-48 overflow-auto p-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
           {orders.slice().reverse().map((order) => (
-            <div className="p-1 text-[10px] border-b border-[var(--ak-border-subtle)]" key={order.clientOrderId}>
+            <div role="listitem" className="p-1 text-[10px] border-b border-[var(--ak-border-subtle)]" key={order.clientOrderId}>
               <div className="flex items-center justify-between gap-2">
                 <span className={`font-bold tabular-nums ${order.side === "buy" ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
                   {order.side.toUpperCase()} {order.quantity} · {order.status}
                 </span>
                 <span className="text-[var(--ak-text-secondary)] tabular-nums">{order.fillPrice === null ? "—" : price(order.fillPrice)}</span>
                 {order.status === "submitted" && (
-                  <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1" disabled={busy} onClick={() => {
+                  <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1" aria-describedby={order.type ? `replay-order-details-${order.clientOrderId}` : undefined} disabled={busy} onClick={() => {
                     setTicketError(null);
                     void onCommand({ action: "cancel", clientOrderId: order.clientOrderId }).catch((reason: unknown) => setTicketError(reason instanceof Error ? reason.message : copy.replayOrderFailed));
                   }}>
@@ -2425,6 +2431,9 @@ function ReplayTicket({
                   </Button>
                 )}
               </div>
+              {order.type && <p id={`replay-order-details-${order.clientOrderId}`} className="text-[var(--ak-text-secondary)] tabular-nums mt-1">
+                {copy[order.type]}{order.price !== undefined ? ` · ${price(order.price)} ${quote}` : ""}
+              </p>}
               {"error" in order && typeof order.error === "string" && <p className="text-[var(--ak-signal-danger)] mt-1">{order.error}</p>}
             </div>
           ))}
@@ -2509,7 +2518,7 @@ export function Inspector({ workspace = "terminal", summary, summaryError, resul
 
   const handlePickPrice = (p: number) => {
     setPicked({ key: instrumentKey, price: p });
-    setPickedNotice({ key: instrumentKey, text: translate(INSPECTOR_COPY).priceAppliedToTicket(price(p)) });
+    setPickedNotice({ key: instrumentKey, text: paperMode === "shared-spot" ? translate(INSPECTOR_COPY).priceSelectedForShared(price(p)) : translate(INSPECTOR_COPY).priceAppliedToTicket(price(p)) });
     window.setTimeout(() => setPickedNotice(null), 2500);
   };
 
@@ -2609,7 +2618,7 @@ export function Inspector({ workspace = "terminal", summary, summaryError, resul
               </div>
 
               {paperMode === "shared-spot" ? (
-                <SharedSpotTicket key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} referencePrice={pickedPrice ?? summary?.ask ?? summary?.last ?? null} />
+                <SharedSpotTicket key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} referencePrice={summary?.ask ?? summary?.last ?? null} priceSelection={picked?.key === instrumentKey ? picked : null} />
               ) : (
                 <PaperTicket key={`${exchange}|${symbol}`} symbol={symbol} summary={summary} prefilledPrice={pickedPrice} onClearPrefilledPrice={() => setPicked(null)} />
               )}

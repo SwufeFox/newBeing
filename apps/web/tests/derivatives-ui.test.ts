@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DerivativeInstrument, DerivativeQuote } from "@newbeing/market-data/derivatives";
-import { derivativeOptionChain, derivativePositionIsExpired, derivativeQuoteSnapshotIsStale, derivativeProtectionSeed, derivativeInputErrors, derivativeCommandWasRejected, DerivativeRequestError } from "../src/lib/derivatives-ui.js";
+import { DerivativesDecimal, derivativesOpeningAmounts, type DerivativesPosition } from "@newbeing/application/derivatives-types";
+import { derivativeOptionChain, derivativePositionIsExpired, derivativeQuoteSnapshotIsStale, derivativeProtectionSeed, derivativeSizedQuantity, derivativeInputErrors, derivativeCommandWasRejected, DerivativeRequestError } from "../src/lib/derivatives-ui.js";
 
 function option(settle: "BTC" | "USDC", right: "call" | "put"): DerivativeInstrument {
   const linear = settle === "USDC";
@@ -80,5 +81,55 @@ describe("derivative ticket intent", () => {
     expect(derivativeCommandWasRejected(new DerivativeRequestError("Intent exists", 422, true))).toBe(false);
     expect(derivativeCommandWasRejected(new DerivativeRequestError("Unavailable", 503))).toBe(false);
     expect(derivativeCommandWasRejected(new TypeError("Failed to fetch"))).toBe(false);
+  });
+});
+
+describe("derivative percentage quantities", () => {
+  const future: DerivativeInstrument = { ...option("USDC", "call"), id: "deribit:future:BTC_USDC-25DEC26", nativeId: "BTC_USDC-25DEC26", kind: "future", quote: "USDC", contractSize: 0.0001, quantityStep: 1, minContracts: 1, priceTick: 2.5 };
+  const quote: DerivativeQuote = { instrumentId: future.id, timestamp: 100_000, bid: 79997.5, ask: 80002.5, mark: 80000, last: 80000, index: 80000, fundingRate: null, nextFundingAt: null, openInterest: null, iv: null, delta: null, source: "native-api" };
+  const account = { venue: "deribit" as const, settle: "USDC", available: "9999.715", feeRate: "0.001", positions: [] as DerivativesPosition[] };
+
+  it.each([ ["long", 1, "24508"], ["short", 1, "24509"], ["long", 0.25, "6127"] ] as const)("sizes %s at %s from the executable book, including margin and actual opening fees", (side, fraction, expected) => {
+    const quantity = derivativeSizedQuantity(future, quote, account, "open", side, 20, fraction, 100_000);
+    expect(quantity).toBe(expected);
+    const budget = new DerivativesDecimal(account.available).mul(fraction);
+    for (const [contracts, affordable] of [[quantity!, true], [new DerivativesDecimal(quantity!).add(1).toString(), false]] as const) {
+      const notional = new DerivativesDecimal(contracts).mul(future.contractSize).mul(side === "long" ? quote.ask! : quote.bid!);
+      expect(derivativesOpeningAmounts(notional, future.kind, 20, account.feeRate).required.lte(budget)).toBe(affordable);
+    }
+  });
+
+  it("uses paid option premium plus the account fee and retains native decimal precision", () => {
+    const instrument = { ...option("USDC", "call"), contractSize: 0.01, quantityStep: 0.00001, minContracts: 0.00001 };
+    const book = { ...quote, instrumentId: instrument.id, ask: 5001, bid: 4999 };
+    const wallet = { ...account, available: "100.001", feeRate: "0.01" };
+    const quantity = derivativeSizedQuantity(instrument, book, wallet, "open", "long", 1, 1, 100_000);
+    expect(quantity).toBe("1.97982");
+    for (const [contracts, affordable] of [[quantity!, true], ["1.97983", false]] as const) {
+      const notional = new DerivativesDecimal(contracts).mul(instrument.contractSize).mul(book.ask);
+      expect(derivativesOpeningAmounts(notional, "option", 1, wallet.feeRate).required.lte(wallet.available)).toBe(affordable);
+    }
+  });
+
+  it("floors percentages of only the matching position and never raises them to a native minimum", () => {
+    const terms = { instrumentId: future.id, kind: "future" as const, contractSize: "0.0001", entryPrice: "80000", margin: "10", leverage: 20, expiry: future.expiry };
+    const wallet = { ...account, available: "0", positions: [
+      { ...terms, side: "long" as const, quantity: "7" },
+      { ...terms, side: "short" as const, quantity: "3" },
+      { ...terms, instrumentId: "other", side: "long" as const, quantity: "100" },
+    ] };
+    expect(derivativeSizedQuantity(future, quote, wallet, "close", "long", 20, 0.25, 100_000)).toBe("1");
+    expect(derivativeSizedQuantity(future, quote, wallet, "close", "long", 20, 1, 100_000)).toBe("7");
+    expect(derivativeSizedQuantity(future, quote, wallet, "close", "short", 20, 1, 100_000)).toBe("3");
+    expect(derivativeSizedQuantity(future, quote, wallet, "close", "short", 20, 0.25, 100_000)).toBe("0");
+    expect(derivativeSizedQuantity({ ...future, minContracts: 2 }, quote, wallet, "close", "long", 20, 0.25, 100_000)).toBe("0");
+    expect(derivativeSizedQuantity(future, quote, { ...wallet, positions: [] }, "close", "long", 20, 1, 100_000)).toBe("0");
+  });
+
+  it("does not size from stale or mismatched quotes, invalid leverage, or insufficient cash", () => {
+    expect(derivativeSizedQuantity(future, quote, account, "open", "long", 20, 1, 115_001)).toBeNull();
+    expect(derivativeSizedQuantity(future, { ...quote, instrumentId: "other" }, account, "open", "long", 20, 1, 100_000)).toBeNull();
+    expect(derivativeSizedQuantity(future, quote, account, "open", "long", 21, 1, 100_000)).toBeNull();
+    expect(derivativeSizedQuantity(future, quote, { ...account, available: "0.1" }, "open", "long", 20, 1, 100_000)).toBe("0");
   });
 });

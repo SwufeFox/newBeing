@@ -76,18 +76,25 @@ export interface DerivativesValuation {
   positionEquity: string | null;
 }
 
-const InputDecimal = Decimal.clone({ precision: 200, rounding: Decimal.ROUND_HALF_EVEN, toExpNeg: -1000, toExpPos: 1000 });
+export const DerivativesDecimal = Decimal.clone({ precision: 200, rounding: Decimal.ROUND_HALF_EVEN, toExpNeg: -1000, toExpPos: 1000 });
+
+/** The exact margin / paid premium and fee charged by a local opening fill. */
+export function derivativesOpeningAmounts(notional: Decimal, kind: DerivativesKind, leverage: number, feeRate: string): { margin: Decimal; fee: Decimal; required: Decimal } {
+  const margin = kind === "option" ? notional : notional.div(leverage);
+  const fee = notional.mul(feeRate);
+  return { margin, fee, required: margin.add(fee) };
+}
 
 function positiveOrderDecimal(value: string, name: string): Decimal {
   if (typeof value !== "string" || value.length > 80 || !/^\d+(?:\.\d+)?$/.test(value)) throw new Error(`Invalid ${name}: use a decimal string.`);
-  const number = new InputDecimal(value);
+  const number = new DerivativesDecimal(value);
   if (!number.isFinite() || number.lte(0)) throw new Error(`Invalid ${name}.`);
   return number;
 }
 
 function nativeOrderConstraint(value: number | null, name: string): Decimal {
   if (value === null || !Number.isFinite(value) || value <= 0) throw new Error(`Missing or invalid native ${name}.`);
-  return new InputDecimal(value);
+  return new DerivativesDecimal(value);
 }
 
 /** Shared native input rules for the Paper engine and its browser ticket. */
@@ -99,13 +106,13 @@ export function validateDerivativesQuantity(instrument: { quantityStep: number |
 
 export function validateDerivativesPrice(instrument: { priceTick: number | null; priceTickSteps?: Array<{ abovePrice: number; tick: number }> }, value: string): void {
   const protectedPrice = positiveOrderDecimal(value, "maximum price");
-  let tick = nativeOrderConstraint(instrument.priceTick, "price tick"), appliedThreshold = new InputDecimal(-1);
+  let tick = nativeOrderConstraint(instrument.priceTick, "price tick"), appliedThreshold = new DerivativesDecimal(-1);
   for (const step of instrument.priceTickSteps ?? []) {
     if (!Number.isFinite(step.abovePrice) || step.abovePrice < 0) throw new Error("Invalid native price tick threshold.");
     const nextTick = nativeOrderConstraint(step.tick, "price tick step");
     // Deribit applies a larger tick above, rather than at, its threshold.
     if (protectedPrice.gt(step.abovePrice) && appliedThreshold.lt(step.abovePrice)) {
-      tick = nextTick; appliedThreshold = new InputDecimal(step.abovePrice);
+      tick = nextTick; appliedThreshold = new DerivativesDecimal(step.abovePrice);
     }
   }
   if (!protectedPrice.mod(tick).isZero()) throw new Error("Price protection violates native price tick.");

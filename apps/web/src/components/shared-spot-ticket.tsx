@@ -5,7 +5,8 @@ import { spotBuyQuantity, type ExchangeId, type SpotAccount, type SpotOrder } fr
 import { Button } from "@/components/ui/button";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
 
-type TicketProps = { exchange: ExchangeId; symbol: string; referencePrice: number | null };
+type PriceSelection = { price: number };
+type TicketProps = { exchange: ExchangeId; symbol: string; referencePrice: number | null; priceSelection: PriceSelection | null };
 type Intent = { clientOrderId: string; side: "buy" | "sell"; quantity: number; maximumPrice: number };
 
 interface SharedSpotTicketCopy {
@@ -69,7 +70,7 @@ const SPOT_TICKET_COPY: CopyTable<SharedSpotTicketCopy> = {
     loading: "Loading shared account…",
     openAccount: (quote) => `Open new 10,000 ${quote} account`,
     reserved: "reserved",
-    closeFull: "Close 100%",
+    closeFull: "Size 100%",
     closeFullTitle: "Set full base inventory quantity to sell",
     quantity: "Quantity",
     toggleSide: "Toggle sizing side",
@@ -111,7 +112,7 @@ const SPOT_TICKET_COPY: CopyTable<SharedSpotTicketCopy> = {
     loading: "正在读取共享账户…",
     openAccount: (quote) => `开立新的 10,000 ${quote} 账户`,
     reserved: "冻结",
-    closeFull: "平仓 100%",
+    closeFull: "填入 100%",
     closeFullTitle: "将全部基础资产库存设为卖出数量",
     quantity: "数量",
     toggleSide: "切换规模方向",
@@ -142,7 +143,7 @@ export function SharedSpotTicket(props: TicketProps) {
   return <MarketSpotTicket key={`${props.exchange}:${props.symbol}`} {...props} />;
 }
 
-function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
+function MarketSpotTicket({ exchange, symbol, referencePrice, priceSelection }: TicketProps) {
   const copy = useCopy(SPOT_TICKET_COPY);
   const quote = symbol.split("/")[1]!;
   const base = symbol.split("/")[0]!;
@@ -150,7 +151,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
   const [readState, setReadState] = useState<"loading" | "ready" | "error">("loading");
   const [quantity, setQuantity] = useState("0.001");
   const [sizingSide, setSizingSide] = useState<"buy" | "sell">("buy");
-  const [priceDraft, setPriceDraft] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState<{ value: string | null; selection: PriceSelection | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -162,7 +163,8 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
   const inFlight = useRef(false);
   const commandController = useRef<AbortController | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
-  const maximumPrice = priceDraft ?? (referencePrice && referencePrice > 0 ? String(referencePrice * 1.005) : "");
+  const selectedPrice = priceSelection !== null && priceSelection !== priceDraft?.selection ? priceSelection.price : null;
+  const maximumPrice = selectedPrice !== null ? String(selectedPrice) : priceDraft?.value ?? (referencePrice && referencePrice > 0 ? String(referencePrice * 1.005) : "");
 
   const applyAccount = useCallback((next: SpotAccount | null) => {
     if (next && (next.exchange !== exchange || next.quote !== quote)) throw new Error(translate(SPOT_TICKET_COPY).accountMismatch);
@@ -301,7 +303,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
 
   const fillRefPrice = (multiplier: number) => {
     if (referencePrice && referencePrice > 0) {
-      setPriceDraft(Number((referencePrice * multiplier).toFixed(4)).toString());
+      setPriceDraft({ value: Number((referencePrice * multiplier).toFixed(4)).toString(), selection: priceSelection });
     }
   };
 
@@ -438,7 +440,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
                 step="any"
                 disabled={busy || !!intent}
                 value={intent ? String(intent.maximumPrice) : maximumPrice}
-                onChange={(event) => setPriceDraft(event.target.value)}
+                onChange={(event) => setPriceDraft({ value: event.target.value, selection: priceSelection })}
                 className="bg-[var(--ak-surface-sunken)] border border-[var(--ak-border-subtle)] focus:border-[var(--ak-signal-info)] px-2 py-1 outline-none text-xs text-[var(--ak-text-primary)]"
               />
             </label>
@@ -461,10 +463,10 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
                 >
                   +0.5%
                 </button>
-                {priceDraft !== null && (
+                {(selectedPrice !== null || (priceDraft !== null && priceDraft.value !== null)) && (
                   <button
                     type="button"
-                    onClick={() => setPriceDraft(null)}
+                    onClick={() => setPriceDraft({ value: null, selection: priceSelection })}
                     className="ml-auto px-1 py-0.5 opacity-60 hover:opacity-100 underline text-[10px]"
                   >
                     {copy.reset}

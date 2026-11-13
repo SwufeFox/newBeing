@@ -1,16 +1,15 @@
-import { Decimal } from "decimal.js";
+import type { Decimal } from "decimal.js";
 import {
   assertDerivativesPaperWorkspace, derivativesAccountId, findDerivativesOrderRows, getDerivativesAccountRow,
   getDerivativesAccountState, getDerivativesOrderRow, listDerivativesAccountRows, listDerivativesOrderPage, mutateDerivativesAccountRow, openDerivativesAccountRow,
 } from "@newbeing/storage/derivatives";
 import {
-  DERIVATIVES_POLICY, validateDerivativesQuantity, validateDerivativesPrice, type DerivativesAccount, type DerivativesKind, type DerivativesOrder,
+  DERIVATIVES_POLICY, DerivativesDecimal as D, derivativesOpeningAmounts, validateDerivativesQuantity, validateDerivativesPrice, type DerivativesAccount, type DerivativesKind, type DerivativesOrder,
   type DerivativesOrderRequest, type DerivativesOrderResult, type DerivativesPosition,
   type DerivativesValuation, type DerivativesVenue,
 } from "./derivatives-types.js";
 export { DERIVATIVES_ORDER_PAGE_SIZE, DerivativesOrderPageError } from "@newbeing/storage/derivatives";
 
-const D = Decimal.clone({ precision: 200, rounding: Decimal.ROUND_HALF_EVEN, toExpNeg: -1000, toExpPos: 1000 });
 /** Structural subset of the market-data connector; no storage -> application dependency. */
 export interface DerivativesInstrument {
   id: string; venue: DerivativesVenue; nativeId: string; kind: DerivativesKind;
@@ -124,13 +123,15 @@ function fillPrice(i: DerivativesInstrument, q: DerivativesQuote, r: Derivatives
 }
 function applyFill(account: Omit<DerivativesAccount, "orders" | "orderCount">, r: DerivativesOrderRequest, i: DerivativesInstrument, price: Decimal, now: number): DerivativesOrder {
   const qty = decimal(r.quantity, "quantity"), size = positiveNative(i.contractSize, "contract size");
-  const notional = qty.mul(size).mul(price), fee = notional.mul(account.feeRate);
+  const notional = qty.mul(size).mul(price);
+  const opening = r.action === "open" ? derivativesOpeningAmounts(notional, i.kind, r.leverage, account.feeRate) : null;
+  const fee = opening ? opening.fee : notional.mul(account.feeRate);
   let position = account.positions.find((p) => p.instrumentId === i.id && p.side === r.side);
   let available = new D(account.available), pnl = new D(0);
   if (position && (position.contractSize !== size.toString() || position.kind !== i.kind || position.expiry !== i.expiry || position.leverage !== r.leverage)) throw new Error("Position metadata or leverage changed; use the original position terms.");
-  if (r.action === "open") {
-    const margin = i.kind === "option" ? notional : notional.div(r.leverage);
-    if (available.lt(margin.add(fee))) throw new Error("Insufficient settle balance for isolated margin / premium and fees.");
+  if (opening) {
+    const margin = opening.margin;
+    if (available.lt(opening.required)) throw new Error("Insufficient settle balance for isolated margin / premium and fees.");
     available = available.sub(margin).sub(fee);
     if (position) {
       const total = new D(position.quantity).add(qty);

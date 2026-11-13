@@ -1,6 +1,10 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import type { BacktestResult, StrategyParameters } from "@newbeing/core";
+import type { BacktestConfig, BacktestResult, StrategyParameters } from "@newbeing/core";
 import { readJson, setTrainingWorkspace, VIEW } from "./replay-api.js";
+
+const defaultConfig: BacktestConfig = {
+  initialCapital: 10_000, positionFraction: 0.95, feeRate: 0.001, slippageRate: 0.0005, allowShorts: false,
+};
 
 async function openResearch(page: Page, request: APIRequestContext): Promise<void> {
   await setTrainingWorkspace(request);
@@ -8,17 +12,32 @@ async function openResearch(page: Page, request: APIRequestContext): Promise<voi
   const { state } = await readJson<{ state: Record<string, unknown> }>(response);
   await readJson(await request.put("/api/workspace", {
     headers: { origin: new URL(response.url()).origin },
-    data: { ...state, activeWorkspace: "research", activeReplayId: null, activeBacktestId: null },
+    data: {
+      ...state, activeWorkspace: "research", activeReplayId: null, activeBacktestId: null,
+      selectedStrategyId: "sma-crossover", strategyParameters: { fastPeriod: 5, slowPeriod: 20, allowShorts: false },
+      backtestConfig: defaultConfig,
+    },
   }));
   await page.goto(VIEW.research);
   await page.getByRole("tab", { name: "Strategy lab", exact: true }).click();
+}
+
+async function expectResearchInputs(page: Page, matches: boolean): Promise<void> {
+  await page.getByRole("tab", { name: "Results", exact: true }).click();
+  await expect(page.locator("summary").filter({ hasText: "Research inputs" })).toHaveText(
+    `Research inputs · Result and current workspace inputs ${matches ? "match" : "differ"}`,
+  );
+  await page.getByRole("tab", { name: "Evaluate", exact: true }).click();
+  const evaluation = page.locator(".evaluation-panel");
+  await expect(evaluation.getByRole("button", { name: "Replace current strategy and config with loaded backtest", exact: true })).toBeEnabled();
+  await expect(evaluation.getByText("Current inputs differ from the loaded backtest.", { exact: true })).toHaveCount(matches ? 0 : 1);
 }
 
 test.beforeEach(() => {
   test.skip(process.env.PLAYWRIGHT_API_STUBS === "1", "These regressions require saved fixture-backed research results.");
 });
 
-test("replacing numeric research inputs saves the entered capital and costs", async ({ page, request }) => {
+test("edited Spot inputs match the completed run until a real configuration change", async ({ page, request }) => {
   await openResearch(page, request);
   const lab = page.locator(".strategy-lab");
   const capital = lab.getByLabel("INITIAL CAPITAL", { exact: true });
@@ -36,10 +55,18 @@ test("replacing numeric research inputs saves the entered capital and costs", as
     new URL(response.url()).pathname === "/api/backtests" && response.request().method() === "POST",
   );
   await lab.getByRole("button", { name: "Run backtest", exact: true }).click();
-  const result = await (await created).json() as BacktestResult;
-  expect(result.assumptions).toMatchObject({ initialCapital: 12000, positionFraction: 0.6, feeRate: 0.0012, slippageRate: 0.0007 });
+  const response = await created;
+  expect(response.status()).toBe(201);
+  const result = await response.json() as BacktestResult;
+  expect(result.assumptions).toMatchObject({
+    initialCapital: 12000, positionFraction: 0.6, feeRate: 0.0012, slippageRate: 0.0007, allowShorts: false, accountMode: "spot",
+  });
   const stored = await readJson<BacktestResult>(await request.get(`/api/backtests/${result.resultId}`));
   expect(stored.assumptions).toEqual(result.assumptions);
+  await expectResearchInputs(page, true);
+  await page.getByRole("tab", { name: "Strategy lab", exact: true }).click();
+  await capital.fill(String(result.assumptions.initialCapital + 1));
+  await expectResearchInputs(page, false);
 });
 
 test("saved sweep applies its full candidate and fresh evaluation applies without reopening history", async ({ page, request }) => {

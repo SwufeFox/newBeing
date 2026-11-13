@@ -73,6 +73,14 @@ async function seedLongPosition(request: APIRequestContext, base: string, instru
   return { bid: quote.bid, ask: quote.ask };
 }
 
+test.beforeAll({ timeout: 360_000 }, async ({ request, baseURL }) => {
+  for (const path of ["/", "/derivatives"]) {
+    const response = await request.get(`${baseURL}${path}`);
+    expect(response.status(), `Compile entry route ${path}`).toBeLessThan(500);
+    await response.dispose();
+  }
+});
+
 test.beforeEach(async ({ request, baseURL }) => {
   attemptId = randomUUID();
   touchedInstruments.clear();
@@ -334,7 +342,16 @@ test("derivatives navigation, venue coverage labels and narrow layout", async ({
   await expect(page.getByRole("region", { name: "Contract market data" })).not.toContainText("okx:perpetual:BTC-USDT-SWAP");
   await search.fill("");
   await expect(browser.getByRole("button", { name: /BTC-USDT-SWAP/ })).toBeVisible();
-  await page.getByRole("tab", { name: "Futures", exact: true }).click();
+  const perpetualTab = page.getByRole("tab", { name: "Perpetuals", exact: true });
+  const futureTab = page.getByRole("tab", { name: "Futures", exact: true });
+  const optionTab = page.getByRole("tab", { name: "Options", exact: true });
+  await perpetualTab.focus();
+  for (const [key, selected] of [["End", optionTab], ["ArrowRight", perpetualTab], ["ArrowLeft", optionTab], ["Home", perpetualTab], ["ArrowRight", futureTab]] as const) {
+    await page.keyboard.press(key);
+    await expect(selected).toBeFocused();
+    await expect(selected).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab").and(page.locator('[tabindex="0"]'))).toHaveCount(1);
+  }
   await expect(page.getByText("Deribit + OKX · Linear contracts", { exact: true })).toBeVisible();
   const deribitFuture = browser.getByRole("button", { name: /BTC_USDC-25DEC26/ });
   await expect(deribitFuture).toBeVisible();
@@ -387,7 +404,7 @@ test("Paper tickets open and close both sides and options without stale price re
   for (const { instrument, side, contracts, tab } of [
     { instrument: perpetual, side: "long", contracts: "0.01", tab: "Perpetuals" },
     { instrument: perpetual, side: "short", contracts: "0.01", tab: "Perpetuals" },
-    { instrument: future, side: "long", contracts: "1", tab: "Futures" },
+    { instrument: future, side: "long", contracts: "7", tab: "Futures" },
     { instrument: option, side: "long", contracts: "0.01", tab: "Options" },
   ]) {
     await page.getByRole("tab", { name: tab, exact: true }).click();
@@ -407,6 +424,13 @@ test("Paper tickets open and close both sides and options without stale price re
     await row.getByRole("button", { name: "Close", exact: true }).click();
     await expect(ticket.getByRole("combobox", { name: "Order action" })).toHaveValue("close");
     await expect(ticket.getByRole("textbox", { name: "Quantity in contracts" })).toHaveValue(String(Number((baselineQuantity(instrument.id, side) + Number(contracts)).toFixed(8))));
+    if (instrument.kind === "future") {
+      const positionContracts = baselineQuantity(instrument.id, side) + Number(contracts);
+      await ticket.getByRole("button", { name: "25%", exact: true }).click();
+      await expect(ticket.getByRole("textbox", { name: "Quantity in contracts" })).toHaveValue(String(Math.floor(positionContracts * 0.25)));
+      await ticket.getByRole("button", { name: "MAX", exact: true }).click();
+      await expect(ticket.getByRole("textbox", { name: "Quantity in contracts" })).toHaveValue(String(positionContracts));
+    }
     await ticket.getByRole("textbox", { name: "Quantity in contracts" }).fill(contracts);
     await expect(protection).not.toHaveValue(entryProtection);
     await expect(submit).toBeEnabled();
@@ -423,6 +447,29 @@ test("Paper tickets open and close both sides and options without stale price re
   await expect(protection).toHaveValue("80001");
   await expect(submit).toBeDisabled();
   await expect(ticket.getByText("Paper order filled.", { exact: true })).toHaveCount(0);
+});
+
+test("opening MAX fits executable margin and fees while the next contract is rejected", async ({ page, request, baseURL }) => {
+  const base = baseURL!;
+  const instrument = (await instruments(request, base, "future")).find((item) => item.venue === "deribit")!;
+  expect((await post(request, base, { action: "open", instrumentId: instrument.id })).ok()).toBeTruthy();
+  await page.goto("/derivatives");
+  await page.getByRole("tab", { name: "Futures", exact: true }).click();
+  await page.getByRole("region", { name: "Contract browser" }).getByRole("button", { name: new RegExp(instrument.nativeId) }).click();
+  const ticket = page.getByRole("region", { name: "Derivatives Paper ticket" });
+  const quantity = ticket.getByRole("textbox", { name: "Quantity in contracts" });
+  const submit = ticket.getByRole("button", { name: "Submit Paper order", exact: true });
+  await ticket.getByRole("combobox", { name: "Isolated leverage" }).selectOption(String(baselinePosition(instrument.id)?.leverage ?? 20));
+  await ticket.getByRole("button", { name: "MAX", exact: true }).click();
+  const maximum = await quantity.inputValue();
+  expect(Number(maximum)).toBeGreaterThan(0);
+  await quantity.fill(String(Number(maximum) + 1));
+  await submit.click();
+  await expect(ticket.getByRole("status")).toContainText("Insufficient settle balance");
+  await ticket.getByRole("button", { name: "MAX", exact: true }).click();
+  await expect(quantity).toHaveValue(maximum);
+  await submit.click();
+  await expect(ticket.getByText("Paper order filled.", { exact: true })).toBeVisible();
 });
 
 test("invalid native inputs never submit and rejected orders keep definite feedback", async ({ page, request, baseURL }) => {

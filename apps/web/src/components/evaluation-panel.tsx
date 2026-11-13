@@ -9,6 +9,7 @@ import { buildEvaluationCandidates } from "@/lib/evaluation-candidates";
 import { useCopy, type CopyTable } from "@/lib/i18n";
 import { PARAMETER_LABELS } from "@/lib/strategy-labels";
 import { formatPercentChange } from "@/lib/price-format";
+import { sameBacktestConfig } from "@/lib/research-inputs";
 import { AkInput, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useShallow } from "zustand/react/shallow";
@@ -523,7 +524,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const setSplitIndex = (value: string): void => setSplits((previous) => ({ ...previous, [currentDatasetId]: value }));
   const loadedStrategy = result && STRATEGIES.find((item) => item.id === result.strategyId);
   const canRestoreBacktest = Boolean(result && loadedStrategy && result.strategyVersion === loadedStrategy.version && compatibleParameters(result.parameters, loadedStrategy.defaults));
-  const inputsDiffer = Boolean(result && (strategyId !== result.strategyId || !sameValues(parameters, result.parameters) || !sameValues(config, result.assumptions)));
+  const inputsDiffer = Boolean(result && (strategyId !== result.strategyId || !sameValues(parameters, result.parameters) || !sameBacktestConfig(config, result.assumptions)));
   const canApplyReport = Boolean(report && strategy && report.strategyId === strategyId && compatibleParameters(report.selectedParameters, strategy.defaults));
   const split = Number(splitIndex);
   const splitValid = currentDatasetMetadata !== null

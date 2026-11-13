@@ -6,6 +6,8 @@ On narrow screens, the workspace navigation and Engine model control remain visi
 
 Accounts with positions expand automatically, and other settlement accounts remain reachable while a funded account is selected. Re-selecting the active product tab preserves the current contract list.
 
+Product tabs use the standard arrow, Home and End keyboard navigation with a single tab stop.
+
 ## Product coverage
 
 | Product | Public data | Paper exposure |
@@ -23,6 +25,8 @@ Order size is **contracts**. The underlying size is `contracts × contractSize`.
 Orders use a fresh executable ask for a buy or bid for a sell. A mark is for valuation and does not replace a missing bid/ask. Price protection is a buy ceiling or a sell floor. The client order ID binds the full order intent; a lost HTTP response can be retried without creating another fill, while reusing the ID with different fields is rejected.
 
 The ticket resets its draft and notices whenever contract identity changes, including automatic selection after an empty search. Price protection is bound to the contract, action and position side; a close uses a matching fresh bid for selling or ask for buying instead of carrying the opening bound into the opposite direction. Quantity minima/steps and price ticks use the same browser-safe Decimal validation as the application engine and show field errors before submission. A definitive rejection clears that rejected retry identity and displays its cause; a lost or unreadable response retains the original intent and reconciliation instructions.
+
+Percentage and MAX sizing follow the current intent. Closing uses only the matching contract and position side, floors to native steps and never exceeds the position. Opening uses the fresh executable ask or bid, native multiplier, leverage and the account fee rate; margin or paid premium plus the opening fee must fit the selected cash budget. The ticket and engine share the same Decimal arithmetic and opening-cost calculation. Portions below the native minimum remain zero for validation rather than being rounded up.
 
 Order history is an append-only SQLite ledger indexed by account and client order ID. On first use, existing JSON order arrays move into that ledger in one transaction; a failed migration leaves the old data intact. Orders removed by older versions cannot be reconstructed from account balances. Stop older app or MCP processes before opening a migrated database; older versions do not understand the new ledger format.
 

@@ -934,6 +934,55 @@ test.describe("manual Replay training against the real API", () => {
     expect(exported).toEqual({ session: state.session, execution: state.execution, report: state.report });
     expect(exported.session.bars.every((bar) => bar.timestamp <= state.session.cursor)).toBe(true);
   });
+  test("Replay conditional orders stay identifiable and cancellable at desktop and narrow widths", async ({ page, request }) => {
+    const candles = await trainingCandles(request);
+    const state = await seedTraining(request, candles[600]!);
+    const endpoint = `/api/replay/${state.session.id}`;
+    const restored = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint && response.request().method() === "GET");
+    await page.goto("/w/replay");
+    expect((await restored).status()).toBe(200);
+    const ticket = page.locator(".replay-ticket");
+    await ticket.getByLabel("QUANTITY · BTC").fill("0.001");
+    for (const [type, trigger] of [["limit", "100"], ["stop", "90000"]] as const) {
+      await ticket.getByLabel("Replay order type", { exact: true }).selectOption(type);
+      await ticket.getByLabel("LIMIT / STOP PRICE · USDT", { exact: true }).fill(trigger);
+      const queued = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON().action === "order");
+      await ticket.getByRole("button", { name: "Queue buy", exact: true }).click();
+      expect((await queued).status()).toBe(200);
+      await expect(page.getByTestId("replay-step")).toBeEnabled();
+    }
+    const orders = ticket.getByRole("list", { name: "Replay orders", exact: true });
+    await expect(orders.getByRole("listitem")).toHaveCount(2);
+    const limit = orders.getByRole("listitem").filter({ hasText: "Limit · 100.00 USDT" });
+    const stop = orders.getByRole("listitem").filter({ hasText: "Stop · 90,000.00 USDT" });
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      for (const [row, description] of [[limit, "Limit · 100.00 USDT"], [stop, "Stop · 90,000.00 USDT"]] as const) {
+        const cancel = row.getByRole("button", { name: "Cancel", exact: true });
+        await expect(cancel).toHaveAccessibleDescription(description);
+        await cancel.scrollIntoViewIfNeeded();
+        const listBox = await orders.boundingBox();
+        const cancelBox = await cancel.boundingBox();
+        if (!listBox || !cancelBox) throw new Error("Pending-order actions must be laid out.");
+        expect(cancelBox.y).toBeGreaterThanOrEqual(listBox.y);
+        expect(cancelBox.y + cancelBox.height).toBeLessThanOrEqual(listBox.y + listBox.height);
+      }
+    }
+    await page.getByRole("tab", { name: "Orders", exact: true }).click();
+    const dock = page.locator(".bottom-dock");
+    await expect(dock.getByText("Limit · 100.00 USDT", { exact: true })).toBeVisible();
+    await expect(dock.getByText("Stop · 90,000.00 USDT", { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const cancelled = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON().action === "cancel");
+    await limit.getByRole("button", { name: "Cancel", exact: true }).click();
+    const response = await cancelled;
+    expect(response.status()).toBe(200);
+    const after = await response.json() as ReplaySnapshot;
+    expect(after.orders).toContainEqual(expect.objectContaining({ type: "limit", price: 100, status: "cancelled" }));
+    expect(after.orders).toContainEqual(expect.objectContaining({ type: "stop", price: 90000, status: "submitted" }));
+    expect(after.execution.fills).toEqual([]);
+  });
+
   test("Replay retains local journal drafts and confirms destructive session actions", async ({ page, request }) => {
     test.setTimeout(120_000);
     const candles = await trainingCandles(request);
@@ -1036,6 +1085,10 @@ test.describe("manual Replay training against the real API", () => {
       const url = new URL(response.url());
       return response.request().method() === "GET" && url.pathname === "/api/paper" && url.searchParams.get("symbol") === market.symbol && url.searchParams.get("view") === "positions";
     });
+    const bookLoaded = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === "GET" && url.pathname === "/api/market" && url.searchParams.get("symbol") === market.symbol && url.searchParams.get("kind") === "book";
+    });
     await page.getByTitle("Select ETH/USDT", { exact: true }).click();
     expect((await positionsLoaded).status()).toBe(200);
     await page.getByRole("tab", { name: "Positions", exact: true }).click();
@@ -1045,15 +1098,38 @@ test.describe("manual Replay training against the real API", () => {
     const ledger = page.locator(".shared-spot-ledger");
     await expect(ledger).toContainText("Shared spot wallet");
     await expect(page.locator(".bottom-dock").getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
+    expect((await bookLoaded).status()).toBe(200);
+    await expect(ticket).toHaveAttribute("data-loaded", "true");
+    const maximumPrice = ticket.getByLabel("Shared spot maximum price");
+    const askLabel = await page.getByRole("button", { name: /^Pick ask / }).first().getAttribute("aria-label");
+    if (!askLabel) throw new Error("A selectable ask is required for the shared ticket.");
+    const selectedAsk = Number(askLabel.replace("Pick ask ", "").replaceAll(",", ""));
+    const ask = page.getByRole("button", { name: askLabel, exact: true });
+    for (const draft of ["1", "2"]) {
+      await maximumPrice.fill(draft);
+      await ask.click();
+      await expect.poll(async () => Number(await maximumPrice.inputValue())).toBeCloseTo(selectedAsk, 2);
+    }
+    let availableToSell = 0;
+    let priorOrderIds: string[] = [];
     for (const side of ["buy", "sell"] as const) {
-      await ticket.getByLabel("Shared spot quantity").fill("0.001");
-      await ticket.getByLabel("Shared spot maximum price").fill("5000");
+      if (side === "buy") {
+        await ticket.getByLabel("Shared spot quantity").fill("0.001");
+      } else {
+        await ticket.getByRole("button", { name: "Size 100%", exact: true }).click();
+        await expect(ticket.getByLabel("Shared spot quantity")).toHaveValue(String(availableToSell));
+        const sized = await readJson<{ account: { orders: Array<{ clientOrderId: string }> } }>(await request.get("/api/spot", { params: { exchange: market.exchange, quote: "USDT" } }));
+        expect(sized.account.orders.map((order) => order.clientOrderId)).toEqual(priorOrderIds);
+      }
+      await maximumPrice.fill("5000");
       const posted = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/spot" && response.request().method() === "POST");
       await ticket.getByRole("button", { name: side === "buy" ? "Buy spot" : "Sell inventory", exact: true }).click();
       const response = await posted;
       expect(response.status()).toBe(200);
-      const payload = await response.json() as { account: { balances: Record<string, { total: number; reserved: number }> } };
+      const payload = await response.json() as { account: { balances: Record<string, { total: number; reserved: number }>; orders: Array<{ clientOrderId: string }> } };
       const balance = payload.account.balances.ETH!;
+      availableToSell = balance.total - balance.reserved;
+      priorOrderIds = payload.account.orders.map((order) => order.clientOrderId);
       const row = ledger.getByRole("row").filter({ has: page.getByRole("cell", { name: "ETH", exact: true }) });
       await expect(row.getByRole("cell").nth(1)).toHaveText(String(balance.total));
       await expect(row.getByRole("cell").nth(2)).toHaveText(String(balance.reserved));
