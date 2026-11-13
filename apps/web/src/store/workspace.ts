@@ -7,6 +7,8 @@ import { symbolForExchange } from "@/lib/exchanges";
 
 export type InspectorTab = "book" | "trades" | "strategy" | "context";
 export type DockTab = "positions" | "orders" | "history" | "backtest" | "sweep" | "evaluate" | "logs";
+export type PaperAccountMode = "legacy" | "shared-spot";
+export interface ReplayJournalDraft { notes: string; tags: string }
 
 export interface WorkspaceStore extends WorkspaceState {
   watchlist: string[];
@@ -17,6 +19,11 @@ export interface WorkspaceStore extends WorkspaceState {
   backtest: BacktestResult | null;
   syncUpdatedAt: number;
   workspaceReady: boolean;
+  paperAccountMode: PaperAccountMode;
+  setPaperAccountMode: (mode: PaperAccountMode) => void;
+  replayJournalDrafts: Record<string, ReplayJournalDraft>;
+  setReplayJournalDraft: (sessionId: string, draft: ReplayJournalDraft) => void;
+  clearReplayJournalDraft: (sessionId: string) => void;
   replayConfirmedJson: string | null;
   replaySyncError: string | null;
   replayRetry: number;
@@ -53,7 +60,8 @@ const firstStrategy = STRATEGIES[0];
 type PersistedWorkspaceState = Pick<WorkspaceStore,
   "symbol" | "timeframe" | "exchange" | "mode" | "selectedStrategyId" |
   "activeBacktestId" | "activeReplayId" | "visibleRange" | "layout" | "watchlist" |
-  "inspectorTab" | "dockTab" | "strategyParameters" | "backtestConfig" | "syncUpdatedAt">;
+  "inspectorTab" | "dockTab" | "strategyParameters" | "backtestConfig" | "syncUpdatedAt" |
+  "paperAccountMode" | "replayJournalDrafts">;
 
 /** Coalesce rapid store writes (chart pan, splitter drag, typing) so a pointer
  *  gesture does not serialize and flush localStorage on every event. Pending
@@ -103,6 +111,14 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
   backtest: null,
   syncUpdatedAt: 0,
   workspaceReady: false,
+  paperAccountMode: "legacy",
+  setPaperAccountMode: (paperAccountMode) => set({ paperAccountMode }),
+  replayJournalDrafts: {},
+  setReplayJournalDraft: (sessionId, draft) => set((state) => ({ replayJournalDrafts: { ...state.replayJournalDrafts, [sessionId]: draft } })),
+  clearReplayJournalDraft: (sessionId) => set((state) => {
+    const { [sessionId]: _removed, ...replayJournalDrafts } = state.replayJournalDrafts;
+    return { replayJournalDrafts };
+  }),
   replayConfirmedJson: null,
   replaySyncError: null,
   replayRetry: 0,
@@ -210,6 +226,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()(persist((set) => ({
     strategyParameters: state.strategyParameters,
     backtestConfig: state.backtestConfig,
     syncUpdatedAt: state.syncUpdatedAt,
+    paperAccountMode: state.paperAccountMode,
+    replayJournalDrafts: state.replayJournalDrafts,
   }),
 }));
 

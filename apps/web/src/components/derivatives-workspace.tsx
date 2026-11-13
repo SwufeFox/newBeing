@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity } from "lucide-react";
 import { AkInput, AkPopover, AkSelect, AkTag } from "@swufefox/ak-ui-react";
 import type { Candle } from "@newbeing/core";
@@ -12,7 +12,7 @@ import type { DerivativesAccount, DerivativesOrderRequest, DerivativesPosition }
 import { Button } from "@/components/ui/button";
 import { WORKSPACE_PATH } from "@/lib/workspace-routes";
 import { useWorkspaceStore } from "@/store/workspace";
-import { derivativeNumber, derivativeDate, derivativeBlockCode, derivativePositionIsExpired, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale, type DerivativeBlockCode } from "@/lib/derivatives-ui";
+import { derivativeNumber, derivativeDate, derivativeBlockCode, derivativePositionIsExpired, derivativeUnrealized, derivativeOptionChain, derivativeExpiryLabel, derivativeQuoteSnapshotIsStale, derivativeProtectionSeed, derivativeInputErrors, derivativeCommandWasRejected, DerivativeRequestError, type DerivativeBlockCode } from "@/lib/derivatives-ui";
 import { chartPalette, type ChartPalette } from "@/lib/chart-palette";
 import { usePreferences } from "@/lib/preferences";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
@@ -224,6 +224,8 @@ interface DerivativesCopy {
   reasonSelectContract: string;
   blockReasons: Record<DerivativeBlockCode, string>;
   invalidOrder: string;
+  quantityInvalid: (minimum: string, step: string) => string;
+  priceInvalid: string;
   accountOpened: string;
   orderConfirmed: string;
   orderFilled: string;
@@ -442,6 +444,8 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
       staleQuote: "Quote is stale or has an invalid native timestamp. Refresh before submitting.",
     },
     invalidOrder: "Enter a valid quantity, leverage, and price protection before submitting.",
+    quantityInvalid: (minimum, step) => `Enter a positive decimal quantity of at least ${minimum} contracts, in steps of ${step}.`,
+    priceInvalid: "Enter a positive decimal price protection aligned to the native price tick and any price bands.",
     accountOpened: "Local Paper account opened.",
     orderConfirmed: "Previously filled order confirmed.",
     orderFilled: "Paper order filled.",
@@ -653,6 +657,8 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
       staleQuote: "报价已过期或时间戳无效，请刷新后再提交。",
     },
     invalidOrder: "提交前请输入有效的数量、杠杆与价格保护。",
+    quantityInvalid: (minimum, step) => `请输入不少于 ${minimum} 张的正十进制数量，步长为 ${step}。`,
+    priceInvalid: "请输入符合原生价位及分档步长的正十进制价格保护。",
     accountOpened: "本地模拟盘账户已开立。",
     orderConfirmed: "已确认此前成交的委托。",
     orderFilled: "模拟盘委托已成交。",
@@ -664,7 +670,7 @@ const DERIVATIVES_COPY: CopyTable<DerivativesCopy> = {
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error ?? translate(DERIVATIVES_COPY).requestFailed);
+  if (!response.ok) throw new DerivativeRequestError(payload.error ?? translate(DERIVATIVES_COPY).requestFailed, response.status, payload.intentRecorded);
   return payload as T;
 }
 
@@ -811,7 +817,7 @@ function LocalAccountLedger({ accounts, readOnly = false, onSelectPosition }: {
   const copy = useCopy(DERIVATIVES_COPY);
   return <div className="space-y-2">
     <p className="meta">{readOnly ? copy.frozenLedgerNote : copy.localLedgerNote}</p>
-    {accounts.map((entry) => <details key={entry.id} className="derivatives-details" open={accounts.length === 1}>
+    {accounts.map((entry) => <details key={entry.id} className="derivatives-details" open={accounts.length === 1 || entry.positions.length > 0}>
       <summary className="flex items-center justify-between gap-3">
         <span>{entry.venue.toUpperCase()} / {entry.settle}</span>
         <span className="num">{entry.available} {entry.settle}</span>
@@ -825,7 +831,7 @@ function LocalAccountLedger({ accounts, readOnly = false, onSelectPosition }: {
           <span className="meta">{copy.positionsWithCount(entry.positions.length)}</span>
           {!entry.positions.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">{copy.noOpenPositions}</p>
             : <div className="derivatives-table-scroll mt-1 border border-[var(--c-line)]">
-              <table className="derivatives-table">
+              <table className="derivatives-table" aria-label={`${entry.venue.toUpperCase()} / ${entry.settle} · ${copy.positions}`}>
                 <thead><tr>{copy.ledgerPositionColumns.map((label) => <th key={label}>{label}</th>)}</tr></thead>
                 <tbody>{entry.positions.map((position) => <tr key={`${position.instrumentId}:${position.side}`}>
                   <td className="max-w-0 truncate" title={position.instrumentId}>
@@ -971,6 +977,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<DerivativeInstrument[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const selectedIdRef = useRef("");
   const [market, setMarket] = useState<{ instrument: DerivativeInstrument; quote: DerivativeQuote } | null>(null);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -993,7 +1000,10 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const [side, setSide] = useState<"long" | "short">("long");
   const [quantity, setQuantity] = useState("");
   const [leverage, setLeverage] = useState("1");
-  const [maximumPrice, setMaximumPrice] = useState("");
+  const [priceProtection, setPriceProtection] = useState({ context: "", value: "" });
+  const protectionContext = `${selectedId}:${action}:${side}`;
+  const maximumPrice = priceProtection.context === protectionContext ? priceProtection.value : "";
+  const setMaximumPrice = (value: string): void => setPriceProtection({ context: protectionContext, value });
   const [chainKey, setChainKey] = useState<string | null>(null);
   const [optionQuoteData, setOptionQuoteData] = useState<{ key: string; quotes: Record<string, DerivativeQuote>; staleIds: string[]; error: string | null }>({ key: "", quotes: {}, staleIds: [], error: null });
   /* A ledger position can outlive its venue listing (expired options, delisted
@@ -1021,6 +1031,25 @@ export function DerivativesWorkspace(): React.JSX.Element {
   /* The list is capped and may omit a live contract, so only an expired
      position or a failed live lookup proves that local terms are all we have. */
   const focusedLocalOnly = focusedPosition !== null && !listLoading && !instrument && (focusedExpired || marketError !== null) ? focusedPosition : null;
+  const resetTicket = useCallback((): void => {
+    setAction("open"); setSide("long"); setLeverage("1");
+    setQuantity(""); setPriceProtection({ context: "", value: "" }); setNotice(null);
+  }, []);
+  const select = useCallback((id: string, focus: DerivativesPosition | null = null): void => {
+    retainSelection.current = focus !== null;
+    setPositionFocus(focus);
+    if (id === selectedIdRef.current) return;
+    selectedIdRef.current = id;
+    setSelectedId(id); setMarket(null); setMarketError(null); setBars([]); setCandleError(null);
+    resetTicket();
+  }, [resetTicket]);
+
+
+  useEffect(() => {
+    if (priceProtection.context === protectionContext) return;
+    const seed = derivativeProtectionSeed(instrument, quote, action, side, Date.now());
+    if (seed !== null) setPriceProtection({ context: protectionContext, value: seed });
+  }, [priceProtection.context, protectionContext, instrument, quote, action, side]);
 
   // Read the shared boundary, without mounting WorkspaceSync or writing spot state.
   useEffect(() => {
@@ -1054,13 +1083,16 @@ export function DerivativesWorkspace(): React.JSX.Element {
       setListLoading(true); setListError(null);
       void readJson<{ instruments: DerivativeInstrument[] }>(`/api/derivatives/markets?kind=${kind}&query=${encodeURIComponent(query)}`, { signal: controller.signal })
         .then((data) => {
+          if (controller.signal.aborted) return;
           setItems(data.instruments);
-          setSelectedId((id) => data.instruments.some((item) => item.id === id) || retainSelection.current ? id : data.instruments[0]?.id ?? "");
-        }).catch((error: unknown) => { if (!controller.signal.aborted) { setItems([]); setSelectedId((id) => retainSelection.current ? id : ""); setListError(exchangeErrorMessage(error, "contracts")); } })
+          const id = selectedIdRef.current;
+          const nextId = data.instruments.some((item) => item.id === id) || retainSelection.current ? id : data.instruments[0]?.id ?? "";
+          if (nextId !== id) select(nextId);
+        }).catch((error: unknown) => { if (!controller.signal.aborted) { setItems([]); if (!retainSelection.current) select(""); setListError(exchangeErrorMessage(error, "contracts")); } })
         .finally(() => { if (!controller.signal.aborted) setListLoading(false); });
     }, 200);
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [kind, query, listRevision, blocked]);
+  }, [kind, query, listRevision, blocked, select]);
 
 
   /* A search edit invalidates the visible selection immediately. Polling the
@@ -1164,15 +1196,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
     };
   }, [selectedId, marketRevision, blocked, listLoading, focusedExpired, kind]);
 
-  function select(id: string, focus: DerivativesPosition | null = null): void {
-    retainSelection.current = focus !== null;
-    setPositionFocus(focus);
-    if (id === selectedId) return;
-    setSelectedId(id); setMarket(null); setMarketError(null); setBars([]); setCandleError(null);
-    setMaximumPrice(""); setQuantity(""); setNotice(null);
-  }
   function changeKind(next: DerivativeKind): void {
-    setKind(next); setItems([]); setListLoading(true); select(""); setSide("long"); setLeverage("1"); setAction("open"); setChainKey(null);
+    if (next === kind) return;
+    setKind(next); setItems([]); setListLoading(true); select(""); resetTicket(); setChainKey(null);
   }
 
   const changeKindRef = useRef(changeKind);
@@ -1268,7 +1294,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
   const reason = quote
     ? (blockCode ? copy.blockReasons[blockCode] : null)
     : instrument ? copy.reasonNeedsQuote : copy.reasonSelectContract;
-  const validOrder = /^\d+(?:\.\d+)?$/.test(quantity) && Number(quantity) > 0 && /^\d+(?:\.\d+)?$/.test(maximumPrice) && Number(maximumPrice) > 0 && Number.isInteger(Number(leverage)) && Number(leverage) >= 1 && Number(leverage) <= 20;
+  const inputErrors = useMemo(() => derivativeInputErrors(instrument, quantity, maximumPrice), [instrument, quantity, maximumPrice]);
+  const validOrder = !!instrument && !inputErrors.quantity && !inputErrors.maximumPrice && Number.isInteger(Number(leverage)) && Number(leverage) >= 1 && Number(leverage) <= 20;
 
   async function command(openAccount: boolean): Promise<void> {
     if (mutationLock.current || blocked || !instrument || !accountReady) return;
@@ -1298,7 +1325,12 @@ export function DerivativesWorkspace(): React.JSX.Element {
       setNotice({ tone: "good", text: openAccount ? copy.accountOpened : data.deduplicated ? copy.orderConfirmed : copy.orderFilled });
       pendingOrder.current = null;
     } catch (error) {
-      setNotice({ tone: "alert", text: copy.commandFailedRefresh(error instanceof Error ? error.message : copy.commandFailed) });
+      if (derivativeCommandWasRejected(error)) {
+        pendingOrder.current = null;
+        setNotice({ tone: "alert", text: error instanceof Error ? error.message : copy.commandFailed });
+      } else {
+        setNotice({ tone: "alert", text: copy.commandFailedRefresh(error instanceof Error ? error.message : copy.commandFailed) });
+      }
     } finally { mutationLock.current = false; setBusy(false); }
   }
 
@@ -1513,7 +1545,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
           <span className="num">{blocked ? "—" : listLoading ? "…" : String(items.length).padStart(2, "0")}</span>
         </div>
         <div className="p-2 border-b border-[var(--c-line)]">
-          <AkInput aria-label={copy.searchDerivatives} placeholder={copy.searchContracts} value={query} disabled={busy || blocked} onChange={(event) => { setPositionFocus(null); retainSelection.current = false; setListLoading(true); setListError(null); setQuery(event.target.value); }} />
+          <AkInput aria-label={copy.searchDerivatives} placeholder={copy.searchContracts} value={query} disabled={busy || blocked} onChange={(event) => { retainSelection.current = false; select(""); resetTicket(); setListLoading(true); setListError(null); setQuery(event.target.value); }} />
         </div>
         {!blocked && kind === "option" && chain.length > 0 && <div className="flex flex-wrap gap-1 p-2 border-b border-[var(--c-line)]" role="group" aria-label={copy.expirySettlement}>
           {chain.map((entry) => (
@@ -1662,7 +1694,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                         <span className="meta">{copy.positions}</span>
                         {!account.positions.length ? <p className="mt-1 text-[var(--c-fg-4)] text-[11px]">{copy.noOpenPositions}</p>
                           : <div className="derivatives-table-scroll mt-2 border border-[var(--c-line)]">
-                            <table className="derivatives-table derivatives-positions-table">
+                            <table className="derivatives-table derivatives-positions-table" aria-label={copy.positions}>
                               <thead><tr>{copy.positionColumns.map((label) => <th key={label}>{label}</th>)}</tr></thead>
                               <tbody>{account.positions.map((position) => <PositionRow key={`${position.instrumentId}:${position.side}`} position={position} quote={quote} busy={busy} onClose={beginClose} onView={selectPosition} />)}</tbody>
                             </table>
@@ -1673,6 +1705,9 @@ export function DerivativesWorkspace(): React.JSX.Element {
                         <OrderHistory key={`${account.id}:${account.orderCount}`} account={account} />
                       </div>
                     </> : accountReady && instrument && ledgerAccounts.length > 0 ? <p className="text-[var(--c-fg-4)] text-[11px]">{copy.noAccountForSettlement}</p> : null}
+            {!blocked && account && accountReady && ledgerAccounts.some((entry) => entry.id !== account.id) && (
+              <LocalAccountLedger accounts={ledgerAccounts.filter((entry) => entry.id !== account.id)} onSelectPosition={selectPosition} />
+            )}
           </div>
         </section>
       </div>
@@ -1705,14 +1740,14 @@ export function DerivativesWorkspace(): React.JSX.Element {
             <fieldset disabled={busy || blocked || !account} className="derivatives-ticket">
               <label className="field">
                 <span>{copy.action}</span>
-                <AkSelect aria-label={copy.orderActionAria} value={action} onChange={(event) => setAction(event.target.value as "open" | "close")}>
+                <AkSelect aria-label={copy.orderActionAria} value={action} onChange={(event) => { setAction(event.target.value as "open" | "close"); setNotice(null); }}>
                   <option value="open">{kind === "option" ? copy.buyToOpen : copy.open}</option>
                   <option value="close">{kind === "option" ? copy.sellToClose : copy.closeReduceOnly}</option>
                 </AkSelect>
               </label>
               <label className="field">
                 <span>{copy.positionSide}</span>
-                <AkSelect aria-label={copy.positionSideAria} value={side} onChange={(event) => setSide(event.target.value as "long" | "short")}>
+                <AkSelect aria-label={copy.positionSideAria} value={side} onChange={(event) => { setSide(event.target.value as "long" | "short"); setNotice(null); }}>
                   <option value="long">{copy.long}</option>
                   {kind !== "option" && <option value="short">{copy.short}</option>}
                 </AkSelect>
@@ -1726,7 +1761,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="flex-1">
-                    <AkInput aria-label={copy.quantityAria} inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                    <AkInput aria-label={copy.quantityAria} inputMode="decimal" value={quantity} invalid={!!quantity && !!inputErrors.quantity} aria-describedby={quantity && inputErrors.quantity ? "derivatives-quantity-error" : undefined} onChange={(event) => setQuantity(event.target.value)} />
                   </div>
                   <button
                     type="button"
@@ -1747,6 +1782,7 @@ export function DerivativesWorkspace(): React.JSX.Element {
                     +
                   </button>
                 </div>
+                {quantity && inputErrors.quantity && <p id="derivatives-quantity-error" role="status" className="derivatives-ticket-note alert">{copy.quantityInvalid(derivativeNumber(instrument.minContracts), derivativeNumber(instrument.quantityStep))}</p>}
                 {account && (
                   <div className="flex items-center gap-1 mt-1">
                     <span className="text-[10px] text-[var(--c-fg-4)] uppercase mr-1">{copy.size}</span>
@@ -1788,7 +1824,8 @@ export function DerivativesWorkspace(): React.JSX.Element {
               </label>
               <label className="field">
                 <span>{(action === "open") === (side === "long") ? copy.buyCeiling(instrument?.settle ?? copy.settleFallback) : copy.sellFloor(instrument?.settle ?? copy.settleFallback)}</span>
-                <AkInput aria-label={copy.priceProtectionAria} inputMode="decimal" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value)} />
+                <AkInput aria-label={copy.priceProtectionAria} inputMode="decimal" value={maximumPrice} invalid={!!maximumPrice && !!inputErrors.maximumPrice} aria-describedby={maximumPrice && inputErrors.maximumPrice ? "derivatives-price-error" : undefined} onChange={(event) => setMaximumPrice(event.target.value)} />
+                {maximumPrice && inputErrors.maximumPrice && <p id="derivatives-price-error" role="status" className="derivatives-ticket-note alert">{copy.priceInvalid}</p>}
                 {quote && (
                   <div className="flex items-center gap-1 mt-1 text-[10px]">
                     <span className="text-[10px] text-[var(--c-fg-4)] mr-1">{copy.fill}</span>

@@ -3035,7 +3035,7 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
     flex: 0 0 auto;
     height: auto;
     grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: minmax(400px, auto) minmax(420px, 60vh) minmax(220px, auto) !important;
+    grid-template-rows: minmax(400px, auto) minmax(420px, auto) minmax(220px, auto) !important;
     overflow: visible;
   }
   .workspace-grid > .chart-column { grid-column: 1 !important; grid-row: 1 !important; }
@@ -3045,6 +3045,15 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
     height: auto !important;
     max-height: none !important;
     min-height: 420px;
+  }
+  /* A phone scrolls the workspace. Content must not compete inside the fixed
+     desktop inspector frame or leave the order ticket an 18px scrolling strip. */
+  .workspace-grid > .inspector-slot > .inspector-panel {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    contain: none;
+    grid-template-rows: auto auto;
   }
   .workspace-grid > .dock-slot { grid-column: 1 !important; grid-row: 3 !important; }
   .drag-horizontal, .drag-vertical { display: none; }
@@ -3902,6 +3911,8 @@ select.nb-select-bare:disabled { color: var(--c-fg-4); cursor: not-allowed; }
   .paper-ticket .ticket-actions button { min-width: 44px; min-height: 44px; }
   .paper-ticket .ticket-stepper { height: 46px; }
   .paper-ticket .ticket-stepper button { min-width: 44px; }
+  .shared-spot-ticket button { min-width: 44px; min-height: 44px; }
+  .shared-spot-ticket input { min-width: 0; min-height: 44px; }
   .replay-ticket .replay-order-grid { grid-template-columns: minmax(0, 1fr); }
   .replay-ticket .ticket-field .ak-select,
   .replay-ticket .ticket-field > .ak-input { min-height: 44px; height: 44px; }

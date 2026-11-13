@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useMemo, useState, type ComponentProps } from "react";
 import { Play, ShieldAlert, Sliders } from "lucide-react";
 import { STRATEGIES, type StrategyParameters } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
@@ -211,6 +211,32 @@ function loadStoredPresets(strategyId?: string): Array<{ name: string; params: S
   return [];
 }
 
+type ResearchNumberInputProps = Omit<ComponentProps<typeof AkInput>, "value" | "defaultValue" | "onChange"> & {
+  value: number;
+  onValueChange: (value: number) => void;
+};
+
+function ResearchNumberInput({ value, onValueChange, onBlur, ...props }: ResearchNumberInputProps): React.JSX.Element {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <AkInput
+      {...props}
+      value={draft ?? value}
+      onChange={(event) => {
+        const raw = event.target.value;
+        setDraft(raw);
+        if (raw.trim() !== "" && Number.isFinite(event.target.valueAsNumber)) {
+          onValueChange(event.target.valueAsNumber);
+        }
+      }}
+      onBlur={(event) => {
+        setDraft(null);
+        onBlur?.(event);
+      }}
+    />
+  );
+}
+
 export const StrategyLab = memo(function StrategyLab({ onRun, running }: StrategyLabProps): React.JSX.Element {
   const copy = useCopy(STRATEGY_LAB_COPY);
   const strategyNames = useCopy(STRATEGY_NAMES);
@@ -267,28 +293,20 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
     window.setTimeout(() => setPresetNotice(null), 2200);
   };
 
-  const [selectedPresetName, setSelectedPresetName] = useState<string | null>("default");
+  const [requestedPresetName, setSelectedPresetName] = useState<string | null>("default");
 
   const isDefault = useMemo(() => {
     if (!strategy) return true;
     return Object.entries(strategy.defaults).every(([k, v]) => params[k] === v);
   }, [strategy, params]);
 
-  useEffect(() => {
-    setSelectedPresetName((current) => {
-      if (current === "default") {
-        const matchesDefault = strategy && Object.entries(strategy.defaults).every(([k, v]) => params[k] === v);
-        return matchesDefault ? "default" : null;
-      }
-      if (current && strategy) {
-        const allPresets = [...(BUILTIN_PRESETS[strategy.id] ?? []), ...customPresets];
-        const target = allPresets.find((p) => p.name === current);
-        if (target && Object.entries(target.params).every(([k, v]) => params[k] === v)) return current;
-      }
-      if (strategy && Object.entries(strategy.defaults).every(([k, v]) => params[k] === v)) return "default";
-      return null;
-    });
-  }, [params, strategy, customPresets]);
+  const selectedPresetName = useMemo(() => {
+    if (isDefault) return "default";
+    if (!strategy || requestedPresetName === null || requestedPresetName === "default") return null;
+    const target = (BUILTIN_PRESETS[strategy.id] ?? []).find((preset) => preset.name === requestedPresetName)
+      ?? customPresets.find((preset) => preset.name === requestedPresetName);
+    return target && Object.entries(target.params).every(([key, value]) => params[key] === value) ? requestedPresetName : null;
+  }, [isDefault, params, strategy, customPresets, requestedPresetName]);
 
   const applyPreset = (name: string, nextParams: StrategyParameters): void => {
     if (!strategy) return;
@@ -518,17 +536,17 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
           return (
             <div className="param-row flex items-center justify-between gap-2 py-1" key={key}>
               <label htmlFor={inputId} className="text-xs text-[var(--ak-text-primary)]">{parameterLabel(copy, key)}</label>
-              <AkInput
+              <ResearchNumberInput
                 className="compact-input w-24 h-7 text-xs font-mono text-right"
                 id={inputId}
                 type="number"
                 min={0}
                 max={1000}
                 step={key.toLowerCase().includes("pct") ? 0.1 : 1}
-                aria-invalid={invalidSmaField || undefined}
+                invalid={invalidSmaField}
                 aria-describedby={invalidSmaField ? "strategy-sma-validation" : undefined}
                 value={typeof value === "number" ? value : defaultValue}
-                onChange={(event) => updateParameter(key, Number(event.target.value))}
+                onValueChange={(next) => updateParameter(key, next)}
               />
             </div>
           );
@@ -548,23 +566,18 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
       <div className="assumption-grid grid grid-cols-2 gap-2 bg-[var(--ak-surface-sunken)] p-2 border border-[var(--ak-border-subtle)]">
         <label className="flex flex-col gap-1">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.initialCapital}</span>
-          <AkInput
+          <ResearchNumberInput
             className="compact-input h-7 text-xs font-mono"
             type="number"
             min={100}
             step={1000}
             value={config.initialCapital}
-            onChange={(event) => {
-              const val = Number(event.target.value);
-              if (Number.isFinite(val)) {
-                setConfig({ ...config, initialCapital: Math.max(100, val) });
-              }
-            }}
+            onValueChange={(value) => setConfig({ ...config, initialCapital: Math.max(100, value) })}
           />
         </label>
         <div className="flex flex-col gap-1">
           <label htmlFor="position-fraction-input" className="text-[10px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.positionFraction}</label>
-          <AkInput
+          <ResearchNumberInput
             className="compact-input h-7 text-xs font-mono"
             id="position-fraction-input"
             aria-describedby="position-allocation-description"
@@ -573,12 +586,7 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
             max={100}
             step={1}
             value={Math.round(config.positionFraction * 100)}
-            onChange={(event) => {
-              const val = Number(event.target.value);
-              if (Number.isFinite(val)) {
-                setConfig({ ...config, positionFraction: Math.max(0.01, Math.min(1, val / 100)) });
-              }
-            }}
+            onValueChange={(value) => setConfig({ ...config, positionFraction: Math.max(0.01, Math.min(1, value / 100)) })}
           />
           <span
             id="position-allocation-description"
@@ -591,36 +599,26 @@ export const StrategyLab = memo(function StrategyLab({ onRun, running }: Strateg
         </div>
         <label className="flex flex-col gap-1">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.fee}</span>
-          <AkInput
+          <ResearchNumberInput
             className="compact-input h-7 text-xs font-mono"
             type="number"
             min={0}
             max={500}
             step={1}
             value={Math.round(config.feeRate * 10_000)}
-            onChange={(event) => {
-              const val = Number(event.target.value);
-              if (Number.isFinite(val)) {
-                setConfig({ ...config, feeRate: Math.max(0, Math.min(0.05, val / 10_000)) });
-              }
-            }}
+            onValueChange={(value) => setConfig({ ...config, feeRate: Math.max(0, Math.min(0.05, value / 10_000)) })}
           />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] font-mono uppercase">{copy.slippage}</span>
-          <AkInput
+          <ResearchNumberInput
             className="compact-input h-7 text-xs font-mono"
             type="number"
             min={0}
             max={500}
             step={1}
             value={Math.round(config.slippageRate * 10_000)}
-            onChange={(event) => {
-              const val = Number(event.target.value);
-              if (Number.isFinite(val)) {
-                setConfig({ ...config, slippageRate: Math.max(0, Math.min(0.05, val / 10_000)) });
-              }
-            }}
+            onValueChange={(value) => setConfig({ ...config, slippageRate: Math.max(0, Math.min(0.05, value / 10_000)) })}
           />
         </label>
       </div>

@@ -72,13 +72,29 @@ describe("shared spot async settlement", () => {
     expect(getSpotAccount("binance", "USDT")!.balances.USDT).toEqual({ total: 10000, reserved: 0 });
   });
 
+  it("returns the persisted price-protection rejection unchanged on a retry", async () => {
+    const fetch = vi.fn(async () => ({ ...summary(), ask: 101 }));
+    const result = await executeSharedSpotOrder(request, adapter(fetch));
+    expect(result.order).toMatchObject({ status: "rejected", rejectionReason: "Market buy price 101 exceeds maximum buy price 100." });
+    expect(result.account.balances.USDT).toEqual({ total: 10000, reserved: 0 });
+    closeDatabaseForTests();
+    const retry = await executeSharedSpotOrder(request, adapter(fetch));
+    expect(retry.deduplicated).toBe(true);
+    expect(retry.order).toEqual(result.order);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(retry.account.fills).toEqual([]);
+  });
+
   it("returns a final precision rejection with released funds instead of an ambiguous reservation", async () => {
     const fetch = vi.fn(async () => ({ ...summary(), ask: 1e-12 }));
     const result = await executeSharedSpotOrder(request, adapter(fetch));
     expect(result.order.status).toBe("rejected");
+    expect(result.order.rejectionReason).toBe("Order notional is below local simulation money precision.");
     expect(result.account.balances.USDT).toEqual({ total: 10000, reserved: 0 });
     closeDatabaseForTests();
-    expect((await executeSharedSpotOrder(request, adapter(fetch))).deduplicated).toBe(true);
+    const retry = await executeSharedSpotOrder(request, adapter(fetch));
+    expect(retry.deduplicated).toBe(true);
+    expect(retry.order.rejectionReason).toBe(result.order.rejectionReason);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(getSpotAccount("binance", "USDT")!.fills).toEqual([]);
   });

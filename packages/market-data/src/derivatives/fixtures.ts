@@ -18,10 +18,12 @@ export function fixtureInstruments(): DerivativeInstrument[] {
 }
 export function fixtureQuote(instrument: DerivativeInstrument, now: number = Date.now()): DerivativeQuote {
   const option = instrument.kind === "option";
+  const midpoint = option ? 5000 : 80000;
+  const spread = Math.max(1, instrument.priceTick ?? 1);
   return {
     instrumentId: instrument.id, timestamp: now,
-    bid: option ? 4999 : 79999, ask: option ? 5001 : 80001, last: option ? 5000 : 80000,
-    mark: option ? 5000 : 80000, index: 80000,
+    bid: midpoint - spread, ask: midpoint + spread, last: midpoint,
+    mark: midpoint, index: 80000,
     fundingRate: instrument.kind === "perpetual" ? 0.0001 : null,
     nextFundingAt: instrument.kind === "perpetual" ? FIXTURE_TIME + 28_800_000 : null,
     openInterest: 100, iv: option ? 0.5 : null, delta: option ? 0.55 : null, source: "fixture",

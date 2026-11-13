@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { spotBuyQuantity, type ExchangeId, type SpotAccount } from "@newbeing/core";
+import { spotBuyQuantity, type ExchangeId, type SpotAccount, type SpotOrder } from "@newbeing/core";
 import { Button } from "@/components/ui/button";
 import { translate, useCopy, type CopyTable } from "@/lib/i18n";
 
@@ -14,6 +14,8 @@ interface SharedSpotTicketCopy {
   responseIncomplete: string;
   positiveNumbers: string;
   commandFailed: string;
+  rejected: (reason: string) => string;
+  rejectionUnavailable: string;
   submitted: (side: "buy" | "sell" | undefined) => string;
   setMaximumPrice: string;
   cannotSize: string;
@@ -56,6 +58,8 @@ const SPOT_TICKET_COPY: CopyTable<SharedSpotTicketCopy> = {
     responseIncomplete: "Shared account response was incomplete.",
     positiveNumbers: "Quantity and maximum price must be positive numbers.",
     commandFailed: "Shared spot command failed.",
+    rejected: (reason) => `Order rejected: ${reason} Review the maximum buy price, quantity and available balance, then submit a corrected order.`,
+    rejectionUnavailable: "The account confirmed rejection without a reason.",
     submitted: (side) => `${side ? side.toUpperCase() : "Order"} submitted to shared spot account`,
     setMaximumPrice: "Set a valid maximum price before sizing budget.",
     cannotSize: "Cannot size this order.",
@@ -96,6 +100,8 @@ const SPOT_TICKET_COPY: CopyTable<SharedSpotTicketCopy> = {
     responseIncomplete: "共享账户响应不完整。",
     positiveNumbers: "数量与最高价必须为正数。",
     commandFailed: "共享现货指令失败。",
+    rejected: (reason) => `委托已拒绝：${reason} 请检查最高买入价、数量与可用余额，修改后重新提交。`,
+    rejectionUnavailable: "账户已确认拒绝，但未提供原因。",
     submitted: (side) => `${side === "buy" ? "买入" : side === "sell" ? "卖出" : "委托"}已提交至共享现货账户`,
     setMaximumPrice: "请先设置有效的最高价再计算规模。",
     cannotSize: "无法计算该委托规模。",
@@ -155,6 +161,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
   const revision = useRef(0);
   const inFlight = useRef(false);
   const commandController = useRef<AbortController | null>(null);
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
   const maximumPrice = priceDraft ?? (referencePrice && referencePrice > 0 ? String(referencePrice * 1.005) : "");
 
   const applyAccount = useCallback((next: SpotAccount | null) => {
@@ -202,6 +209,11 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
     };
   }, [readAccount]);
 
+  useEffect(() => {
+    if (!error && !notice) return;
+    feedbackRef.current?.scrollIntoView({ block: "nearest" });
+  }, [error, notice]);
+
   async function command(action: "open" | "order" | "cancel", side?: "buy" | "sell", clientOrderId?: string) {
     if (inFlight.current || readState !== "ready") return;
     let pending = intentRef.current;
@@ -225,6 +237,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
     commandController.current = controller;
     setBusy(true);
     setError(null);
+    setNotice(null);
     let receivedOutcome = false;
     try {
       const body = action === "order" ? { action, exchange, symbol, ...pending! } : { action, exchange, quote, ...(clientOrderId ? { clientOrderId } : {}) };
@@ -232,10 +245,18 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
       const payload = await response.json();
       if (!mounted.current || controller.signal.aborted) return;
       receivedOutcome = true;
-      if ("account" in payload) applyAccount(payload.account);
+      if ("account" in payload) {
+        applyAccount(payload.account);
+        window.dispatchEvent(new Event("newbeing:shared-spot-updated"));
+      }
       if (action === "order" && payload.intentRecorded === false && !transportUncertain.current) {
         intentRef.current = null;
         setIntent(null);
+      }
+      const order = action === "order" ? payload.order as SpotOrder | null | undefined : null;
+      if (order?.status === "rejected") {
+        const currentCopy = translate(SPOT_TICKET_COPY);
+        throw new Error(currentCopy.rejected(order.rejectionReason ?? payload.error ?? currentCopy.rejectionUnavailable));
       }
       if (!response.ok || payload.error) throw new Error(payload.error ?? translate(SPOT_TICKET_COPY).commandFailed);
       if (action === "order") {
@@ -310,7 +331,7 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
 
   const unavailable = busy || readState !== "ready";
   return (
-    <div className="p-3 space-y-2.5 text-xs border-t border-[var(--ak-border-subtle)] font-mono" data-testid="shared-spot-ticket" data-loaded={readState === "ready"}>
+    <div className="shared-spot-ticket p-3 space-y-2.5 text-xs border-t border-[var(--ak-border-subtle)] font-mono" data-testid="shared-spot-ticket" data-loaded={readState === "ready"}>
       <div className="flex items-center justify-between pb-1 border-b border-[var(--ak-border-subtle)]">
         <strong className="text-[11px] uppercase tracking-wider text-[var(--ak-signal-info)]">{copy.sharedSpot} · {exchange} · {quote}</strong>
         {readState !== "loading" && (
@@ -508,9 +529,13 @@ function MarketSpotTicket({ exchange, symbol, referencePrice }: TicketProps) {
         </>
       ))}
 
-      {notice && <p role="status" className="p-1.5 bg-emerald-950/20 border border-emerald-800/40 text-[10px] text-[var(--ak-signal-success)] font-mono">{notice}</p>}
-      {intent && <p role="status" className="p-1.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-action)] text-[10px] text-[var(--ak-signal-action)]">{copy.pendingNotice}</p>}
-      {error && <p role="alert" className="p-1.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-danger)] text-[10px] text-[var(--ak-signal-danger)]">{error}</p>}
+      {(notice || intent || error) && (
+        <div ref={feedbackRef} className="ticket-feedback space-y-1">
+          {notice && <p role="status" className="p-1.5 bg-emerald-950/20 border border-emerald-800/40 text-[10px] text-[var(--ak-signal-success)] font-mono">{notice}</p>}
+          {intent && <p role="status" className="p-1.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-action)] text-[10px] text-[var(--ak-signal-action)]">{copy.pendingNotice}</p>}
+          {error && <p role="alert" className="p-1.5 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-signal-danger)] text-[10px] text-[var(--ak-signal-danger)]">{error}</p>}
+        </div>
+      )}
     </div>
   );
 }

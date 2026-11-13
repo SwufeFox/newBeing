@@ -31,6 +31,7 @@ type StreamState = "connecting" | "live" | "reconnecting" | "unavailable" | "pol
 
 interface CandleResponse {
   candles: Candle[];
+  source: string | null;
   gaps: Array<{ from: number; to: number }>;
   cache: { fallback: boolean; cachedAt: string | null };
 }
@@ -54,6 +55,8 @@ interface MarketChartCopy {
   streamOffline: string;
   streamReconnecting: string;
   streamReplay: string;
+  streamFixture: string;
+  sourcePending: string;
   loadingHistory: string;
   loadVenueHistory: (venue: string) => string;
   loadingSlow: (venue: string) => string;
@@ -95,6 +98,8 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     streamOffline: "Offline",
     streamReconnecting: "Reconnecting…",
     streamReplay: "Historical Replay",
+    streamFixture: "TEST FIXTURE",
+    sourcePending: "UTC · awaiting candle source",
     loadingHistory: "Loading history",
     loadVenueHistory: (venue) => `Loading ${venue} history`,
     loadingSlow: (venue) => `${venue} has not answered yet — still waiting.`,
@@ -132,6 +137,8 @@ const MARKET_CHART_COPY: CopyTable<MarketChartCopy> = {
     streamOffline: "离线",
     streamReconnecting: "重连中…",
     streamReplay: "历史回放",
+    streamFixture: "TEST FIXTURE · 测试数据",
+    sourcePending: "UTC · 等待 K 线数据来源",
     loadingHistory: "加载历史",
     loadVenueHistory: (venue) => `加载 ${venue} 历史`,
     loadingSlow: (venue) => `${venue} 尚未响应 — 仍在等待。`,
@@ -189,6 +196,7 @@ function parseCandleResponse(value: unknown): CandleResponse {
   const cacheValue = "cache" in value && typeof value.cache === "object" && value.cache !== null ? value.cache as Record<string, unknown> : null;
   return {
     candles,
+    source: "source" in value && typeof value.source === "string" && value.source.trim() ? value.source : null,
     gaps: "gaps" in value && Array.isArray(value.gaps) ? value.gaps as CandleResponse["gaps"] : [],
     cache: {
       fallback: cacheValue?.fallback === true,
@@ -281,6 +289,10 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
   }, [palette]);
 
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [sourceState, setSourceState] = useState<{ key: string; source: string | null } | null>(null);
+  const source = sourceState?.key === dataKey ? sourceState.source : null;
+  const fixtureSource = source === "Deterministic test fixture";
+  const nativeStream = exchange === "binance" && source === "Binance Spot via CCXT";
   const [errorState, setErrorState] = useState<{ key: string; message: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [cacheInfo, setCacheInfo] = useState<{ fallback: boolean; cachedAt: string | null }>({ fallback: false, cachedAt: null });
@@ -374,17 +386,19 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
   }, [palette, updateIndicators]);
 
   const loadedKeyRef = useRef<string | null>(null);
+  const loadedSourceRef = useRef<string | null>(null);
+  const historyControllerRef = useRef<AbortController | null>(null);
 
-  const loadHistory = useCallback(async (signal?: AbortSignal, force = false): Promise<void> => {
+  const loadHistory = useCallback(async (signal: AbortSignal, force = false): Promise<void> => {
     const key = `${exchange}|${symbol}|${timeframe}`;
     const lastKnown = force ? undefined : barsRef.current.at(-1);
     /* After the initial 600-bar load, refreshes only need candles from the last
        known bar (inclusive, so the newest closed bar can still be corrected). */
     const incremental = !force && loadedKeyRef.current === key && lastKnown !== undefined;
     const url = `/api/market?kind=candles&exchange=${exchange}&symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}${incremental && lastKnown ? `&since=${lastKnown.timestamp}&limit=50` : "&limit=600"}`;
-    const response = await fetch(url, { cache: "no-store", ...(signal ? { signal } : {}) });
+    const response = await fetch(url, { cache: "no-store", signal });
     const payload: unknown = await response.json();
-    if (signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+    if (signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
     if (!response.ok) {
       const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
         ? payload.error
@@ -393,6 +407,12 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     }
     const parsed = parseCandleResponse(payload);
     const sanitizedCandles = sanitizeCandlesForChart(parsed.candles);
+    /* A source change replaces the history; fixture/cache bars must never be
+       spliced into a series from a different provider. */
+    if (incremental && parsed.source !== loadedSourceRef.current) return loadHistory(signal, true);
+    if (!incremental && sanitizedCandles.length === 0) throw new Error(translate(MARKET_CHART_COPY).noBars);
+    loadedSourceRef.current = parsed.source;
+    setSourceState({ key, source: parsed.source });
     setCacheInfo(parsed.cache);
 
     if (incremental && lastKnown) {
@@ -429,8 +449,9 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       return;
     }
 
-    if (sanitizedCandles.length === 0) throw new Error(translate(MARKET_CHART_COPY).noBars);
     barsRef.current = sanitizedCandles;
+    hoveredBarRef.current = null;
+    setHoveredBar(null);
     const gaps = findCandleGaps(sanitizedCandles, timeframe);
     setLiveGapCount(gaps.length);
     setLiveLastBar(sanitizedCandles.at(-1) ?? null);
@@ -621,6 +642,12 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
 
   useEffect(() => {
     const controller = new AbortController();
+    historyControllerRef.current = controller;
+    if (replayMode || loadedKeyRef.current !== dataKey) {
+      loadedKeyRef.current = null;
+      loadedSourceRef.current = null;
+      setSourceState(null);
+    }
     if (replayMode) {
       const rawBars = replayBars ?? [];
       const sanitized = sanitizeCandlesForChart(rawBars);
@@ -659,7 +686,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
 
   useEffect(() => {
     const intervalMs = timeframeMilliseconds(timeframe);
-    if (replayMode) return;
+    if (replayMode || source === null) return;
     const controller = new AbortController();
     const refresh = (onSuccess?: () => void, onFailure?: () => void): void => {
       void loadHistory(controller.signal)
@@ -671,7 +698,8 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
           onFailure?.();
         });
     };
-    if (exchange !== "binance") {
+    if (!nativeStream) {
+      setStream("polling");
       const pollingMs = Math.max(15_000, Math.min(60_000, intervalMs / 4));
       const timer = window.setInterval(() => {
         if (typeof document !== "undefined" && document.hidden) return;
@@ -688,8 +716,9 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     let disposed = false;
     let attempt = 0;
 
+    const isCurrentSource = (): boolean => !disposed && !controller.signal.aborted && loadedKeyRef.current === dataKey && loadedSourceRef.current === source;
     const connect = (): void => {
-      if (disposed) return;
+      if (!isCurrentSource()) return;
       setStream(attempt === 0 ? "connecting" : "reconnecting");
       try {
         socket = new WebSocket(streamUrl);
@@ -698,13 +727,14 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
         return;
       }
       socket.onopen = () => {
-        if (disposed) return;
+        if (!isCurrentSource()) return;
         const wasReconnect = attempt > 0;
         attempt = 0;
         setStream("live");
         if (wasReconnect) refresh(undefined, () => setStream("reconnecting"));
       };
       socket.onmessage = (event: MessageEvent<string>) => {
+        if (!isCurrentSource()) return;
         let payload: unknown;
         try {
           payload = JSON.parse(event.data) as unknown;
@@ -750,14 +780,14 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
           updateIndicators();
         }
       };
-      socket.onerror = () => socket?.close();
+      socket.onerror = () => { if (!disposed) socket?.close(); };
       socket.onclose = () => {
         if (!disposed) scheduleReconnect();
       };
     };
 
     const scheduleReconnect = (): void => {
-      if (disposed || reconnectTimer) return;
+      if (!isCurrentSource() || reconnectTimer) return;
       setStream("reconnecting");
       const base = reconnectDelayMs(attempt);
       const jitter = Math.floor(Math.random() * Math.min(500, base * 0.2));
@@ -775,7 +805,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, [symbol, timeframe, exchange, loadHistory, replayMode, indicators.volume, updateIndicators]);
+  }, [symbol, timeframe, exchange, loadHistory, replayMode, indicators.volume, updateIndicators, source, nativeStream, dataKey]);
 
   useEffect(() => {
     if (replayMode) {
@@ -802,9 +832,10 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
     markersRef.current.setMarkers(markers);
   }, [backtest, replayMode]);
 
-  const effectiveStream: StreamState = !replayMode && exchange !== "binance" ? "polling" : stream;
+  const effectiveStream: StreamState = source === null ? "connecting" : !nativeStream && stream !== "unavailable" ? "polling" : stream;
   const streamLabel = replayMode
     ? copy.streamReplay
+    : fixtureSource ? copy.streamFixture
     : effectiveStream === "live"
       ? copy.streamLive
       : effectiveStream === "connecting"
@@ -926,8 +957,11 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
                 onClick={() => {
                   setErrorState(null);
                   setRefreshing(true);
-                  void loadHistory()
+                  const controller = historyControllerRef.current;
+                  if (!controller || controller.signal.aborted) { setRefreshing(false); return; }
+                  void loadHistory(controller.signal)
                     .catch((reason: unknown) => {
+                      if (isAbortError(reason) || controller.signal.aborted) return;
                       setErrorState({ key: dataKey, message: reason instanceof Error ? reason.message : translate(MARKET_CHART_COPY).retryFailed });
                     })
                     .finally(() => setRefreshing(false));
@@ -948,7 +982,7 @@ export const MarketChart = memo(function MarketChart({ backtest, replayBars, onR
       <div className="chart-footer">
         <span>{!replayMode && cacheInfo.fallback
           ? <><AlertTriangle size={11} /> {copy.localCache(cacheInfo.cachedAt ? new Date(cacheInfo.cachedAt).toLocaleString() : copy.timeUnavailable)}</>
-          : gapCount > 0 ? <><AlertTriangle size={11} /> {copy.gapsDetected(gapCount)}</> : replayMode ? copy.futureNotLoaded : copy.publicSpot(venueLabel)}</span>
+          : replayMode ? copy.futureNotLoaded : fixtureSource ? `UTC · ${copy.streamFixture}` : gapCount > 0 ? <><AlertTriangle size={11} /> {copy.gapsDetected(gapCount)}</> : source === null ? copy.sourcePending : source.endsWith(" via CCXT") ? copy.publicSpot(venueLabel) : `UTC · ${source}`}</span>
         <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noreferrer">Charts by TradingView · Lightweight Charts™</a>
       </div>
     </section>

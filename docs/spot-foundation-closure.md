@@ -35,6 +35,12 @@ The Replay HTTP regression starts through POST /api/replay with a real persisted
 - Frozen **playback after creation** is connector independent. Creating a session still resolves active native instrument metadata through the connector because the candle snapshot does not contain a frozen native-instrument record. A fully offline creation/import workflow needs an explicit versioned instrument-metadata binding, not a fabricated native ID.
 - Snapshot bars do not reproduce the original Backtest orders: manual Replay has its own capital, fee/slippage configuration, pending orders, fills and journal. A future research-to-Replay UI handoff should pass the saved datasetId, venue/symbol/timeframe and chosen endAt explicitly, display the selected execution configuration/policy, and preserve historical outputs. Broader research UX and model iterations remain separate work.
 
+## Wallet context and rejection feedback
+
+The browser's persisted Paper wallet selection now controls both the ticket and the dock's balances, orders and execution history. Shared mode reads its own `/api/spot` account and never exposes the legacy pair wallet's Close action as if it belonged to that account. Shared ledger values remain balances/reservations rather than inferred valuation or PnL.
+
+Terminal rejected shared orders retain an optional `rejectionReason` containing the actual price-protection or ledger validation failure. The route exposes that same persisted cause in its 422 `error`, and the UI explains how to correct the order. Re-reading or retrying a terminal order preserves its reason. Existing records without a reason are identified as such; the browser never guesses one. Transport-uncertain intents retain their original client order ID and reservation until a final outcome or explicit cancellation.
+
 ## Main-thread validation still pending
 
 No full-repository test/typecheck/lint/build/MCP success is asserted here. The main thread should record its actual exits after incorporating these final source changes. This worker ran no duplicate repository-wide verification and created no commit or push.

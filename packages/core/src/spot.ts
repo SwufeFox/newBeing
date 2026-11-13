@@ -4,7 +4,7 @@ import { SPOT_EXECUTION_POLICY } from "./policy.js";
 import type { ExchangeId } from "./types.js";
 
 export interface SpotBalance { total: number; reserved: number }
-export interface SpotOrder extends PaperOrder { accountId: string; reservedAsset: string; reservedAmount: number; maximumPrice: number }
+export interface SpotOrder extends PaperOrder { accountId: string; reservedAsset: string; reservedAmount: number; maximumPrice: number; rejectionReason?: string }
 export interface SpotLedgerEntry { id: string; orderId: string | null; asset: string; delta: number; reason: "initial-capital" | "fill"; timestamp: string }
 export interface SpotAccount {
   version: 1;
@@ -59,13 +59,14 @@ export function reserveSpotOrder(account: SpotAccount, input: Pick<PaperOrder, "
   account.orders.push(order);
   return order;
 }
-export function releaseSpotOrder(account: SpotAccount, orderId: string, status: "cancelled" | "rejected"): SpotOrder {
+export function releaseSpotOrder(account: SpotAccount, orderId: string, status: "cancelled" | "rejected", rejectionReason?: string): SpotOrder {
   const order = account.orders.find((item) => item.clientOrderId === orderId);
   if (!order) throw new Error("Spot order not found.");
   if (!["submitted", "unknown"].includes(order.status)) return order;
   const balance = account.balances[order.reservedAsset]!;
   balance.reserved = order.side === "buy" ? money(decimal(balance.reserved).minus(order.reservedAmount)) : subtractQuantity(balance.reserved, order.reservedAmount);
   order.status = status;
+  if (status === "rejected" && rejectionReason) order.rejectionReason = rejectionReason;
   return order;
 }
 export function settleSpotOrder(account: SpotAccount, orderId: string, price: number, timestamp = new Date().toISOString()): SpotOrder {
@@ -73,7 +74,7 @@ export function settleSpotOrder(account: SpotAccount, orderId: string, price: nu
   if (!order) throw new Error("Spot order not found.");
   if (order.status !== "submitted") return order;
   if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid spot fill price.");
-  if (order.side === "buy" && price > order.maximumPrice) return releaseSpotOrder(account, orderId, "rejected");
+  if (order.side === "buy" && price > order.maximumPrice) return releaseSpotOrder(account, orderId, "rejected", `Market buy price ${price} exceeds maximum buy price ${order.maximumPrice}.`);
   const [base, quote] = assets(account, order.symbol);
   const before = spotPortfolio(account, order.symbol);
   let fill: ReturnType<typeof fillPaperOrder>;
@@ -81,7 +82,7 @@ export function settleSpotOrder(account: SpotAccount, orderId: string, price: nu
     fill = fillPaperOrder(order, before, price);
   } catch (error) {
     // No fill has been applied: local precision/balance rejections are final outcomes.
-    if (error instanceof LedgerValidationError || (error instanceof Error && error.message.startsWith("Insufficient paper"))) return releaseSpotOrder(account, orderId, "rejected");
+    if (error instanceof LedgerValidationError || (error instanceof Error && error.message.startsWith("Insufficient paper"))) return releaseSpotOrder(account, orderId, "rejected", error.message);
     throw error;
   }
   releaseSpotOrder(account, orderId, "cancelled");

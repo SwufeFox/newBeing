@@ -290,7 +290,7 @@ const SWEEP_COPY: CopyTable<SweepCopy> = {
     thinDataset: (trades) => ` This dataset yields as little as ${trades} trade, so most values never differed. Use longer history or shorter timeframe.`,
     widenRange: " Widen range or step so each value is exercised differently.",
     strategyLabUpdated: "Strategy Lab updated",
-    appliedNotice: (parameter, value) => `Applied ${parameter} = ${value} to strategy`,
+    appliedNotice: (parameter, value) => `Applied report parameters and config with ${parameter} = ${value}`,
     totalReturnColumn: "TOTAL RETURN",
     winRateColumn: "WIN RATE",
     profitFactorColumn: "PF",
@@ -399,7 +399,7 @@ const SWEEP_COPY: CopyTable<SweepCopy> = {
     thinDataset: (trades) => ` 该数据集最少只产生 ${trades} 笔交易，多数取值因此从未出现差异。请使用更长的历史或更短的周期。`,
     widenRange: " 请扩大范围或调整步长，让每个取值得到不同的检验。",
     strategyLabUpdated: "策略实验室已更新",
-    appliedNotice: (parameter, value) => `已将 ${parameter} = ${value} 应用到策略`,
+    appliedNotice: (parameter, value) => `已应用报告中的完整参数与配置，${parameter} = ${value}`,
     totalReturnColumn: "总收益",
     winRateColumn: "胜率",
     profitFactorColumn: "盈亏比",
@@ -668,8 +668,9 @@ export function SweepPanel({ symbol, timeframe, exchange, strategyId, parameters
   const applyParameter = (val: number): void => {
     const current = useWorkspaceStore.getState();
     const currentStrategy = STRATEGIES.find((item) => item.id === current.selectedStrategyId);
-    if (!result || current.selectedStrategyId !== result.strategyId || currentStrategy?.version !== result.strategyVersion || typeof currentStrategy.defaults[result.parameter] !== "number") return;
-    current.setStrategyParameters({ ...current.strategyParameters, [result.parameter]: val });
+    if (!result || current.activeWorkspace === "replay" || current.selectedStrategyId !== result.strategyId || currentStrategy?.version !== result.strategyVersion || typeof currentStrategy.defaults[result.parameter] !== "number") return;
+    current.setStrategy(result.strategyId, { ...currentStrategy.defaults, ...result.parameters, [result.parameter]: val });
+    current.setBacktestConfig({ ...result.config });
     setApplied({ sweepId: result.sweepId, value: val });
     setNotice(copy.appliedNotice(parameterName(result.parameter, copy), val));
     window.setTimeout(() => {

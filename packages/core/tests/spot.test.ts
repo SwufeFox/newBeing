@@ -5,6 +5,26 @@ const bar = (timestamp: number, open: number, high = open, low = open, close = o
 const strategy: StrategyDefinition = { id: "spot-regression", name: "Spot regression", version: "1", description: "Fixture", defaults: {}, signalAt: (_bars, index) => index === 0 ? "long" : "flat" };
 const input = { symbol: "BTC/USDT", timeframe: "1m" as const, exchange: "binance" as const, datasetId: "fixture", strategy, parameters: {}, resultId: "fixture", config: { initialCapital: 1000, positionFraction: 1, feeRate: 0.001, slippageRate: 0.002, allowShorts: false } };
 
+describe("shared spot rejection reasons", () => {
+  it.each([
+    { name: "price protection", price: 101, balance: 1000, reason: "Market buy price 101 exceeds maximum buy price 100." },
+    { name: "money precision", price: 1e-12, balance: 1000, reason: "Order notional is below local simulation money precision." },
+    { name: "quote balance", price: 100, balance: 10, reason: "Insufficient paper quote balance." },
+  ])("preserves the authoritative $name reason and releases the rejected reservation once", ({ price, balance, reason }) => {
+    const account = createSpotAccount("binance", "USDT", 1000);
+    reserveSpotOrder(account, { clientOrderId: "rejected", symbol: "BTC/USDT", side: "buy", quantity: 1 }, 100);
+    account.balances.USDT!.total = balance;
+    const order = settleSpotOrder(account, "rejected", price);
+    expect(order).toMatchObject({ status: "rejected", rejectionReason: reason, fillPrice: null });
+    expect(account.balances.USDT).toEqual({ total: balance, reserved: 0 });
+    expect(account.fills).toEqual([]);
+    expect(account.ledger).toHaveLength(1);
+    expect(settleSpotOrder(account, "rejected", 90)).toBe(order);
+    expect(order.rejectionReason).toBe(reason);
+    expect(account.balances.USDT!.reserved).toBe(0);
+  });
+});
+
 describe("spot Backtest settlement and historical model boundary", () => {
   it("agrees exactly with shared-wallet inventory settlement including entry fees and rounded quantities", () => {
     const candles = [bar(0, 100), bar(60000, 100), bar(120000, 120)];

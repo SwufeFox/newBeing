@@ -7,6 +7,7 @@ import { runTrainHoldout, type TrainHoldoutInput, type TrainHoldoutResult } from
 export type ResearchEvaluationRequest = Pick<TrainHoldoutInput, "datasetId" | "strategyId" | "candidates" | "config" | "splitIndex">;
 
 export interface ResearchEvaluationResult extends TrainHoldoutResult {
+  strategyId: string;
   trainingDatasetId: string;
   holdoutDatasetId: string;
   resultIds: { training: string[]; holdout: string };
@@ -58,5 +59,5 @@ export function runResearchEvaluation(request: ResearchEvaluationRequest, origin
   saveResearchResults([...evaluation.training.map((run) => run.result), evaluation.holdout], undefined, undefined, {
     evaluationId: reportId, request: originalRequest, report: JSON.stringify(compactReport), createdAt: Date.parse(createdAt),
   });
-  return { ...evaluation, trainingDatasetId, holdoutDatasetId, resultIds, reportId, createdAt };
+  return { ...evaluation, strategyId: evaluation.holdout.strategyId, trainingDatasetId, holdoutDatasetId, resultIds, reportId, createdAt };
 }

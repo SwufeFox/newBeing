@@ -48,6 +48,9 @@ interface InspectorCopy {
   bookRequestFailed: string;
   depthStampStale: (exchange: string) => string;
   depthStamp: (exchange: string) => string;
+  fixtureStamp: string;
+  fixtureStaleStamp: string;
+  sourceUnconfirmed: string;
   tradesUnavailable: string;
   tradesRequestFailed: string;
   tradesStampStale: (exchange: string) => string;
@@ -184,6 +187,7 @@ interface InspectorCopy {
   notesPlaceholder: string;
   tags: string;
   tagsPlaceholder: string;
+  journalDraft: string;
   saveNotesTags: string;
   journalSaved: string;
   journalSaveFailed: string;
@@ -227,6 +231,9 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     bookRequestFailed: "Order book request failed.",
     depthStampStale: (exchange) => `STALE · ${exchange} public depth`,
     depthStamp: (exchange) => `${exchange} depth snapshot`,
+    fixtureStamp: "TEST FIXTURE",
+    fixtureStaleStamp: "STALE · TEST FIXTURE",
+    sourceUnconfirmed: "SOURCE UNCONFIRMED",
     tradesUnavailable: "Recent trades are unavailable.",
     tradesRequestFailed: "Recent trade request failed.",
     tradesStampStale: (exchange) => `STALE · ${exchange} public trades`,
@@ -370,6 +377,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     tagsPlaceholder: "breakout, trend-following",
     saveNotesTags: "Save notes / tags",
     journalSaved: "Notes / tags saved.",
+    journalDraft: "Local draft · Save notes / tags to update the saved journal.",
     journalSaveFailed: "Could not save notes / tags.",
     exportJournal: "Export journal JSON",
     marketCloseQueued: "Market close queued for next bar",
@@ -408,6 +416,9 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     bookRequestFailed: "盘口请求失败。",
     depthStampStale: (exchange) => `已过期 · ${exchange} 公开盘口`,
     depthStamp: (exchange) => `${exchange} 盘口快照`,
+    fixtureStamp: "测试样本 · TEST FIXTURE",
+    fixtureStaleStamp: "已过期 · TEST FIXTURE",
+    sourceUnconfirmed: "数据来源待确认",
     tradesUnavailable: "成交明细不可用。",
     tradesRequestFailed: "成交明细请求失败。",
     tradesStampStale: (exchange) => `已过期 · ${exchange} 公开成交`,
@@ -551,6 +562,7 @@ const INSPECTOR_COPY: CopyTable<InspectorCopy> = {
     tagsPlaceholder: "突破, 趋势跟随",
     saveNotesTags: "保存备注 / 标签",
     journalSaved: "备注与标签已保存。",
+    journalDraft: "本地草稿 · 点击保存笔记 / 标签以更新已保存日志。",
     journalSaveFailed: "无法保存备注与标签。",
     exportJournal: "导出日志 JSON",
     marketCloseQueued: "市价平仓已排队至下一根 K 线",
@@ -651,11 +663,17 @@ function parsePreviews(payload: unknown): OrderPreview[] {
   return payload.items as OrderPreview[];
 }
 
-function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: string; exchange: ExchangeId; active?: boolean; onPickPrice?: (price: number) => void }): React.JSX.Element {
+function isFixtureSource(payload: unknown): boolean | null {
+  if (typeof payload !== "object" || payload === null || !("source" in payload) || typeof payload.source !== "string") return null;
+  return payload.source.toLowerCase().includes("fixture");
+}
+
+function OrderBook({ symbol, exchange, active = true, fixtureSource = null, onPickPrice }: { symbol: string; exchange: ExchangeId; active?: boolean; fixtureSource?: boolean | null; onPickPrice?: (price: number) => void }): React.JSX.Element {
   const copy = useCopy(INSPECTOR_COPY);
   const [book, setBook] = useState<OrderBookSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
+  const [fixture, setFixture] = useState<boolean | null>(null);
   // Latest request wins: a newer refresh aborts the in-flight one, and only the
   // request that still owns the current id may publish results or errors.
   const requestRef = useRef(0);
@@ -681,6 +699,7 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
         if (!parsed) throw new Error(text.bookInvalid);
         if (requestId !== requestRef.current || signal.aborted) return;
         setBook(parsed);
+        setFixture(isFixtureSource(payload));
         setError(null);
         setStale(false);
         hasDataRef.current = true;
@@ -796,17 +815,18 @@ function OrderBook({ symbol, exchange, active = true, onPickPrice }: { symbol: s
         </div>
       )}
       <div className={`data-stamp mt-2 text-right${error ? " is-stale" : ""}`}>
-        {error ? copy.depthStampStale(exchangeLabel(exchange)) : copy.depthStamp(exchangeLabel(exchange))}
+        {(fixture ?? fixtureSource) === true ? (error ? copy.fixtureStaleStamp : copy.fixtureStamp) : (fixture ?? fixtureSource) === false ? (error ? copy.depthStampStale(exchangeLabel(exchange)) : copy.depthStamp(exchangeLabel(exchange))) : copy.sourceUnconfirmed}
       </div>
     </div>
   );
 }
 
-function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol: string; exchange: ExchangeId; active?: boolean; onPickPrice?: (price: number) => void }): React.JSX.Element {
+function RecentTrades({ symbol, exchange, active = true, fixtureSource = null, onPickPrice }: { symbol: string; exchange: ExchangeId; active?: boolean; fixtureSource?: boolean | null; onPickPrice?: (price: number) => void }): React.JSX.Element {
   const copy = useCopy(INSPECTOR_COPY);
   const [trades, setTrades] = useState<RecentTrade[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
+  const [fixture, setFixture] = useState<boolean | null>(null);
   // Latest request wins: a newer refresh aborts the in-flight one, and only the
   // request that still owns the current id may publish results or errors.
   const requestRef = useRef(0);
@@ -831,6 +851,7 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
         const next = parseTrades(payload);
         if (requestId !== requestRef.current || signal.aborted) return;
         setTrades(next);
+        setFixture(isFixtureSource(payload));
         setError(null);
         setStale(false);
         hasDataRef.current = true;
@@ -892,7 +913,7 @@ function RecentTrades({ symbol, exchange, active = true, onPickPrice }: { symbol
         </div>
       )}
       <div className={`data-stamp mt-2 text-right${error ? " is-stale" : ""}`}>
-        {error ? copy.tradesStampStale(exchangeLabel(exchange)) : copy.tradesStamp(exchangeLabel(exchange))}
+        {(fixture ?? fixtureSource) === true ? (error ? copy.fixtureStaleStamp : copy.fixtureStamp) : (fixture ?? fixtureSource) === false ? (error ? copy.tradesStampStale(exchangeLabel(exchange)) : copy.tradesStamp(exchangeLabel(exchange))) : copy.sourceUnconfirmed}
       </div>
     </div>
   );
@@ -1693,14 +1714,12 @@ function PaperTicket({
         body: JSON.stringify({ clientOrderId, symbol, side, quantity: orderQuantity, mode: "paper", exchange }),
       });
       const payload: unknown = await response.json();
-      if (!response.ok && response.status !== 202) {
-        const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : text.paperOrderFailed;
-        throw new Error(message);
-      }
       const paper = parsePaper(payload);
       if (paper) setPortfolio(paper.portfolio);
       const savedOrder = typeof payload === "object" && payload !== null && "order" in payload ? payload.order as PaperOrder : null;
-      if (savedOrder?.status === "filled") {
+      if (savedOrder?.status === "rejected") {
+        setError(typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : text.paperOrderFailed);
+      } else if (savedOrder?.status === "filled") {
         setNotice(text.filledAtPublicQuote(side));
         window.setTimeout(() => setNotice(null), 3_500);
       } else if (savedOrder?.status === "cancelled") {
@@ -2021,8 +2040,12 @@ function ReplayTicket({
   const [trigger, setTrigger] = useState("");
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
-  const [notes, setNotes] = useState(execution?.notes ?? "");
-  const [tags, setTags] = useState(execution?.tags.join(", ") ?? "");
+  const draft = useWorkspaceStore((state) => session ? state.replayJournalDrafts[session.id] : undefined);
+  const notes = draft?.notes ?? execution?.notes ?? "";
+  const tags = draft?.tags ?? execution?.tags.join(", ") ?? "";
+  const setDraft = (next: { notes: string; tags: string }): void => {
+    if (session) useWorkspaceStore.getState().setReplayJournalDraft(session.id, next);
+  };
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [ticketNotice, setTicketNotice] = useState<string | null>(null);
   const replayFeedbackRef = useRef<HTMLDivElement | null>(null);
@@ -2387,29 +2410,36 @@ function ReplayTicket({
       {orders.length > 0 && (
         <div className="space-y-1 max-h-32 overflow-auto p-1 bg-[var(--ak-surface-sunken-2)] border border-[var(--ak-border-subtle)]">
           {orders.slice().reverse().map((order) => (
-            <div className="flex items-center justify-between p-1 text-[10px] border-b border-[var(--ak-border-subtle)]" key={order.clientOrderId}>
-              <span className={`font-bold tabular-nums ${order.side === "buy" ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
-                {order.side.toUpperCase()} {order.quantity} · {order.status}
-              </span>
-              <span className="text-[var(--ak-text-secondary)] tabular-nums">{order.fillPrice === null ? "—" : price(order.fillPrice)}</span>
-              {order.status === "submitted" && (
-                <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1" disabled={busy} onClick={() => void onCommand({ action: "cancel", clientOrderId: order.clientOrderId }).catch(() => undefined)}>
-                  {copy.cancel}
-                </Button>
-              )}
+            <div className="p-1 text-[10px] border-b border-[var(--ak-border-subtle)]" key={order.clientOrderId}>
+              <div className="flex items-center justify-between gap-2">
+                <span className={`font-bold tabular-nums ${order.side === "buy" ? "text-[var(--ak-signal-success)]" : "text-[var(--ak-signal-danger)]"}`}>
+                  {order.side.toUpperCase()} {order.quantity} · {order.status}
+                </span>
+                <span className="text-[var(--ak-text-secondary)] tabular-nums">{order.fillPrice === null ? "—" : price(order.fillPrice)}</span>
+                {order.status === "submitted" && (
+                  <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1" disabled={busy} onClick={() => {
+                    setTicketError(null);
+                    void onCommand({ action: "cancel", clientOrderId: order.clientOrderId }).catch((reason: unknown) => setTicketError(reason instanceof Error ? reason.message : copy.replayOrderFailed));
+                  }}>
+                    {copy.cancel}
+                  </Button>
+                )}
+              </div>
+              {"error" in order && typeof order.error === "string" && <p className="text-[var(--ak-signal-danger)] mt-1">{order.error}</p>}
             </div>
           ))}
         </div>
       )}
 
       <div className="space-y-1.5 pt-1 border-t border-[var(--ak-border-subtle)]">
+        {draft && <p role="status" className="text-[10px] text-[var(--ak-signal-action)]">{copy.journalDraft}</p>}
         <label className="ticket-field flex flex-col gap-1">
           <span className="text-[10px] font-bold text-[var(--ak-text-secondary)] uppercase">{copy.sessionNotes}</span>
           <textarea
             aria-label={copy.sessionNotes}
             value={notes}
             maxLength={20_000}
-            onChange={(event) => setNotes(event.target.value)}
+            onChange={(event) => setDraft({ notes: event.target.value, tags })}
             className="p-1.5 bg-[var(--ak-surface-sunken)] border border-[var(--ak-border)] text-xs font-mono outline-none h-14 resize-none"
             placeholder={copy.notesPlaceholder}
           />
@@ -2419,7 +2449,7 @@ function ReplayTicket({
           <AkInput
             aria-label={copy.tags}
             value={tags}
-            onChange={(event) => setTags(event.target.value)}
+            onChange={(event) => setDraft({ notes, tags: event.target.value })}
             className="h-7 text-xs font-mono"
             placeholder={copy.tagsPlaceholder}
           />
@@ -2436,6 +2466,9 @@ function ReplayTicket({
               setTicketNotice(null);
               void onCommand({ action: "journal", notes, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean) })
                 .then(() => {
+                  const store = useWorkspaceStore.getState();
+                  const latest = store.replayJournalDrafts[session.id];
+                  if (latest?.notes === notes && latest.tags === tags) store.clearReplayJournalDraft(session.id);
                   setTicketNotice(text.journalSaved);
                   window.setTimeout(() => setTicketNotice(null), 3000);
                 })
@@ -2464,8 +2497,7 @@ function ReplayTicket({
 
 export function Inspector({ workspace = "terminal", summary, summaryError, result, running, replayMode, replaySession, replayPortfolio, replayOrders, replayExecution, replayReport: serverReplayReport = null, onReplayCommand, replayBusy, onRun, onReplayOrder }: InspectorProps): React.JSX.Element {
   const copy = useCopy(INSPECTOR_COPY);
-  const [paperMode, setPaperMode] = useState<"legacy" | "shared-spot">("legacy");
-  const [symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
+  const [paperMode, setPaperMode, symbol, exchange, tab, setTab] = useWorkspaceStore(useShallow((state) => [state.paperAccountMode, state.setPaperAccountMode, state.symbol, state.exchange, state.inspectorTab, state.setInspectorTab]));
   /* A depth price belongs to one instrument. Keying it by instrument makes a
      stale pick unusable after a symbol swap instead of needing to be cleared —
      a BTC depth price once sized an ETH order an order of magnitude off. */
@@ -2528,8 +2560,8 @@ export function Inspector({ workspace = "terminal", summary, summaryError, resul
         </TabsList>
 
         <div className={`overflow-auto min-h-0 ${selectedTab === "strategy" ? "flex-1" : ""}`}>
-          {visitedTabs.includes("book") && <TabsContent value="book" forceMount><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "book"} onPickPrice={handlePickPrice} /></TabsContent>}
-          {visitedTabs.includes("trades") && <TabsContent value="trades" forceMount><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "trades"} onPickPrice={handlePickPrice} /></TabsContent>}
+          {visitedTabs.includes("book") && <TabsContent value="book" forceMount><OrderBook key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "book"} fixtureSource={summary?.symbol === symbol ? isFixtureSource(summary) : null} onPickPrice={handlePickPrice} /></TabsContent>}
+          {visitedTabs.includes("trades") && <TabsContent value="trades" forceMount><RecentTrades key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} active={selectedTab === "trades"} fixtureSource={summary?.symbol === symbol ? isFixtureSource(summary) : null} onPickPrice={handlePickPrice} /></TabsContent>}
           {visitedTabs.includes("strategy") && <TabsContent value="strategy" forceMount><StrategyLab onRun={onRun} running={running} /></TabsContent>}
           {visitedTabs.includes("context") && <TabsContent value="context" forceMount><WorkspaceContext summary={summary} summaryError={summaryError} result={result} replayMode={replayMode} /></TabsContent>}
         </div>
@@ -2583,9 +2615,9 @@ export function Inspector({ workspace = "terminal", summary, summaryError, resul
               )}
             </div>
 
-            <div className="border-t border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken)]">
+            {paperMode === "legacy" && <div className="border-t border-[var(--ak-border-subtle)] bg-[var(--ak-surface-sunken)]">
               <PaperRecoveryPanel />
-            </div>
+            </div>}
           </div>
         )
       )}

@@ -4,7 +4,7 @@ import {
   getDerivativesAccountState, getDerivativesOrderRow, listDerivativesAccountRows, listDerivativesOrderPage, mutateDerivativesAccountRow, openDerivativesAccountRow,
 } from "@newbeing/storage/derivatives";
 import {
-  DERIVATIVES_POLICY, type DerivativesAccount, type DerivativesKind, type DerivativesOrder,
+  DERIVATIVES_POLICY, validateDerivativesQuantity, validateDerivativesPrice, type DerivativesAccount, type DerivativesKind, type DerivativesOrder,
   type DerivativesOrderRequest, type DerivativesOrderResult, type DerivativesPosition,
   type DerivativesValuation, type DerivativesVenue,
 } from "./derivatives-types.js";
@@ -109,20 +109,8 @@ function validateInstrument(i: DerivativesInstrument, r: DerivativesOrderRequest
     if (r.side !== "long" || r.leverage !== 1 || !["call", "put"].includes(i.optionRight ?? "") || i.strike === null || !Number.isFinite(i.strike) || i.strike <= 0) throw new Error("Options support buy-to-open / sell-to-close long positions only, at 1x.");
   } else if (!i.linear || i.inverse || i.settle !== i.quote) throw new Error("Only linear settle-in-quote isolated contracts are supported.");
   positiveNative(i.contractSize, "contract size");
-  const step = positiveNative(i.quantityStep, "quantity step");
-  const quantity = decimal(r.quantity, "quantity");
-  if (quantity.lt(positiveNative(i.minContracts, "minimum contracts")) || !quantity.mod(step).isZero()) throw new Error("Quantity violates native contract constraints.");
-  const protectedPrice = decimal(r.maximumPrice, "maximum price");
-  let tick = positiveNative(i.priceTick, "price tick"), appliedThreshold = new D(-1);
-  for (const step of i.priceTickSteps ?? []) {
-    if (!Number.isFinite(step.abovePrice) || step.abovePrice < 0) throw new Error("Invalid native price tick threshold.");
-    const nextTick = positiveNative(step.tick, "price tick step");
-    // Deribit: the larger tick applies above (not at) its native threshold.
-    if (protectedPrice.gt(step.abovePrice) && appliedThreshold.lt(step.abovePrice)) {
-      tick = nextTick; appliedThreshold = new D(step.abovePrice);
-    }
-  }
-  if (!protectedPrice.mod(tick).isZero()) throw new Error("Price protection violates native price tick.");
+  validateDerivativesQuantity(i, r.quantity);
+  validateDerivativesPrice(i, r.maximumPrice);
 }
 function fillPrice(i: DerivativesInstrument, q: DerivativesQuote, r: DerivativesOrderRequest, now: number): Decimal {
   const bid = positiveNative(q.bid, "bid"), ask = positiveNative(q.ask, "ask");

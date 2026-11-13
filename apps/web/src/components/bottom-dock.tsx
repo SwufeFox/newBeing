@@ -3,7 +3,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { AreaSeries, ColorType, createChart, type UTCTimestamp } from "lightweight-charts";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Boxes, Clock3, FileDown, FileText, FlaskConical, ListChecks, RotateCcw, ScanSearch, Wallet, Filter } from "lucide-react";
-import { EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplaySession } from "@newbeing/core";
+import { EXCHANGE_TIMEFRAMES, STRATEGIES, type BacktestResult, type ExchangeId, type PaperOrder, type PaperPortfolio, type ReplaySession, type SpotAccount } from "@newbeing/core";
 import type { ExperimentSummary } from "@newbeing/storage";
 import { SweepPanel } from "@/components/sweep-panel";
 import { EvaluationPanel } from "@/components/evaluation-panel";
@@ -29,6 +29,15 @@ function timestamp(value: number): string {
 }
 
 interface DockCopy {
+  sharedWallet: string;
+  legacyWallet: string;
+  total: string;
+  reserved: string;
+  refreshWallet: string;
+  sharedWalletMissing: string;
+  sharedWalletUnavailable: string;
+  sharedWalletMismatch: string;
+  sharedWalletHint: string;
   asset: string;
   size: string;
   avgEntry: string;
@@ -201,6 +210,15 @@ interface DockCopy {
    literal: only the words around them translate. */
 const DOCK_COPY: CopyTable<DockCopy> = {
   en: {
+    sharedWallet: "Shared spot wallet",
+    legacyWallet: "Legacy per-symbol wallet",
+    total: "TOTAL",
+    reserved: "RESERVED",
+    refreshWallet: "Refresh wallet",
+    sharedWalletMissing: "No shared spot wallet is open for this venue and quote currency.",
+    sharedWalletUnavailable: "Shared spot wallet could not be loaded.",
+    sharedWalletMismatch: "Shared spot wallet response does not match the selected venue and quote currency.",
+    sharedWalletHint: "Balances come from the selected wallet ledger. Use the shared spot ticket to trade its inventory.",
     asset: "ASSET",
     size: "SIZE",
     avgEntry: "AVG ENTRY",
@@ -369,6 +387,15 @@ const DOCK_COPY: CopyTable<DockCopy> = {
     paperUnavailable: "Paper data unavailable.",
   },
   zh: {
+    sharedWallet: "共享现货钱包",
+    legacyWallet: "旧版逐交易对钱包",
+    total: "总量",
+    reserved: "预留",
+    refreshWallet: "刷新钱包",
+    sharedWalletMissing: "该交易场所和计价币尚未开通共享现货钱包。",
+    sharedWalletUnavailable: "无法加载共享现货钱包。",
+    sharedWalletMismatch: "共享现货钱包响应与所选交易场所或计价币不符。",
+    sharedWalletHint: "余额来自所选钱包的真实账本。请通过共享现货下单面板交易持仓。",
     asset: "资产",
     size: "规模",
     avgEntry: "开仓均价",
@@ -834,6 +861,63 @@ function PaperPositions({ symbol, exchange, markPrice, quoteStale }: { symbol: s
   );
 }
 
+function SharedSpotLedger({ exchange, symbol, orders }: { exchange: ExchangeId; symbol: string; orders: boolean }): React.JSX.Element {
+  const copy = useCopy(DOCK_COPY);
+  const quote = symbol.split("/")[1] ?? "USDT";
+  const [account, setAccount] = useState<SpotAccount | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let disposed = false;
+    const refresh = async (): Promise<void> => {
+      const request = ++requestRef.current;
+      try {
+        const response = await fetch(`/api/spot?exchange=${exchange}&quote=${encodeURIComponent(quote)}`, { cache: "no-store" });
+        const payload: unknown = await response.json();
+        if (!response.ok) throw new Error(typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string" ? payload.error : translate(DOCK_COPY).sharedWalletUnavailable);
+        if (typeof payload !== "object" || payload === null || !("account" in payload)) throw new Error(translate(DOCK_COPY).sharedWalletUnavailable);
+        const next = payload.account as SpotAccount | null;
+        if (next && (next.exchange !== exchange || next.quote !== quote || typeof next.id !== "string" || !next.balances || !Array.isArray(next.orders))) throw new Error(translate(DOCK_COPY).sharedWalletMismatch);
+        if (disposed || request !== requestRef.current) return;
+        setAccount(next);
+        setLoaded(true);
+        setError(null);
+      } catch (reason) {
+        if (!disposed && request === requestRef.current) setError(reason instanceof Error ? reason.message : translate(DOCK_COPY).sharedWalletUnavailable);
+      }
+    };
+    void refresh();
+    const onUpdate = (): void => { void refresh(); };
+    window.addEventListener("newbeing:shared-spot-updated", onUpdate);
+    const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 8_000);
+    return () => { disposed = true; requestRef.current += 1; window.clearInterval(timer); window.removeEventListener("newbeing:shared-spot-updated", onUpdate); };
+  }, [exchange, quote, refreshKey]);
+
+  return <div className="shared-spot-ledger p-2 font-mono text-xs space-y-2">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <strong>{copy.sharedWallet} · {EXCHANGE_LABELS[exchange]} · {quote}</strong>
+      <Button size="sm" variant="outline" onClick={() => setRefreshKey((value) => value + 1)}>{copy.refreshWallet}</Button>
+    </div>
+    {error && <p role="alert" className="text-[var(--ak-signal-danger)]">{error}{account ? ` ${copy.staleNotice}` : ""}</p>}
+    {!account ? <p role="status">{loaded ? copy.sharedWalletMissing : error ? copy.sharedWalletUnavailable : copy.loadingOrders}</p> : <>
+      <p className="text-[var(--ak-text-secondary)] break-all">{account.id}</p>
+      {orders ? <OrdersTable orders={account.orders} /> : <>
+        <p className="text-[var(--ak-text-secondary)]">{copy.sharedWalletHint}</p>
+        <div className="overflow-auto"><table className="data-table w-full text-left">
+          <thead><tr><th>{copy.asset}</th><th>{copy.total}</th><th>{copy.reserved}</th><th>{copy.available}</th></tr></thead>
+          <tbody>{Object.entries(account.balances).map(([asset, balance]) => <tr key={asset}>
+            <td className="p-2 font-bold">{asset}</td><td className="p-2 tabular-nums">{balance.total}</td>
+            <td className="p-2 tabular-nums">{balance.reserved}</td><td className="p-2 tabular-nums">{Number((balance.total - balance.reserved).toFixed(8))}</td>
+          </tr>)}</tbody>
+        </table></div>
+      </>}
+    </>}
+  </div>;
+}
+
 function ReplayPositions({ session, portfolio }: { session: ReplaySession | null; portfolio: PaperPortfolio | null }): React.JSX.Element {
   const copy = useCopy(DOCK_COPY);
   if (!session || !portfolio) return <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><Wallet size={18} className="mx-auto mb-2 text-[var(--ak-signal-info)]" /><strong>{copy.noReplayAccount}</strong><span>{copy.startReplayHint}</span></div>;
@@ -882,7 +966,7 @@ function ReplayPositions({ session, portfolio }: { session: ReplaySession | null
   );
 }
 
-function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
+function OrdersTable({ orders }: { orders: Array<PaperOrder & { error?: string; rejectionReason?: string }> }): React.JSX.Element {
   const copy = useCopy(DOCK_COPY);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyId = (id: string): void => {
@@ -918,6 +1002,7 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
                 <td className="p-2 font-bold">
                   <button
                     type="button"
+                    aria-label={copy.selectSymbol(order.symbol)}
                     onClick={() => useWorkspaceStore.getState().setSymbol(order.symbol)}
                     className="hover:text-[var(--ak-signal-info)] hover:underline cursor-pointer transition-colors text-left"
                     title={copy.selectSymbol(order.symbol)}
@@ -933,6 +1018,7 @@ function OrdersTable({ orders }: { orders: PaperOrder[] }): React.JSX.Element {
                 <td className="p-2 font-mono tabular-nums">{order.quantity}</td>
                 <td className="p-2">
                   <span className={`status-pill status-${order.status} uppercase font-bold text-[10px]`}>{copy.orderStatus[order.status]}</span>
+                  {(order.rejectionReason || order.error) && <p className="mt-1 text-[var(--ak-signal-danger)]">{order.rejectionReason ?? order.error}</p>}
                 </td>
                 <td className="p-2 font-mono tabular-nums">{formatQuotePrice(order.fillPrice)}</td>
                 <td className="p-2 mono text-[10px] text-[var(--ak-text-secondary)]">
@@ -1036,7 +1122,7 @@ function BacktestViewContent({ result, onOpenStrategy, onStartReplay, onOpenSwee
     setRerunning(true);
     setRerunError(null);
     try {
-      const response = await fetch(`/api/backtests/${encodeURIComponent(result.resultId)}/rerun`, { method: "POST" });
+      const response = await fetch(`/api/backtests/${encodeURIComponent(result.resultId)}/rerun`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
       const payload: unknown = await response.json();
       if (!response.ok) {
         const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
@@ -1540,6 +1626,7 @@ export const BottomDock = memo(function BottomDock({
   replayError?: string | null;
 }): React.JSX.Element {
   const copy = useCopy(DOCK_COPY);
+  const paperAccountMode = useWorkspaceStore((state) => state.paperAccountMode);
   const [tab, setTab, symbol, exchange, timeframe, result, activeBacktestId, setBacktest, clearBacktestSelection, setWorkspace, setInspectorTab, setExchange, selectedStrategyId, strategyParameters, config] = useWorkspaceStore(useShallow((state) => [
     state.dockTab, state.setDockTab, state.symbol, state.exchange, state.timeframe, state.backtest, state.activeBacktestId, state.setBacktest, state.clearBacktestSelection,
     state.setWorkspace, state.setInspectorTab, state.setExchange, state.selectedStrategyId, state.strategyParameters, state.backtestConfig,
@@ -1563,7 +1650,7 @@ export const BottomDock = memo(function BottomDock({
   if (showEvaluationPanel && !evaluationPanelVisited) setEvaluationPanelVisited(true);
   /* The Positions tab owns its own account poll. Only the Orders/Logs views
      need this dock-level snapshot, so an idle tab must not request it too. */
-  const shouldPollPaper = (workspace === "terminal" && activeTab === "orders") || (workspace === "research" && activeTab === "logs");
+  const shouldPollPaper = paperAccountMode === "legacy" && ((workspace === "terminal" && activeTab === "orders") || (workspace === "research" && activeTab === "logs"));
   /* The Results empty state offers this action while the Strategy tab may
      already be active. Selecting the tab is then a no-op, so reveal the lab
      and move focus into it; otherwise the button looks inert. */
@@ -1697,14 +1784,15 @@ export const BottomDock = memo(function BottomDock({
             )}
           </TabsList>
         </Tabs>
+        {workspace === "terminal" && <span className="text-[10px] font-mono text-[var(--ak-text-secondary)]">{paperAccountMode === "shared-spot" ? copy.sharedWallet : copy.legacyWallet}</span>}
       </div>
 
       <div className="dock-content flex-1 overflow-auto min-h-0">
         {activeTab === "positions" && (workspace === "terminal" || workspace === "replay") && (
-          replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} markPrice={markPrice} quoteStale={quoteStale} />
+          replayMode ? <ReplayPositions session={replaySession} portfolio={replayPortfolio} /> : paperAccountMode === "shared-spot" ? <SharedSpotLedger key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} orders={false} /> : <PaperPositions key={`${exchange}|${symbol}`} symbol={symbol} exchange={exchange} markPrice={markPrice} quoteStale={quoteStale} />
         )}
         {activeTab === "orders" && (
-          replayMode ? <OrdersTable orders={replayOrders} /> : paperError && !paper ? (
+          replayMode ? <OrdersTable orders={replayOrders} /> : paperAccountMode === "shared-spot" ? <SharedSpotLedger key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} orders /> : paperError && !paper ? (
             <div className="empty-state p-6 text-center text-xs text-[var(--ak-signal-danger)]"><AlertCircle size={18} className="mx-auto mb-2" /><strong>{copy.ordersUnavailable}</strong><span>{paperError}</span></div>
           ) : paper === null ? (
             <div className="empty-state p-6 text-center text-xs text-[var(--ak-text-secondary)]"><strong>{copy.loadingOrders}</strong><span>{copy.loadingOrdersHint}</span></div>
@@ -1756,7 +1844,8 @@ export const BottomDock = memo(function BottomDock({
               <span className="text-[var(--ak-signal-action)]">{copy.logMarketData}</span>
               <span>{copy.logMarketDataBody(EXCHANGE_LABELS[exchange])}</span>
             </div>
-            {paper?.orders.slice(0, 10).map((order) => (
+            {paperAccountMode === "shared-spot" && <SharedSpotLedger key={`${exchange}|${symbol}`} exchange={exchange} symbol={symbol} orders />}
+            {paperAccountMode === "legacy" && paper?.orders.slice(0, 10).map((order) => (
               <div className="log-line flex items-center gap-2 text-xs" key={order.clientOrderId}>
                 <span className="text-[10px] text-[var(--ak-text-secondary)]">{new Date(order.createdAt).toLocaleTimeString()}</span>
                 <AkTag variant={order.status === "filled" ? "default" : "danger"} className="text-[10px]">

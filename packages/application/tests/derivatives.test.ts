@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { closeDatabaseForTests, getDatabase, getWorkspaceState, saveWorkspaceState } from "@newbeing/storage";
 import { executeDerivativesOrder, findDerivativesOrders, getDerivativesAccount, getDerivativesOrder, listDerivativesAccounts, openDerivativesAccount, recoverDerivativesOrder, valueDerivativesPosition, type DerivativesInstrument, type DerivativesMarketData, type DerivativesQuote } from "../src/derivatives.js";
-import { DERIVATIVES_POLICY, type DerivativesOrderRequest } from "../src/derivatives-types.js";
+import { DERIVATIVES_POLICY, validateDerivativesQuantity, validateDerivativesPrice, type DerivativesOrderRequest } from "../src/derivatives-types.js";
 
 let directory: string;
 const previousDirectory = process.env.NEWBEING_DATA_DIR;
@@ -111,6 +111,23 @@ describe("long options in the official settle currency", () => {
 });
 
 describe("execution validation and atomic idempotency", () => {
+  it("shares exact native quantity and price rules with browser consumers", async () => {
+    const constraints = instrument({ minContracts: 0.01, quantityStep: 0.01, priceTick: 2.5 });
+    expect(() => validateDerivativesQuantity(constraints, "0.015")).toThrow(/native contract constraints/);
+    await expect(execute(request({ quantity: "0.015" }), connector(constraints))).rejects.toThrow(/native contract constraints/);
+    expect(() => validateDerivativesQuantity(constraints, "0.01")).not.toThrow();
+    expect(() => validateDerivativesPrice(constraints, "80001")).toThrow(/native price tick/);
+    expect(() => validateDerivativesPrice(constraints, "80002.5")).not.toThrow();
+    for (const invalid of ["", "0", "1e-2", "-1", "NaN", "1".repeat(81)]) {
+      expect(() => validateDerivativesQuantity(constraints, invalid)).toThrow();
+      expect(() => validateDerivativesPrice(constraints, invalid)).toThrow();
+    }
+    const banded = { priceTick: 0.0001, priceTickSteps: [{ abovePrice: 0.005, tick: 0.0005 }, { abovePrice: 0.001, tick: 0.0001 }] };
+    expect(() => validateDerivativesPrice(banded, "0.005")).not.toThrow();
+    expect(() => validateDerivativesPrice(banded, "0.0051")).toThrow(/native price tick/);
+    expect(() => validateDerivativesPrice(banded, "0.0055")).not.toThrow();
+  });
+
   it("prevents competing instruments from spending the same settle cash", async () => {
     const eth = instrument({ id: "okx:perpetual:ETH-USDT-SWAP", nativeId: "ETH-USDT-SWAP" });
     const results = await Promise.allSettled([

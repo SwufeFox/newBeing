@@ -1,4 +1,41 @@
 import type { DerivativeInstrument, DerivativeQuote } from "@newbeing/market-data/derivatives";
+import { validateDerivativesQuantity, validateDerivativesPrice } from "@newbeing/application/derivatives-types";
+
+export function derivativeInputErrors(instrument: DerivativeInstrument | null, quantity: string, maximumPrice: string): { quantity: string | null; maximumPrice: string | null } {
+  const errors: { quantity: string | null; maximumPrice: string | null } = { quantity: null, maximumPrice: null };
+  if (!instrument) return errors;
+  try { validateDerivativesQuantity(instrument, quantity); }
+  catch (error) { errors.quantity = error instanceof Error ? error.message : "Invalid quantity."; }
+  try { validateDerivativesPrice(instrument, maximumPrice); }
+  catch (error) { errors.maximumPrice = error instanceof Error ? error.message : "Invalid price protection."; }
+  return errors;
+}
+
+/** An HTTP rejection is distinct from a lost response to a local mutation. */
+export class DerivativeRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly intentRecorded?: boolean) {
+    super(message);
+    this.name = "DerivativeRequestError";
+  }
+}
+
+export function derivativeCommandWasRejected(error: unknown): boolean {
+  if (!(error instanceof DerivativeRequestError) || error.intentRecorded === true) return false;
+  return error.status === 400 || error.status === 403 || error.status === 409 || (error.status === 422 && error.intentRecorded === false);
+}
+
+/** Seed only the matching fresh book side; marks are never execution quotes. */
+export function derivativeProtectionSeed(
+  instrument: DerivativeInstrument | null,
+  quote: DerivativeQuote | null,
+  action: "open" | "close",
+  side: "long" | "short",
+  now: number,
+): string | null {
+  if (derivativeBlockCode(instrument, quote, now) !== null || !quote) return null;
+  const price = (action === "open") === (side === "long") ? quote.ask : quote.bid;
+  return typeof price === "number" && Number.isFinite(price) && price > 0 ? String(price) : null;
+}
 
 export function derivativeNumber(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
@@ -28,7 +65,7 @@ export function derivativeBlockCode(instrument: DerivativeInstrument | null, quo
   if ([instrument.contractSize, instrument.quantityStep, instrument.minContracts, instrument.priceTick].some((value) => value === null || !Number.isFinite(value) || value <= 0)) return "missingConstraints";
   // Fixture orders are accepted only by the engine in the non-production E2E
   // process, so the ticket must not deadlock there; production never sees them.
-  if (!quote || quote.instrumentId !== instrument.id || quote.bid === null || quote.ask === null || quote.bid <= 0 || quote.ask <= 0 || quote.bid > quote.ask) return "needsQuote";
+  if (!quote || quote.instrumentId !== instrument.id || quote.source !== instrument.source || quote.bid === null || quote.ask === null || !Number.isFinite(quote.bid) || !Number.isFinite(quote.ask) || quote.bid <= 0 || quote.ask <= 0 || quote.bid > quote.ask) return "needsQuote";
   if (!Number.isFinite(quote.timestamp) || now - quote.timestamp > 15000 || now < quote.timestamp) return "staleQuote";
   return null;
 }

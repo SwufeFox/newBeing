@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NativeDerivativeMarketData } from "../src/derivatives/client.js";
 import { normalizeDeribitFuture, normalizeDeribitInstrument, normalizeOkxInstrument } from "../src/derivatives/normalize.js";
+import { fixtureInstruments, fixtureQuote } from "../src/derivatives/fixtures.js";
 
 const NOW = 1_792_742_400_000;
 const okx = { instId: "BTC-USDT-SWAP", instType: "SWAP", ctType: "linear", settleCcy: "USDT", ctValCcy: "BTC", ctVal: "0.01", ctMult: "1", state: "live", lotSz: "0.01", minSz: "0.01", tickSz: "0.1" };
@@ -221,6 +222,18 @@ describe("quote validity", () => {
 });
 
 describe("deterministic fixture environment", () => {
+  it("keeps every fixture book side aligned to its instrument tick", () => {
+    for (const instrument of fixtureInstruments()) {
+      const quote = fixtureQuote(instrument, NOW);
+      expect(quote.bid).toBeLessThan(quote.ask!);
+      for (const price of [quote.bid, quote.ask, quote.mark]) {
+        expect(Number.isInteger(price! / instrument.priceTick!)).toBe(true);
+      }
+    }
+    const future = fixtureInstruments().find((instrument) => instrument.venue === "deribit" && instrument.kind === "future")!;
+    expect(fixtureQuote(future, NOW)).toMatchObject({ bid: 79997.5, ask: 80002.5 });
+  });
+
   it.each(["NEWBEING_MARKET_DATA_FIXTURE", "NEWBEING_E2E_FIXTURES"])("supports %s without native calls", async (key) => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("NEWBEING_MARKET_DATA_FIXTURE", "0");

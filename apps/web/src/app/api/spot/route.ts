@@ -52,6 +52,7 @@ export async function POST(request: Request) {
     if (input.action === "open") return NextResponse.json({ account: openSharedSpotAccount(input.exchange, input.quote), legacyAssets: "preserved-separately" });
     if (input.action === "cancel") return NextResponse.json(cancelSharedSpotIntent(input.exchange, input.quote, input.clientOrderId));
     const result = await executeSharedSpotOrder(input, getWebMarketAdapter(input.exchange));
+    if (result.order.status === "rejected" && result.order.rejectionReason) return NextResponse.json({ ...result, error: result.order.rejectionReason }, { status: 422 });
     return NextResponse.json(result, { status: result.order.status === "filled" ? 200 : ["submitted", "unknown"].includes(result.order.status) ? 202 : 422 });
   } catch (error) {
     if (error instanceof SpotReplayBlockedError) return NextResponse.json({ error: error.message }, { status: 409 });

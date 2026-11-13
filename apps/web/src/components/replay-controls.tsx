@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Clock3, FastForward, LoaderCircle, Pause, Play, SkipForward, Square, RotateCcw } from "lucide-react";
 import type { ReplayConfig, ReplaySession, Timeframe } from "@newbeing/core";
-import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkNum } from "@swufefox/ak-ui-react";
+import { AkTag, AkNotice, AkField, AkFieldLabel, AkInput, AkSelect, AkNum, AkDialog } from "@swufefox/ak-ui-react";
 import { Button } from "@/components/ui/button";
 import { useCopy, type CopyTable } from "@/lib/i18n";
 
@@ -63,6 +63,9 @@ interface ReplayCopy {
   speedTitle: string;
   replaySpeed: string;
   finish: string;
+  finishPrompt: string;
+  finishConsequence: string;
+  finishConfirm: string;
   newSession: string;
   discardPrompt: string;
   discardConfirm: string;
@@ -107,6 +110,9 @@ const REPLAY_COPY: CopyTable<ReplayCopy> = {
     speedTitle: "Speed shortcuts: < and >",
     replaySpeed: "Replay speed",
     finish: "Finish",
+    finishPrompt: "Finish this replay?",
+    finishConsequence: "Finishing cancels all pending orders and ends trading and stepping in this session. Open inventory is retained without liquidation. Unsaved notes and tags remain a local draft; use Save notes / tags to include them in the saved journal.",
+    finishConfirm: "Finish session",
     newSession: "New session",
     discardPrompt: "Discard this session?",
     discardConfirm: "Discard",
@@ -149,6 +155,9 @@ const REPLAY_COPY: CopyTable<ReplayCopy> = {
     speedTitle: "速度快捷键：< 和 >",
     replaySpeed: "回放速度",
     finish: "结束",
+    finishPrompt: "结束本次回放？",
+    finishConsequence: "结束将取消所有待处理委托，并停止本次回放的交易和步进。持仓保留，不会强制平仓。未保存的笔记和标签仍为本地草稿；请使用“保存笔记 / 标签”写入已保存日志。",
+    finishConfirm: "结束回放",
     newSession: "新建回放",
     discardPrompt: "放弃本次回放？",
     discardConfirm: "放弃",
@@ -170,24 +179,25 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
   const [initialCapital, setInitialCapital] = useState("10000");
   const [feeRate, setFeeRate] = useState("0.001");
   const [slippageRate, setSlippageRate] = useState("0.0005");
-  const [confirmNew, setConfirmNew] = useState(false);
+  const [confirmNewSessionId, setConfirmNewSessionId] = useState<string | null>(null);
+  const confirmNew = confirmNewSessionId !== null && confirmNewSessionId === session?.id;
+  const [confirmFinish, setConfirmFinish] = useState(false);
   const newSessionRef = useRef<HTMLButtonElement | null>(null);
   const confirmNewRef = useRef<HTMLButtonElement | null>(null);
   const cursor = session?.bars.at(-1);
 
   /* A new session replaces the active one in the UI; the server copy becomes
      unreachable. Ask before discarding orders, fills, a position, or notes. */
-  useEffect(() => { setConfirmNew(false); }, [session?.id]);
   useEffect(() => { if (confirmNew) confirmNewRef.current?.focus(); }, [confirmNew]);
   const requestNewSession = (): void => {
     if (!hasProgress) {
       onNewSession();
       return;
     }
-    setConfirmNew(true);
+    setConfirmNewSessionId(session?.id ?? null);
   };
   const cancelNewSession = (): void => {
-    setConfirmNew(false);
+    setConfirmNewSessionId(null);
     /* The New session button is mounted only after this state commits. */
     window.setTimeout(() => newSessionRef.current?.focus(), 0);
   };
@@ -195,6 +205,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
   // Global hotkeys for supreme tactile feel: Space = Play/Pause, ArrowRight/N = Step, < / > = Speed
   useEffect(() => {
     if (!session || session.status !== "active") return;
+    if (confirmFinish) return;
     const handleKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
       if (
@@ -228,7 +239,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [session, playing, busy, speed, onTogglePlay, onStep, onSpeedChange]);
+  }, [session, playing, busy, speed, onTogglePlay, onStep, onSpeedChange, confirmFinish]);
 
   return (
     <div className="replay-controls bg-[var(--ak-surface-canvas)] border border-[var(--ak-border-strong)] px-2 py-1.5 relative">
@@ -427,7 +438,7 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
                 variant="outline"
                 size="sm"
                 disabled={busy || session.status !== "active"}
-                onClick={onFinish}
+                onClick={() => { if (playing) onTogglePlay(); setConfirmFinish(true); }}
                 icon={<Square size={12} />}
                 className="h-7 text-xs"
               >
@@ -480,6 +491,18 @@ export function ReplayControls(props: ReplayControlsProps): React.JSX.Element {
         </div>
       )}
 
+      <AkDialog
+        open={confirmFinish}
+        onOpenChange={setConfirmFinish}
+        title={copy.finishPrompt}
+        size="sm"
+        footer={<div className="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" onClick={() => setConfirmFinish(false)}>{copy.discardCancel}</Button>
+          <Button variant="danger" disabled={busy} onClick={() => { setConfirmFinish(false); onFinish(); }}>{copy.finishConfirm}</Button>
+        </div>}
+      >
+        <p className="text-xs leading-relaxed">{copy.finishConsequence}</p>
+      </AkDialog>
       {exhausted && session?.status === "active" && (
         <div className="mt-2 p-2 border border-[var(--ak-signal-action)]/40 bg-[color-mix(in_srgb,var(--ak-signal-action)_10%,transparent)] text-xs font-mono">
           <strong className="text-[var(--ak-signal-action)] tracking-wider uppercase">{copy.exhaustedTitle}</strong>

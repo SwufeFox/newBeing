@@ -48,7 +48,7 @@ test("chart, backtest, source draft, Paper order, Replay and workspace sync use 
   expect((await marketResponse.json()).source).toBe("Deterministic test fixture");
   const chart = page.getByRole("region", { name: "Interactive market chart" });
   await expect(chart).toBeVisible();
-  await expect(page.getByText("TEST FIXTURE", { exact: true })).toBeVisible();
+  await expect(chart.locator(".stream-indicator")).toHaveText("TEST FIXTURE");
   await expect(chart.locator("canvas").first()).toBeVisible();
 
   await activate(page.getByRole("tab", { name: "Strategy lab" }), useKeyboard);
@@ -911,6 +911,7 @@ test.describe("manual Replay training against the real API", () => {
     expect((await reloadTraining(request, saved.session.id)).execution).toEqual(saved.execution);
     const finishedResponse = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON().action === "finish");
     await page.getByRole("button", { name: "Finish", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Finish session", exact: true }).click();
     const finished = await finishedResponse;
     expect(finished.status()).toBe(200);
     state = await finished.json() as ReplaySnapshot;
@@ -932,6 +933,137 @@ test.describe("manual Replay training against the real API", () => {
     const exported = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Pick<ReplaySnapshot, "session" | "execution" | "report">;
     expect(exported).toEqual({ session: state.session, execution: state.execution, report: state.report });
     expect(exported.session.bars.every((bar) => bar.timestamp <= state.session.cursor)).toBe(true);
+  });
+  test("Replay retains local journal drafts and confirms destructive session actions", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    const candles = await trainingCandles(request);
+    let state = await seedTraining(request, candles[600]!);
+    const endpoint = `/api/replay/${state.session.id}`;
+    const restored = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint && response.request().method() === "GET");
+    await page.goto("/w/replay");
+    expect((await restored).status()).toBe(200);
+    const ticket = page.locator(".replay-ticket");
+    const notes = ticket.getByLabel("SESSION NOTES");
+    await expect(notes).toHaveValue("");
+    await notes.fill("Fresh unsaved journal");
+    await ticket.getByLabel("TAGS · COMMA SEPARATED").fill("unsaved, local");
+    await page.getByRole("button", { name: "New session", exact: true }).click();
+    await expect(page.getByRole("group", { name: "Discard this session?" })).toBeVisible();
+    await page.getByRole("group", { name: "Discard this session?" }).getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(notes).toHaveValue("Fresh unsaved journal");
+    expect((await reloadTraining(request, state.session.id)).execution.notes).toBe("");
+    await page.getByTestId("workspace-terminal").click();
+    await page.getByTestId("workspace-replay").click();
+    await expect(notes).toHaveValue("Fresh unsaved journal");
+    await expect(ticket.getByLabel("TAGS · COMMA SEPARATED")).toHaveValue("unsaved, local");
+    const save = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON().action === "journal");
+    await ticket.getByRole("button", { name: "Save notes / tags", exact: true }).click();
+    expect((await save).status()).toBe(200);
+    await expect(page.getByTestId("replay-step")).toBeEnabled();
+    await notes.fill("Unsaved edit of a saved journal");
+    await page.getByTestId("workspace-terminal").click();
+    await page.getByTestId("workspace-replay").click();
+    await expect(notes).toHaveValue("Unsaved edit of a saved journal");
+    expect((await reloadTraining(request, state.session.id)).execution.notes).toBe("Fresh unsaved journal");
+
+    const submit = async (quantity: string): Promise<void> => {
+      await ticket.getByLabel("QUANTITY · BTC").fill(quantity);
+      const posted = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON().action === "order");
+      await ticket.getByRole("button", { name: "Queue buy", exact: true }).click();
+      expect((await posted).status()).toBe(200);
+      await expect(page.getByTestId("replay-step")).toBeEnabled();
+    };
+    await submit("0.001");
+    await submit("1000000");
+    const stepped = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON().action === "step");
+    await page.getByTestId("replay-step").click();
+    state = await (await stepped).json() as ReplaySnapshot;
+    const rejection = state.orders.find((order) => order.status === "rejected");
+    expect(rejection?.error).toBeTruthy();
+    await page.getByRole("tab", { name: "Orders", exact: true }).click();
+    const orders = page.locator(".bottom-dock");
+    await expect(orders.getByRole("button", { name: "Select BTC/USDT" })).toHaveCount(2);
+    await expect(orders.getByText(rejection!.error!, { exact: true })).toBeVisible();
+    await expect(ticket.getByText(rejection!.error!, { exact: true })).toHaveCount(1);
+    await submit("0.001");
+    const beforeFinish = await reloadTraining(request, state.session.id);
+    await page.getByRole("button", { name: "Finish", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("cancels all pending orders");
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(await reloadTraining(request, state.session.id)).toEqual(beforeFinish);
+    await expect(notes).toHaveValue("Unsaved edit of a saved journal");
+    const finished = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON().action === "finish");
+    await page.getByRole("button", { name: "Finish", exact: true }).click();
+    await dialog.getByRole("button", { name: "Finish session", exact: true }).click();
+    expect((await finished).status()).toBe(200);
+    await expect(page.getByTestId("replay-step")).toBeDisabled();
+    await expect(notes).toHaveValue("Unsaved edit of a saved journal");
+    await expect(orders.getByRole("button", { name: "Select BTC/USDT" })).toHaveCount(3);
+    expect((await reloadTraining(request, state.session.id)).orders.at(-1)?.status).toBe("cancelled");
+    await page.reload();
+    await expect(notes).toHaveValue("Unsaved edit of a saved journal");
+  });
+
+  test("Results rerun uses the saved frozen dataset through the guarded JSON API", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    await trainingCandles(request);
+    await page.goto("/w/research");
+    const run = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/backtests" && response.request().method() === "POST");
+    await page.getByRole("button", { name: "Run backtest", exact: true }).first().click();
+    const original = await (await run).json() as { resultId: string; datasetId: string; metrics: unknown; reproduction: unknown };
+    await page.getByRole("tab", { name: "Results", exact: true }).click();
+    const rerun = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/backtests/${original.resultId}/rerun` && response.request().method() === "POST");
+    await page.getByRole("button", { name: "Rerun backtest", exact: true }).click();
+    const response = await rerun;
+    expect(response.status()).toBe(201);
+    const repeated = await response.json() as typeof original & { rerunOf: string };
+    expect(repeated.rerunOf).toBe(original.resultId);
+    expect(repeated.datasetId).toBe(original.datasetId);
+    expect(repeated.metrics).toEqual(original.metrics);
+    expect(repeated.reproduction).toEqual(original.reproduction);
+    await expect(page.locator(".backtest-view")).toContainText(repeated.resultId);
+  });
+
+  test("selected shared wallet drives dock balances and orders across buy, sell and reload", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    await trainingCandles(request);
+    const market = { exchange: "binance", symbol: "ETH/USDT" };
+    await readJson(await request.post("/api/paper", { data: { ...market, clientOrderId: randomUUID(), side: "buy", quantity: 0.01, mode: "paper" } }), 201);
+    await readJson(await request.post("/api/spot", { data: { action: "open", exchange: "binance", quote: "USDT" } }));
+    await page.goto("/w/markets");
+    const positionsLoaded = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === "GET" && url.pathname === "/api/paper" && url.searchParams.get("symbol") === market.symbol && url.searchParams.get("view") === "positions";
+    });
+    await page.getByTitle("Select ETH/USDT", { exact: true }).click();
+    expect((await positionsLoaded).status()).toBe(200);
+    await page.getByRole("tab", { name: "Positions", exact: true }).click();
+    await expect(page.locator(".position-table-wrap").getByRole("button", { name: "Close", exact: true })).toBeVisible();
+    await page.getByLabel("Paper wallet", { exact: true }).selectOption("shared-spot");
+    const ticket = page.getByTestId("shared-spot-ticket");
+    const ledger = page.locator(".shared-spot-ledger");
+    await expect(ledger).toContainText("Shared spot wallet");
+    await expect(page.locator(".bottom-dock").getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
+    for (const side of ["buy", "sell"] as const) {
+      await ticket.getByLabel("Shared spot quantity").fill("0.001");
+      await ticket.getByLabel("Shared spot maximum price").fill("5000");
+      const posted = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/spot" && response.request().method() === "POST");
+      await ticket.getByRole("button", { name: side === "buy" ? "Buy spot" : "Sell inventory", exact: true }).click();
+      const response = await posted;
+      expect(response.status()).toBe(200);
+      const payload = await response.json() as { account: { balances: Record<string, { total: number; reserved: number }> } };
+      const balance = payload.account.balances.ETH!;
+      const row = ledger.getByRole("row").filter({ has: page.getByRole("cell", { name: "ETH", exact: true }) });
+      await expect(row.getByRole("cell").nth(1)).toHaveText(String(balance.total));
+      await expect(row.getByRole("cell").nth(2)).toHaveText(String(balance.reserved));
+    }
+    await page.getByRole("tab", { name: "Orders", exact: true }).click();
+    await expect(ledger.getByRole("button", { name: "Select ETH/USDT", exact: true }).first()).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Paper wallet", { exact: true })).toHaveValue("shared-spot");
+    await expect(ledger).toContainText("Shared spot wallet");
+    await expect(page.locator(".bottom-dock").getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
   });
 });
 
@@ -990,4 +1122,23 @@ test("Paper shows an interrupted intent from its original account and persists m
   expect(after.portfolio).toEqual(before.portfolio);
   const state = await readJson<{ pending: { clientOrderId: string }[] }>(await page.request.get("/api/paper/recovery"));
   expect(state.pending.some((order) => order.clientOrderId === clientOrderId)).toBe(false);
+});
+
+test("legacy Paper rejection shows its actual reason without uncertain-order recovery instructions", async ({ page }) => {
+  await installApiMocks(page);
+  await page.route(/\/api\/paper(?:\?.*)?$/, async (route) => {
+    if (route.request().method() !== "POST") { await route.fallback(); return; }
+    const input = route.request().postDataJSON() as { clientOrderId: string; symbol: string; side: string; quantity: number };
+    await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({
+      error: "Insufficient quote balance.",
+      order: { ...input, status: "rejected", fillPrice: null, fee: 0, createdAt: new Date().toISOString() },
+      portfolio: { quoteBalance: 10000, baseBalance: 0, averageEntryPrice: null, realizedPnl: 0, feeRate: 0.001 },
+    }) });
+  });
+  await page.goto("/w/markets");
+  const ticket = page.locator(".paper-ticket");
+  await ticket.getByLabel("QUANTITY · BTC").fill("999");
+  await ticket.getByRole("button", { name: "Buy", exact: true }).click();
+  await expect(ticket.getByRole("alert")).toHaveText("Insufficient quote balance.");
+  await expect(ticket.getByText(/could not be confirmed|unresolved|Inspect Orders and Paper recovery/)).toHaveCount(0);
 });

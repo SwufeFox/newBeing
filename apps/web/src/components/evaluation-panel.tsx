@@ -524,7 +524,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
   const loadedStrategy = result && STRATEGIES.find((item) => item.id === result.strategyId);
   const canRestoreBacktest = Boolean(result && loadedStrategy && result.strategyVersion === loadedStrategy.version && compatibleParameters(result.parameters, loadedStrategy.defaults));
   const inputsDiffer = Boolean(result && (strategyId !== result.strategyId || !sameValues(parameters, result.parameters) || !sameValues(config, result.assumptions)));
-  const canApplyReport = Boolean(report && strategy && report.strategyId === strategyId && compatibleParameters(report.selectedParameters, strategy.defaults) && compatibleParameters(parameters, strategy.defaults));
+  const canApplyReport = Boolean(report && strategy && report.strategyId === strategyId && compatibleParameters(report.selectedParameters, strategy.defaults));
   const split = Number(splitIndex);
   const splitValid = currentDatasetMetadata !== null
     && Number.isInteger(split)
@@ -645,8 +645,8 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
     const current = useWorkspaceStore.getState();
     const currentStrategy = STRATEGIES.find((item) => item.id === current.selectedStrategyId);
     if (!report || current.activeWorkspace === "replay" || !currentStrategy || report.strategyId !== current.selectedStrategyId
-      || !compatibleParameters(report.selectedParameters, currentStrategy.defaults) || !compatibleParameters(current.strategyParameters, currentStrategy.defaults)) return;
-    current.setStrategyParameters({ ...current.strategyParameters, ...report.selectedParameters });
+      || !compatibleParameters(report.selectedParameters, currentStrategy.defaults)) return;
+    current.setStrategy(report.strategyId, { ...currentStrategy.defaults, ...report.selectedParameters });
     setAppliedSelected(true);
     window.setTimeout(() => setAppliedSelected(false), 2000);
   };
@@ -737,7 +737,7 @@ export function EvaluationPanel({ symbol, timeframe, exchange }: { symbol: strin
           <AkInput
             id="holdout-split-index"
             aria-label={copy.splitAria}
-            aria-invalid={currentDatasetMetadata ? !splitValid : undefined}
+            invalid={currentDatasetMetadata ? !splitValid : false}
             aria-describedby={currentDatasetMetadata && !splitValid ? "holdout-split-help" : undefined}
             className="compact-input w-24 h-7 text-xs font-mono"
             type="number"

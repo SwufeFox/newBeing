@@ -71,6 +71,7 @@ describe("POST /api/evaluations", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     const report = await response.json() as ResearchEvaluationResult;
     expect(report.datasetId).toBe(body.datasetId);
+    expect(report.strategyId).toBe(body.strategyId);
     expect(report.selectedParameters).toEqual(report.training[report.selectedCandidateIndex]!.parameters);
     expect(report.evaluation).toBe("single-holdout");
     expect(report.initialization).toBe("cold-start/no-carry-positions");

@@ -28,6 +28,8 @@ The parent dataset identifies the complete fetched sample. Every walk-forward re
 
 `POST /api/sweeps/{sweepId}/rerun` reruns all saved runs from their exact snapshots without network access or input overrides, verifies the outcomes and saves a new sweep linked to the original. The list, detail, create and rerun responses expose the compact report rather than per-bar arrays.
 
+Applying a saved candidate restores the report's complete strategy parameters and backtest configuration, then replaces the swept parameter with the chosen value. It never merges that single value into unrelated current parameters. The selected strategy ID and version must match; Replay blocks candidate application.
+
 ## Performance benchmark
 
 Run `pnpm bench` for the deterministic synthetic workload at 1k, 10k and 100k bars. The benchmark excludes candle generation from the timed section, performs two warmups and five measured repetitions by default, and prints median and min/max elapsed time for both full backtests and signal generation, plus the median backtest heap delta. Override `BENCH_SIZES`, `BENCH_WARMUPS`, `BENCH_REPEATS` or `BENCH_POSITION_FRACTION` when measuring a different workload. The default synthetic position fraction is 0.1 so the 100k case stays within the ledger's numeric representation. These results characterize the core engine on synthetic candles; they do not represent browser rendering or production request latency.

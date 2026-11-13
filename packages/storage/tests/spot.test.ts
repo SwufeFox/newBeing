@@ -99,7 +99,10 @@ describe("shared spot wallet transactions", () => {
     expect(getSpotAccount("binance", "USDT")!.fills).toEqual([]);
     cancelSpotIntent("binance", "USDT", "unknown");
     beginSpotIntent("binance", "USDT", buy("overrun"), 100);
-    expect(finalizeSpotIntent("binance", "USDT", "overrun", 101).result.status).toBe("rejected");
+    expect(finalizeSpotIntent("binance", "USDT", "overrun", 101).result).toMatchObject({ status: "rejected", rejectionReason: "Market buy price 101 exceeds maximum buy price 100." });
+    closeDatabaseForTests();
+    expect(getSpotAccount("binance", "USDT")!.orders.find((order) => order.clientOrderId === "overrun")?.rejectionReason).toBe("Market buy price 101 exceeds maximum buy price 100.");
+    expect(finalizeSpotIntent("binance", "USDT", "overrun", 90).result.rejectionReason).toBe("Market buy price 101 exceeds maximum buy price 100.");
     expect(getSpotAccount("binance", "USDT")!.balances.USDT).toEqual({ total: 10000, reserved: 0 });
   });
 
@@ -107,13 +110,14 @@ describe("shared spot wallet transactions", () => {
     openSpotAccount("binance", "USDT");
     beginSpotIntent("binance", "USDT", buy("dust"), 100);
     beginSpotIntent("binance", "USDT", buy("other", "ETH/USDT", 90), 100);
-    expect(finalizeSpotIntent("binance", "USDT", "dust", 1e-12).result.status).toBe("rejected");
+    expect(finalizeSpotIntent("binance", "USDT", "dust", 1e-12).result).toMatchObject({ status: "rejected", rejectionReason: "Order notional is below local simulation money precision." });
     expect(getSpotAccount("binance", "USDT")!.balances.USDT).toEqual({ total: 10000, reserved: 9009 });
     finalizeSpotIntent("binance", "USDT", "other", 100);
     finalizeSpotIntent("binance", "USDT", "dust", 100);
     const account = getSpotAccount("binance", "USDT")!;
     expect(account.balances.USDT).toEqual({ total: 991, reserved: 0 });
     expect(account.fills.map((fill) => fill.orderId)).toEqual(["other"]);
+    expect(account.orders.find((order) => order.clientOrderId === "dust")?.rejectionReason).toBe("Order notional is below local simulation money precision.");
   });
 
   it("serializes competing inventory reservations and cancels only the selected sell", () => {

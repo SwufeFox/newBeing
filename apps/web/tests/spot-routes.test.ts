@@ -81,6 +81,32 @@ describe("shared spot and frozen Replay HTTP contracts", () => {
     expect(payload.account.orders).toEqual([]);
   });
 
+  it.each([
+    { name: "buy price ceiling", ask: 101, reason: "Market buy price 101 exceeds maximum buy price 100." },
+    { name: "money precision", ask: 1e-12, reason: "Order notional is below local simulation money precision." },
+  ])("returns the persisted $name rejection reason on the original response and retry", async ({ ask, reason }) => {
+    await POST(request("spot", { action: "open", exchange: "binance", quote: "USDT" }));
+    fixture.summary.mockResolvedValueOnce({ symbol: "BTC/USDT", ask, bid: ask, last: ask, timestamp: Date.now() });
+    const order = { action: "order", exchange: "binance", symbol: "BTC/USDT", side: "buy", quantity: 1, maximumPrice: 100, clientOrderId: "spot-http-rejected" };
+    const response = await POST(request("spot", order));
+    expect(response.status).toBe(422);
+    const payload = await response.json();
+    expect(payload.error).toBe(reason);
+    expect(payload.order).toMatchObject({ status: "rejected", rejectionReason: reason });
+    expect(payload.account.balances.USDT).toEqual({ total: 10000, reserved: 0 });
+    expect(payload.account.fills).toEqual([]);
+    closeDatabaseForTests();
+    const retry = await POST(request("spot", order));
+    expect(retry.status).toBe(422);
+    const repeated = await retry.json();
+    expect(repeated.error).toBe(reason);
+    expect(repeated.order).toEqual(payload.order);
+    expect(repeated.deduplicated).toBe(true);
+    expect(fixture.summary).toHaveBeenCalledTimes(1);
+    const read = await GET(new Request("http://localhost/api/spot?exchange=binance&quote=USDT"));
+    expect((await read.json()).account.orders[0].rejectionReason).toBe(reason);
+  });
+
   it("retains an unknown order and its reservation when obtaining a quote fails", async () => {
     await POST(request("spot", { action: "open", exchange: "binance", quote: "USDT" }));
     fixture.summary.mockRejectedValueOnce(new Error("Quote connection lost"));

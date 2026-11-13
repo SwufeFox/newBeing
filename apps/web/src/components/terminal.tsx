@@ -531,7 +531,11 @@ function parseReplayEnvelope(payload: unknown): ReplayEnvelope | null {
   const rawSession = payload.session;
   if (typeof rawSession !== "object" || rawSession === null || !("id" in rawSession) || !("bars" in rawSession)
     || typeof rawSession.id !== "string" || !Array.isArray(rawSession.bars)) return null;
-  return payload as ReplayEnvelope;
+  const envelope = payload as ReplayEnvelope;
+  return {
+    ...envelope,
+    orders: (envelope.orders ?? envelope.execution?.orders ?? []).map((order) => ({ ...order, symbol: envelope.session.symbol })),
+  };
 }
 
 function useSummary(symbol: string, exchange: WorkspaceState["exchange"], enabled: boolean): { summary: MarketSummaryPayload | null; error: string | null; retry: () => void } {
@@ -1228,6 +1232,7 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
   const replayConfirmed = useWorkspaceStore((state) => state.replayConfirmedJson === replayIdentity(state));
   const replaySyncError = useWorkspaceStore((state) => state.replaySyncError);
   const retryReplaySync = useWorkspaceStore((state) => state.retryReplaySync);
+  const replayDraft = useWorkspaceStore((state) => state.activeReplayId ? state.replayJournalDrafts[state.activeReplayId] : undefined);
   const workspaceReady = useWorkspaceStore((state) => state.workspaceReady);
   const shell = useCopy(SHELL_COPY);
   const hotkeys = useCopy(HOTKEYS_COPY);
@@ -1827,6 +1832,7 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
   };
 
   const resetReplay = (): void => {
+    if (replaySession) useWorkspaceStore.getState().clearReplayJournalDraft(replaySession.id);
     setReplayPlaying(false);
     setReplaySession(null);
     setReplayExecution(null);
@@ -1847,7 +1853,9 @@ export function Terminal({ routeWorkspace, routeRunId }: { routeWorkspace?: Work
   const replayBars = workspace === "replay" ? replaySession?.bars ?? EMPTY_REPLAY_BARS : null;
   const replayPrice = replaySession?.bars.at(-1)?.close ?? null;
   /* Anything a "New session" click would make unreachable in the UI. */
-  const replayHasProgress = replayOrders.length > 0
+  const replayHasProgress = Boolean(replayDraft && (replayDraft.notes !== (replayExecution?.notes ?? "")
+    || JSON.stringify([...new Set(replayDraft.tags.split(",").map((tag) => tag.trim()).filter(Boolean))]) !== JSON.stringify(replayExecution?.tags ?? [])))
+    || replayOrders.length > 0
     || (replayExecution?.orders.length ?? 0) > 0
     || (replayExecution?.fills.length ?? 0) > 0
     || Boolean(replayExecution?.notes.trim())

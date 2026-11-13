@@ -24,31 +24,41 @@ function postResponse(page: Page, path: string) {
   { timeout: responseTimeout });
 }
 
-// Fetch the real response first, then hold its delivery while the user changes context.
+// Fetch each real response before holding delivery. Multiple consumers and polls
+// must all stay gated until release; otherwise a dock read can claim the gate
+// while the ticket read bypasses it and becomes ready.
 async function gateResponse(page: Page, pattern: string, matches: (request: Request) => boolean) {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   let fetched: APIResponse | undefined;
   let finished = false;
-  let claimed = false;
+  let released = false;
+  let pending = 0;
   let failure: unknown;
   await page.route(pattern, async (route) => {
-    if (claimed || !matches(route.request())) {
+    if (released || !matches(route.request())) {
       await route.fallback();
       return;
     }
-    claimed = true;
+    pending += 1;
+    let response: APIResponse | undefined;
     try {
-      fetched = await route.fetch({ timeout: responseTimeout });
+      response = await route.fetch({ timeout: responseTimeout });
+      fetched ??= response;
       await gate;
-      await route.fulfill({ response: fetched });
+      await route.fulfill({ response });
     } catch (error) {
       // Input changes can abort the browser request while the backend has completed.
-      if (!fetched || !route.request().failure()) failure = error;
+      if (!response || !route.request().failure()) failure = error;
     } finally {
       finished = true;
+      pending -= 1;
     }
   });
+  const releaseAll = () => {
+    released = true;
+    release();
+  };
   return {
     async response() {
       await expect.poll(() => Boolean(fetched) || finished, { timeout: responseTimeout }).toBe(true);
@@ -56,10 +66,10 @@ async function gateResponse(page: Page, pattern: string, matches: (request: Requ
       if (!fetched) throw new Error("The gated backend response was not fetched.");
       return fetched;
     },
-    release,
+    release: releaseAll,
     async deliver() {
-      release();
-      await expect.poll(() => finished, { timeout: responseTimeout }).toBe(true);
+      releaseAll();
+      await expect.poll(() => pending, { timeout: responseTimeout }).toBe(0);
       if (failure) throw failure;
     },
   };
@@ -275,6 +285,91 @@ test.describe("evaluation and shared spot browser regressions", () => {
         await summaryGate.unroute();
       }
     }
+  });
+
+  test("shared spot explains a rejected buy ceiling and submits a corrected order with a new intent", async ({ page, request }) => {
+    await trainingCandles(request);
+    await prepareWorkspace(request, "terminal");
+    await readJson(await request.post("/api/spot", { data: { action: "open", exchange: "binance", quote: "USDT" } }));
+    await page.goto("/");
+    await page.getByTitle("Select ETH/USDT", { exact: true }).click();
+    const ticket = await openSharedTicket(page);
+    await expect(ticket).toHaveAttribute("data-loaded", "true");
+    const quantity = ticket.getByLabel("Shared spot quantity");
+    const maximumPrice = ticket.getByLabel("Shared spot maximum price");
+    await quantity.fill("0.001");
+    await maximumPrice.fill("3000");
+    const rejectedResponse = postResponse(page, "/api/spot");
+    await ticket.getByRole("button", { name: "Buy spot", exact: true }).click();
+    const rejected = await rejectedResponse;
+    expect(rejected.status()).toBe(422);
+    const payload = await rejected.json() as { account: SpotAccount; order: SpotAccount["orders"][number] };
+    expect(payload.order.status).toBe("rejected");
+    expect(payload.order.rejectionReason).toBeTruthy();
+    expect(payload.account.fills.some((fill) => fill.orderId === payload.order.clientOrderId)).toBe(false);
+    const feedback = ticket.getByRole("alert");
+    await expect(feedback).toContainText(payload.order.rejectionReason!);
+    await expect(feedback).toContainText("submit a corrected order");
+    await expect(feedback).toBeInViewport();
+    await expect(ticket.getByText(/submitted to shared spot account/)).toHaveCount(0);
+    await expect(quantity).toBeEnabled();
+    await expect(maximumPrice).toBeEnabled();
+    await expect(ticket.getByRole("button", { name: "Retry same buy", exact: true })).toHaveCount(0);
+
+    await maximumPrice.fill("5000");
+    const correctedResponse = postResponse(page, "/api/spot");
+    await ticket.getByRole("button", { name: "Buy spot", exact: true }).click();
+    const corrected = await correctedResponse;
+    expect(corrected.status()).toBe(200);
+    const result = await corrected.json() as { order: SpotAccount["orders"][number] };
+    expect(result.order.status).toBe("filled");
+    expect(result.order.clientOrderId).not.toBe(payload.order.clientOrderId);
+    await expect(feedback).toHaveCount(0);
+    await expect(ticket.getByRole("status")).toHaveText("BUY submitted to shared spot account");
+  });
+
+  test("shared spot retains the same uncertain intent after a retry reports no recorded intent", async ({ page, request }) => {
+    await trainingCandles(request);
+    await prepareWorkspace(request, "terminal");
+    await readJson(await request.post("/api/spot", { data: { action: "open", exchange: "binance", quote: "USDT" } }));
+    await page.goto("/");
+    const ticket = await openSharedTicket(page);
+    await expect(ticket).toHaveAttribute("data-loaded", "true");
+    const quantity = ticket.getByLabel("Shared spot quantity");
+    const maximumPrice = ticket.getByLabel("Shared spot maximum price");
+    await quantity.fill("100000");
+    await maximumPrice.fill("1000");
+    let interruptedIntent: unknown;
+    await page.route("**/api/spot", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      interruptedIntent = route.request().postDataJSON();
+      // Lose delivery before a response can establish whether the intent exists.
+      await route.abort("failed");
+    }, { times: 1 });
+    await ticket.getByRole("button", { name: "Buy spot", exact: true }).click();
+    await expect(ticket.getByRole("alert")).toBeVisible();
+    await expect(quantity).toBeDisabled();
+    await expect(maximumPrice).toBeDisabled();
+
+    const retryResponse = postResponse(page, "/api/spot");
+    await ticket.getByRole("button", { name: "Retry same buy", exact: true }).click();
+    const retry = await retryResponse;
+    expect(retry.request().postDataJSON()).toEqual(interruptedIntent);
+    expect(retry.status()).toBe(422);
+    const payload = await retry.json() as { intentRecorded: boolean; order: null; error: string };
+    expect(payload.intentRecorded).toBe(false);
+    expect(payload.order).toBeNull();
+    await expect(ticket.getByRole("alert")).toHaveText(payload.error);
+    await expect(ticket.getByRole("status")).toContainText("Keep this order unchanged until its outcome is confirmed");
+    await expect(quantity).toBeDisabled();
+    await expect(maximumPrice).toBeDisabled();
+    await ticket.getByRole("button", { name: "Refresh shared account", exact: true }).click();
+    await expect(ticket).toHaveAttribute("data-loaded", "true");
+    await expect(ticket.getByRole("button", { name: "Retry same buy", exact: true })).toBeEnabled();
+    await expect(quantity).toBeDisabled();
   });
 
   test("shared spot sizing toggle exposes its active side to keyboard users", async ({ page, request }) => {
